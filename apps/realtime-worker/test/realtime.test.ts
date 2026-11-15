@@ -290,7 +290,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v2/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v4/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
@@ -421,5 +421,26 @@ describe("places", async () => {
     expect(ok).toEqual({ places: [], source: "photon" });
     expect(calls).toEqual(["overpass-api.de", "overpass.kumi.systems", "photon.komoot.io"]);
     await expect(fetchPlaces(async () => { throw new Error("down"); }, lat, lon)).rejects.toThrow(/overpass-api.de: down.*photon.komoot.io: down/);
+  });
+});
+
+import { historyBbox, summarizeCalendar, type CalendarResponse } from "../src/enrich/history";
+
+describe("historical context (api-worker /api/calendar)", () => {
+  const res: CalendarResponse = {
+    range: { from: "2005-01-01", to: "2019-12-31" },
+    units: "cell-days",
+    annual: [{ year: 2017, harmonizedCellDays: 120 }, { year: 2018, harmonizedCellDays: 40 }],
+    climatology: [{ month: 8, median: 4, p75: 7, p90: 12.2, n: 15 }],
+    summary: { peakMonth: "2017-10", peakYear: 2017, criticalMonthNames: ["Aug", "Oct"] }
+  };
+  it("summarizes the calendar for the incident month", () => {
+    expect(summarizeCalendar(res, 8)).toBe("2005-2019 harmonized archive; typical Aug 4 active cell-days (p90 12.2, 15 years); fire season Aug/Oct; busiest year 2017");
+  });
+  it("returns null when the archive has no activity", () => {
+    expect(summarizeCalendar({ ...res, annual: [{ year: 2017, harmonizedCellDays: 0 }] }, 8)).toBeNull();
+  });
+  it("pads a small bbox to at least 0.5 degrees a side", () => {
+    expect(historyBbox([-122, 39, -121.9, 39.1])).toEqual([-122.2, 38.8, -121.7, 39.3]);
   });
 });

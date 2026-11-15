@@ -4,6 +4,7 @@ import type { Brief } from "../protocol";
 import { compass, fetchPlaces, PLACES_RADIUS_KM, type Place, type PlacesSource } from "./places";
 export type { Place } from "./places";
 import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS, reasoningParams } from "./brief";
+import { historyBbox, summarizeCalendar, type CalendarResponse } from "./history";
 
 export interface EnrichParams {
   incidentId: string;
@@ -38,8 +39,11 @@ export interface Weather {
 
 export interface HistoryContext {
   dataSource: string;
-  summary: unknown;
+  /** One readable line built from the archival calendar (see summarizeCalendar). */
+  summary: string;
 }
+
+
 
 export interface Enrichment {
   incidentId: string;
@@ -115,20 +119,28 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
     const history = await safe<HistoryContext>("historical-context", { retries: { limit: 1, delay: "2 seconds" }, timeout: "20 seconds" }, async () => {
       if (!this.env.API) return { status: "skipped", reason: "no API service binding" };
       const year = new Date(p.streamT).getUTCFullYear();
+      const month = new Date(p.streamT).getUTCMonth() + 1;
       let res: Response;
       try {
+        // api-worker routes/calendar.ts: POST { bbox: [w,s,e,n], from, to } (YYYY-MM-DD). Response has no
+        // dataSource: it is always the harmonized archive (mode "archival").
         res = await this.env.API.fetch("https://api-worker/api/calendar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "archival", bbox: p.summary.bbox, from: `${Math.max(2001, year - 15)}-01-01`, to: `${year - 1}-12-31` })
+          body: JSON.stringify({ bbox: historyBbox(p.summary.bbox), from: `${Math.max(2001, year - 15)}-01-01`, to: `${year - 1}-12-31` })
         });
       } catch (err) {
         return { status: "skipped", reason: `api-worker unavailable: ${err instanceof Error ? err.message : String(err)}` };
       }
-      if (res.status === 404 || res.status === 503) return { status: "skipped", reason: `api-worker /api/calendar not available (HTTP ${res.status})` };
+      if (res.status === 404 || res.status === 503 || res.status === 413 || res.status === 422) {
+        // 422 outside_regions: the harmonized archive covers US regions only (config/regions.json).
+        const e = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? `HTTP ${res.status}`}${e?.error?.message ? ` (${e.error.message})` : ""}` };
+      }
       if (!res.ok) throw new Error(`api-worker /api/calendar HTTP ${res.status}`);
-      const j = (await res.json()) as { dataSource?: string; summary?: unknown; climatology?: unknown };
-      return { status: "ok", data: { dataSource: j.dataSource ?? "live", summary: j.summary ?? null } };
+      const summary = summarizeCalendar((await res.json()) as CalendarResponse, month);
+      if (!summary) return { status: "skipped", reason: "archival calendar: no harmonized fire activity recorded in this area" };
+      return { status: "ok", data: { dataSource: "live", summary } };
     });
 
     const brief = await safe<Brief>("brief", { retries: { limit: 1, delay: "5 seconds" }, timeout: "3 minutes" }, async () => {

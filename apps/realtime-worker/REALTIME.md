@@ -228,6 +228,7 @@ A failed step is recorded and does not fail the run.
 
 - Replays get the weather **at stream time** from the Open-Meteo historical archive.
 - Places: populated places (city, town, village, hamlet, locality) within **75 km**, nearest first (up to 8; a city/town outranks a smaller place within 5 km). Overpass is tried first (two endpoints, 8 s each), then Photon reverse geocoding (photon.komoot.io). In the UI, `status: "ok"` with an empty list means **none within 75 km**; `status: "failed"` means the lookup is **unavailable** (show "unavailable", not "none"; `error` gives every source's reason). History: until 2026-11-15 the step searched only cities/towns within 30 km on Overpass with a 15 s step timeout, and on the deployed worker it failed for every Quebec incident (`WorkflowTimeoutError: Execution timed out after 15000ms`). Overpass still fails from Workers today, so Photon supplies the places.
+- Historical context: `POST /api/calendar` on api-worker (service binding `API`, same account) with `{ bbox, from, to }`: the incident bbox padded to at least 0.5° a side, the 15 years before the stream year. The step turns the response (`climatology`, `annual`, `summary`) into one line, e.g. "2005-2019 harmonized archive; typical Aug 4 active cell-days (p90 12.2, 15 years); fire season Feb/Oct/Nov; busiest year 2017", which the brief cites. `skipped` with a reason when the area is outside the harmonized regions (422 `outside_regions`: the archive is US-only, so every Quebec incident is skipped), when the archive has no activity there, or when api-worker is unreachable.
 - The brief is 2 or 3 plain sentences written only from these numbers, with no advice. The prompt calls the size "area with detections" and forbids "burned area" (the output is also scrubbed for it). `brief.asOf` (ISO) / `brief.streamT` say which moment it describes, so show "as of <time>" next to it, because the incident may have grown since.
 
 #### Brief model settings
@@ -265,10 +266,10 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 
 | Name | Kind | Default | Notes |
 |---|---|---|---|
-| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev`. CORS and WebSocket origin check. |
+| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://skywalkers77-fire.pages.dev,https://*.skywalkers77-fire.pages.dev,https://nasa-fire-web.pages.dev` (the last one is the old account's fallback site; drop it after submission). CORS and WebSocket origin check. |
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
-| `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | Same as api-worker |
+| `AI_GATEWAY_ID` | var | `default` | Same as api-worker |
 | `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
 | `ENRICH_MAX_PER_STREAM` | var | `30` | Workflow runs (and AI calls) per replay stream, and per rolling 24 h for `live` |
 | `BRIEF_DAILY_MAX` | var | `400` | AI briefs per rolling 24 h across all streams (re-briefs count; cached replay briefs do not) |
@@ -304,22 +305,24 @@ pnpm typegen                            # after editing wrangler.jsonc
 
 ## 7. Deployment
 
-Deployed on account `6584e46c…` (Workers Paid), AI Gateway `nasa-fire-copilot`:
+Everything runs on the team account `7d56e968…` (Hemanth's; Workers Paid), AI Gateway `default`, since 2026-11-15:
 
-| Worker | URL |
+| Worker / site | URL |
 |---|---|
-| realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.kj2743.workers.dev |
-| api-worker (`nasa-fire-api`) | https://nasa-fire-api.kj2743.workers.dev |
+| realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.hemanth3292.workers.dev |
+| api-worker (`nasa-fire-api`, copilot + archival API) | https://nasa-fire-api.hemanth3292.workers.dev |
+| web (Pages `skywalkers77-fire`) | https://skywalkers77-fire.pages.dev |
 
-Resources on that account: Queue `nasa-fire-detections`, KV `INGEST_STATE` and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario in both R2 and KV; R2 is read first), D1 `firms-nrt-cells` (api-worker, auto-created). Secrets: `FIRMS_MAP_KEY` and `REPLAY_TOKEN` (realtime), `TAVILY_API_KEY` (api).
+Resources on that account: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGEST_STATE`, shared with ingest-worker and api-worker; realtime keys are `realtime:poll:*`) and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario in both R2 and KV; R2 is read first), D1 `firms-nrt-cells` and Hyperdrive `firms-pg` (api-worker / ingest-worker). Secrets: `FIRMS_MAP_KEY` and `REPLAY_TOKEN` (realtime), `TAVILY_API_KEY` (api).
+
+The old deployment on account `6584e46c…` (`*.kj2743.workers.dev`, Pages `nasa-fire-web`) is a fallback until after submission; its realtime cron is removed so FIRMS is polled once.
 
 `account_id` in `wrangler.jsonc` overrides `CLOUDFLARE_ACCOUNT_ID`, so it decides where resources and deploys go.
 
 **First deploy on a new account:** the two workers bind each other (`API` ↔ `REALTIME`), and a service binding to a Worker that does not exist yet fails with code 10143. Deploy realtime-worker once without its `services` block (a temporary copy of `wrangler.jsonc`; the enrich Workflow skips the history step without `API`), then api-worker, then realtime-worker again with the normal config. Later deploys need nothing special.
 
 ```sh
-export CLOUDFLARE_ACCOUNT_ID=6584e46ce8c9d53c6074b3dac9cc1b9b
 pnpm fetch-replay-fixture --upload-only --store=r2   # and --store=kv
 npx wrangler deploy --dry-run && npx wrangler deploy
-HOST=nasa-fire-realtime.kj2743.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
+HOST=nasa-fire-realtime.hemanth3292.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
 ```

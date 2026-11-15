@@ -199,7 +199,7 @@ streamText({ model: ai(env.CHAT_MODEL, { fallback: [env.CHAT_FALLBACK_MODEL] }),
 // The UI stream is piped through demoDisclaimerTransform() when FIRE_DATA_SOURCE is mock.
 ```
 
-The gateway (`nasa-fire-copilot`, which must exist in the account) provides logging, rate limiting (30 requests per minute, configured in the gateway) and caching. `CHAT_MODEL` can be a Workers AI id or an AI Gateway catalog id.
+The gateway (`AI_GATEWAY_ID`, `default` on the team account, which must exist in the account) provides logging, rate limiting (30 requests per minute, configured in the gateway) and caching. `CHAT_MODEL` can be a Workers AI id or an AI Gateway catalog id.
 
 ### 4.5 Tools (grounding)
 
