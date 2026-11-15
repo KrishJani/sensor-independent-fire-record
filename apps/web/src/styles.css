@@ -692,7 +692,8 @@ button:focus-visible {
 .calendar-drawer {
   position: absolute;
   left: max(var(--inset), env(safe-area-inset-left));
-  bottom: calc(max(24px, env(safe-area-inset-bottom)) + var(--control-h) + 10px);
+  /* Above both the basemap switcher and the archival toolbar. */
+  bottom: calc(max(24px, env(safe-area-inset-bottom)) + var(--control-h) + 10px + 60px);
   width: min(760px, calc(100vw - 2 * var(--inset)));
   max-height: 46vh;
   display: flex;
