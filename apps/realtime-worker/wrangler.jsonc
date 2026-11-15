@@ -1,5 +1,5 @@
 {
-  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
+  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-realtime",
   "main": "src/index.ts",
@@ -8,13 +8,13 @@
   "vars": {
     // CORS + WebSocket origins (same as api-worker). Exact origins, plus "https://*.<suffix>" for
     // exactly one subdomain label (Pages preview URLs). See src/origins.ts.
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev",
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev,https://*.skywalkers77-fire.pages.dev,https://nasa-fire-web.pages.dev",
     // Default replay speed: stream seconds per real second (see REALTIME.md).
     "REPLAY_DEFAULT_SPEED": "12000",
     // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
     "WATCH_BBOXES": "-170,15,-50,72",
     // Enrichment briefs: same gateway and models as api-worker (see apps/api-worker/CHAT.md).
-    "AI_GATEWAY_ID": "nasa-fire-copilot",
+    "AI_GATEWAY_ID": "default",
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
     "CHAT_FALLBACK_MODEL": "",
     // "" disables the fallback (demo setting, see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
@@ -48,15 +48,16 @@
   "triggers": { "crons": ["*/10 * * * *"] },
   "kv_namespaces": [
     {
-      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared INGEST_STATE namespace.
+      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared FIRMS_INGEST_STATE
+      // namespace; ingest-worker / api-worker use ingest:*, data:version:* and cache:* there, so no overlap.
       "binding": "INGEST_STATE",
-      "id": "20402ea73f6d4da0b3599c04df01c887"
+      "id": "fbd5a9bf8e124c81b0df1595b5a07566"
     },
     {
       // Replay scenarios when R2 is not bound (scenarios/<id>.json.gz, gzipped JSON; uploaded by
       // `pnpm fetch-replay-fixture --store=kv`) and the replay brief cache (brief-cache/...).
       "binding": "REPLAY_KV",
-      "id": "859bd85369ef4c1da04c734d8238671f"
+      "id": "c3f602b4de0c44ddac9eedfb544cf7c5"
     }
   ],
   "queues": {

@@ -38,7 +38,7 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
     );
   }
   if (i.history.status === "ok" && "data" in i.history && i.history.data.dataSource === "live") {
-    facts.push(`Historical context (archival calendar): ${JSON.stringify(i.history.data.summary).slice(0, 300)}`);
+    facts.push(`Historical context (archival calendar, VIIRS-equivalent 0.05° cell-days): ${String(i.history.data.summary).slice(0, 300)}`);
   }
   return [
     {
@@ -47,6 +47,7 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
         "You write short factual incident briefs for emergency managers. Write 2 or 3 plain sentences in English. " +
         "Use only the facts and numbers given; do not add causes, forecasts, names of fires, or any number not given. " +
         "Lead with the area with detections and its last-24-hour growth, then the weather, then the nearest populated place if one is given (say its type, e.g. the village of X). " +
+        "If historical context is given, write exactly 3 sentences: (1) area with detections and growth, (2) wind, humidity and the single nearest place in one sentence, (3) what the archive says is typical for this month here (the typical month value in active cell-days) and the fire season months. " +
         'Always call the size "area with detections". Never call it burned area, never say the fire burned or covers that area. ' +
         "Do not give coordinates or list every number. If a fact (such as a town or the weather) is not given, leave it out without saying it is missing. " +
         "Never give evacuation or safety advice. Do not use dashes as punctuation. No headings, no lists, no preamble."
@@ -76,7 +77,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v2"; // v2: places within 75 km (were always missing in v1)
+export const BRIEF_CACHE_VERSION = "v4"; // v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
 }

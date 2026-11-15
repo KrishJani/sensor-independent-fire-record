@@ -1,9 +1,9 @@
 // nasa-fire-api: chat copilot (FireCopilotAgent, /agents/*), archival API (PlanetScale via Hyperdrive),
 // realtime reads (D1). Spec: apps/api-worker/SPEC.md. Harmonization math: @repo/harmonizer.
 //
-// Bindings differ per deployment (wrangler.jsonc): the top-level config serves the copilot; the `archive`
-// environment adds HYPERDRIVE + INGEST_STATE for the archival endpoints. Where those are missing the
-// archival routes answer 503 archival_not_configured instead of failing.
+// One deployment (wrangler.jsonc, account 7d56e968…) serves the copilot and the archival endpoints. A config
+// without HYPERDRIVE + INGEST_STATE (e.g. a local chat-only setup) still works: the archival routes answer
+// 503 archival_not_configured instead of failing.
 import { routeAgentRequest } from "agents";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -45,7 +45,7 @@ const hasArchive = (env: Env) => { const e = env as ArchiveBindings; return !!(e
 app.use("/api/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
   if (path !== "/api/health" && !hasArchive(c.env))
-    throw new ApiError(503, "archival_not_configured", "This deployment has no archival database (deploy with `wrangler deploy -e archive`).");
+    throw new ApiError(503, "archival_not_configured", "This deployment has no archival database (no HYPERDRIVE or INGEST_STATE binding).");
   await next();
 });
 

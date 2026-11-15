@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
-    "dev:archive": "sh -c 'export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(grep ^DATABASE_URL= ../../.env | cut -d= -f2-)\"; wrangler dev -e archive --port 8787 --persist-to ../../.wrangler/shared-state'",
+    "dev": "sh -c 'export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(grep ^DATABASE_URL= ../../.env 2>/dev/null | cut -d= -f2-)\"; wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state'",
+    "dev:archive": "pnpm dev",
     "deploy": "wrangler deploy",
     "typegen": "wrangler types --strict-vars=false",
     "typecheck": "tsc --noEmit",
