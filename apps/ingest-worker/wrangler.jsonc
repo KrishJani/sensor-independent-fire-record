@@ -1,0 +1,33 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nasa-fire-ingest",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    "crons": [
+      "0 */3 * * *", // Every 3 hours: pull _NRT detections -> grid -> upsert to D1
+      "0 2 * * *"    // Daily at 02:00 UTC: pull finalized _SP detections -> PlanetScale & prune D1
+    ]
+  },
+  "vars": {
+    "NRT_LOOKBACK_DAYS": "2",
+    "SP_LOOKBACK_DAYS": "3",
+    "D1_RETENTION_DAYS": "150"
+  },
+  "d1_databases": [
+    {
+      "binding": "NRT_DB",
+      "database_name": "firms-nrt-cells",
+      // Paste the exact database_id generated when deploying api-worker
+      // (or use "67676767" temporarily for local-only wrangler dev)
+      "database_id": "<PASTE_SHARED_D1_DATABASE_ID>"
+    }
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
+    }
+  ]
+}

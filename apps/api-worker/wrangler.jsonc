@@ -1,0 +1,46 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nasa-fire-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "placement": {
+    "mode": "smart"
+  },
+  "vars": {
+    "AI_GATEWAY_ID": "nasa-fire-copilot",
+    "CALIBRATION_START_YEAR": "2012",
+    "CALIBRATION_END_YEAR": "2025"
+  },
+  "d1_databases": [
+    {
+      "binding": "NRT_DB",
+      "database_name": "firms-nrt-cells"
+      // Omit database_id on first deploy: `wrangler deploy` will auto-create D1
+      // and write the generated UUID here. Copy that UUID to ingest-worker afterward.
+    }
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FIRE_COPILOT",
+        "class_name": "FireCopilotAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FireCopilotAgent"]
+    }
+  ]
+}

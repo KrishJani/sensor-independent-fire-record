@@ -1,0 +1,17 @@
+{
+  "name": "ingest-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8788 --test-scheduled --persist-to ../../.wrangler/shared-state",
+    "deploy": "wrangler deploy",
+    "typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@repo/harmonizer": "workspace:*",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0"
+  }
+}
