@@ -5,6 +5,7 @@ import { bboxIntersects, type Bbox } from "../grid";
 import { INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
 import type { MapPoint } from "../protocol";
 import { incidentId } from "../streams";
+import type { IncidentIngestResult } from "./incident";
 
 /** Dedupe ids are kept this long (stream time) before pruning. */
 const DEDUPE_RETENTION_MS = 10 * 24 * 3600_000;
@@ -128,14 +129,16 @@ export class Clusterer extends DurableObject<Env> {
 
     // Fan out: one Incident DO call per incident per batch.
     const entries = [...res.byIncident.entries()];
-    const summaries: IncidentSummary[] = [];
+    const results: IncidentIngestResult[] = [];
     for (let i = 0; i < entries.length; i += INCIDENT_FANOUT) {
       const chunk = entries.slice(i, i + INCIDENT_FANOUT);
       const out = await Promise.all(
         chunk.map(([id, ds]) => this.incidentStub(id).ingest({ id, stream, detections: ds, streamT: streamT ?? ds.at(-1)!.t }))
       );
-      summaries.push(...(out as unknown as IncidentSummary[]));
+      results.push(...(out as unknown as IncidentIngestResult[]));
     }
+    const summaries = results.map((r) => r.summary);
+    await this.startEnrichments(stream, results);
     await Promise.all(res.merges.map((m) => this.incidentStub(m.from).markMerged(m.into, m.t)));
 
     const upserts: IncidentSummary[] = [];
@@ -186,6 +189,29 @@ export class Clusterer extends DurableObject<Env> {
       incidentsTouched: res.byIncident.size,
       streamT
     };
+  }
+
+  /** Start INCIDENT_ENRICH for due incidents, within ENRICH_MAX_PER_STREAM per stream. */
+  private async startEnrichments(stream: string, results: IncidentIngestResult[]) {
+    const max = Number(this.env.ENRICH_MAX_PER_STREAM ?? 30);
+    for (const r of results) {
+      if (!r.enrich) continue;
+      const used = this.sql.exec<{ n: number }>("SELECT COALESCE(MAX(n), 0) AS n FROM counters WHERE name = 'enrichments'").one().n;
+      if (used >= max) {
+        this.bump("enrichments_skipped", 1);
+        continue;
+      }
+      this.bump("enrichments", 1);
+      const instanceId = `${r.summary.id.replace(/[^a-zA-Z0-9-]/g, "_")}-${used + 1}`;
+      try {
+        await this.env.INCIDENT_ENRICH.create({
+          id: instanceId,
+          params: { incidentId: r.summary.id, stream, reason: r.enrich.reason, streamT: r.enrich.streamT, summary: r.summary }
+        });
+      } catch (err) {
+        console.error(JSON.stringify({ msg: "enrich_start_failed", incident: r.summary.id, error: String(err) }));
+      }
+    }
   }
 
   private expireInactive(streamT: number): IncidentSummary[] {

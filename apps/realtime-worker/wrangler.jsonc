@@ -11,8 +11,30 @@
     // Default replay speed: stream seconds per real second (see REALTIME.md).
     "REPLAY_DEFAULT_SPEED": "12000",
     // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
-    "WATCH_BBOXES": "-170,15,-50,72"
+    "WATCH_BBOXES": "-170,15,-50,72",
+    // Enrichment briefs: same gateway and models as api-worker (see apps/api-worker/CHAT.md).
+    "AI_GATEWAY_ID": "default",
+    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
+    // Max enrichment workflows (and so AI briefs) per stream; protects the Workers AI quota during replays.
+    "ENRICH_MAX_PER_STREAM": "30"
   },
+  "ai": {
+    "binding": "AI",
+    // No local implementation: under `wrangler dev` this runs against the logged-in account.
+    "remote": true
+  },
+  "workflows": [
+    {
+      "name": "nasa-fire-incident-enrich",
+      "binding": "INCIDENT_ENRICH",
+      "class_name": "IncidentEnrichWorkflow"
+    }
+  ],
+  "services": [
+    // api-worker, for the historical calendar in enrichment. Optional: skipped when unavailable.
+    { "binding": "API", "service": "nasa-fire-api" }
+  ],
   // Live polling: FIRMS NRT every 10 minutes.
   "triggers": { "crons": ["*/10 * * * *"] },
   "kv_namespaces": [

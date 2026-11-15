@@ -106,6 +106,9 @@ while (Date.now() - started < TIMEOUT_S * 1000) {
   if (status.status === "done" || status.status === "stopped" || status.status === "error") break;
 }
 await new Promise((r) => setTimeout(r, 1500)); // let the last flush arrive
+// Enrichment briefs arrive asynchronously (Workflow + Workers AI). WAIT_BRIEFS_S=90 waits for the first.
+const waitBriefs = Number(process.env.WAIT_BRIEFS_S ?? 0);
+for (let i = 0; i < waitBriefs && briefs === 0; i++) await new Promise((r) => setTimeout(r, 1000));
 ws.close();
 
 const list = await (await fetch(`${base}/realtime/incidents?stream=replay:${replay.id}&status=all`)).json();
@@ -120,7 +123,8 @@ const checks = [
   ["clock advances", clockAdvanced, `${clocks.length} clock msgs, ${fmt(clocks[0])} → ${fmt(clocks.at(-1))}`],
   ["replay finished", status.status === "done", `status=${status.status} progress=${(status.progress * 100).toFixed(0)}%`],
   ["detections streamed", points > 0, `${points} map points`],
-  ["frame rate", maxMsgsPerSec <= 4, `max ${maxMsgsPerSec} frames/s (limit 4)`]
+  ["frame rate", maxMsgsPerSec <= 4, `max ${maxMsgsPerSec} frames/s (limit 4)`],
+  ...(waitBriefs ? [["brief received", briefs > 0, `${briefs} incident.brief messages`]] : [])
 ];
 
 console.log("\nsummary");

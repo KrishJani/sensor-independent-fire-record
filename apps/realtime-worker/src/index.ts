@@ -11,6 +11,7 @@ export { Clusterer } from "./do/clusterer";
 export { Incident } from "./do/incident";
 export { LiveHub } from "./do/liveHub";
 export { Replay } from "./do/replay";
+export { IncidentEnrichWorkflow } from "./enrich/workflow";
 
 const allowedOrigins = (env: Env) =>
   (env.ALLOWED_ORIGINS ?? "")

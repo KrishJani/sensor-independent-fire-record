@@ -269,3 +269,34 @@ describe("streams", () => {
     expect(streamOfIncident("nope")).toBeNull();
   });
 });
+
+describe("brief", async () => {
+  const { buildBriefPrompt, cleanBrief } = await import("../src/enrich/brief");
+  const { extractText } = await import("../src/enrich/workflow").catch(() => ({ extractText: null }));
+
+  it("cleans model output: no em dashes, no advice, max 3 sentences", () => {
+    const out = cleanBrief(
+      "<think>hmm</think>**Fire** grew to 120.5 km2 — fast. Winds are 20 km/h. Residents should evacuate now. Humidity is 30%. Extra sentence."
+    );
+    expect(out).toBe("Fire grew to 120.5 km2, fast. Winds are 20 km/h. Humidity is 30%.");
+    expect(out).not.toMatch(/[—–]/);
+  });
+
+  it("prompt contains only the given numbers and skips mock history", () => {
+    const s = emptyState("live.1", "live");
+    applyDetections(s, [0, 1, 2, 3, 4, 5].map((i) => det(48 + i * 0.05, -75, T0 + i * H)), T0 + 5 * H);
+    const msgs = buildBriefPrompt({
+      summary: summarize(s),
+      stream: "live",
+      weather: { status: "ok", data: { windSpeedKmh: 22, windFrom: "SW", relativeHumidityPct: 31, temperatureC: 24 } },
+      places: { status: "ok", data: [{ name: "Chibougamau", distanceKm: 12.3, direction: "NE" }] },
+      history: { status: "ok", data: { dataSource: "mock", summary: { peak: 999 } } }
+    });
+    const user = msgs[1].content;
+    expect(user).toContain("22 km/h from the SW");
+    expect(user).toContain("Chibougamau (12.3 km NE)");
+    expect(user).not.toContain("999");
+    expect(msgs[0].content).toMatch(/Never give evacuation/);
+  });
+  void extractText;
+});

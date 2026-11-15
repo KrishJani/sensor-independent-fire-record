@@ -12,6 +12,12 @@ import {
 } from "../incidentModel";
 import type { Brief } from "../protocol";
 
+export interface IncidentIngestResult {
+  summary: IncidentSummary;
+  /** Set when enrichment is due (first significant, or area doubled ≥ 6 h of stream time later). */
+  enrich: { reason: "significant" | "area_doubled"; streamT: number } | null;
+}
+
 export interface IncidentDetail {
   summary: IncidentSummary;
   timeline: TimelinePoint[];
@@ -40,17 +46,14 @@ export class Incident extends DurableObject<Env> {
     this.sql.exec("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, JSON.stringify(v));
   }
 
-  async ingest(args: { id: string; stream: string; detections: Detection[]; streamT: number }): Promise<IncidentSummary> {
+  async ingest(args: { id: string; stream: string; detections: Detection[]; streamT: number }): Promise<IncidentIngestResult> {
     const s = (this.state ??= emptyState(args.id, args.stream));
     applyDetections(s, args.detections, args.streamT);
+    // The Clusterer starts the INCIDENT_ENRICH workflow (it owns the per-stream budget).
     const due = enrichmentDue(s, s.streamT);
-    if (due) {
-      s.enrichments.push(due);
-      // Phase 4 starts the INCIDENT_ENRICH workflow here (see startEnrichment).
-      await this.startEnrichment(s, due);
-    }
+    if (due) s.enrichments.push(due);
     this.put("state", s);
-    return summarize(s);
+    return { summary: summarize(s), enrich: due ? { reason: due.reason, streamT: due.t } : null };
   }
 
   async markMerged(into: string, _t: number): Promise<void> {
@@ -79,9 +82,5 @@ export class Incident extends DurableObject<Env> {
   async setEnrichment(enrichment: unknown, brief: Brief | null): Promise<void> {
     this.put("enrichment", enrichment);
     if (brief) this.put("brief", brief);
-  }
-
-  protected async startEnrichment(_s: IncidentState, _due: { t: number; reason: string }): Promise<void> {
-    // Wired in phase 4.
   }
 }
