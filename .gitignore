@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.vite/
+
+# Cloudflare Wrangler local state & logs
+.wrangler/
+wrangler.toml.bak
+
+# Secrets & local environment overrides (NEVER commit these)
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Bulk historical downloads (keep sample_api/ tracked)
+data/
+*.zip
+*.tar.gz
+
+# Logs & OS / Editor files
+*.log
+.DS_Store
+.vscode/
+.idea/
