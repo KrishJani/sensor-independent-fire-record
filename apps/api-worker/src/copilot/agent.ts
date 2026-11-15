@@ -2,6 +2,7 @@ import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { createAI, type CloudflareLanguageModelId } from "agents/models/ai-sdk";
 import {
   convertToModelMessages,
+  createUIMessageStreamResponse,
   isStepCount,
   streamText,
   type GenerateTextOnFinishCallback,
@@ -9,6 +10,7 @@ import {
 } from "ai";
 import { createFireData } from "../data/fireData";
 import { parseContext, type MapContext } from "./context";
+import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
 import { buildSystemPrompt } from "./prompt";
 import { createFireTools } from "./tools";
@@ -21,8 +23,12 @@ export interface CopilotState {
 
 /** Messages sent to the model per turn (the full transcript stays in SQLite). */
 const MODEL_WINDOW = 30;
-const FALLBACK_MODEL = "@cf/zai-org/glm-4.7-flash";
+/** Model steps per turn. The last one is forced to be text-only so a turn never ends mid-tool-loop. */
+const MAX_STEPS = 8;
+/** Explicit budget: reasoning models (gpt-oss) otherwise truncate answers mid-sentence. */
+const MAX_OUTPUT_TOKENS = 4096;
 const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
+const DEFAULT_FALLBACK_MODEL = "@cf/zai-org/glm-4.7-flash";
 
 /**
  * One instance per chat session (sessionId = DO name). Transcript persistence,
@@ -59,9 +65,9 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     };
 
     const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
-    const model = ai((this.env.CHAT_MODEL || DEFAULT_MODEL) as CloudflareLanguageModelId, {
-      fallback: [FALLBACK_MODEL]
-    });
+    const primary = (this.env.CHAT_MODEL || DEFAULT_MODEL) as CloudflareLanguageModelId;
+    const fallback = (this.env.CHAT_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL) as CloudflareLanguageModelId;
+    const model = ai(primary, { fallback: fallback === primary ? [] : [fallback] });
 
     const result = streamText({
       model,
@@ -77,13 +83,18 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
         ignoreIncompleteToolCalls: true
       }),
       tools,
-      stopWhen: isStepCount(6),
+      stopWhen: isStepCount(MAX_STEPS),
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      prepareStep: ({ stepNumber }) =>
+        stepNumber >= MAX_STEPS - 1 ? { toolChoice: "none" as const } : undefined,
       abortSignal: options?.abortSignal,
       onFinish,
       onError: ({ error }) => console.error("[copilot] stream error:", error)
     });
 
-    return result.toUIMessageStreamResponse({ onError: toUserError });
+    let stream = result.toUIMessageStream({ onError: toUserError });
+    if (data.source === "mock") stream = stream.pipeThrough(demoDisclaimerTransform());
+    return createUIMessageStreamResponse({ stream });
   }
 }
 
@@ -92,6 +103,8 @@ function toUserError(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error);
   if (/configure AI Gateway/i.test(msg))
     return "The AI Gateway is not set up for this account (see CHAT.md → Setup).";
+  if (/daily free allocation|neurons/i.test(msg))
+    return "The AI quota for this account is used up for today (Workers AI free allocation). Try again tomorrow or upgrade to Workers Paid.";
   if (/rate.?limit|429/i.test(msg)) return "The assistant is rate-limited right now. Please retry in a minute.";
   return "The assistant could not answer right now. Please try again.";
 }

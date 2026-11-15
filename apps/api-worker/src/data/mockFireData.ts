@@ -79,11 +79,11 @@ const STANDOUTS: Record<string, number> = {
 };
 
 const MOCK_NOTE_CALENDAR =
-  "DEMO DATA: these calendar numbers are SYNTHETIC (deterministic, California-like seasonality and standout months). They are not satellite observations. Live Postgres/D1 data is not connected yet.";
+  "SYNTHETIC DEMO NUMBERS: made up (deterministic, California-like seasonality and standout months), NOT satellite observations. The app shows a demo-data notice automatically; call them synthetic where you cite them. Never call them detected/observed and never tie them causally to real events.";
 const MOCK_NOTE_SPOTS =
-  "DEMO DATA SOURCE: counts and detections are REAL NASA FIRMS hotspots from the bundled sample (California, 2020-08-15 to 2020-08-19, MODIS + VIIRS S-NPP; plus 8 MODIS NRT rows from 2026-11-13). Outside those dates the sample has no data, which does NOT mean there were no fires.";
+  "REAL SAMPLE DETECTIONS (demo data source): counts and detections are REAL NASA FIRMS hotspots from the bundled sample (California, 2020-08-15 to 2020-08-19, MODIS + VIIRS S-NPP; plus 8 MODIS NRT rows from 2026-11-13). Outside those dates the sample has no data, which does NOT mean there were no fires.";
 const MOCK_NOTE_MTD =
-  "DEMO DATA: month-to-date numbers are SYNTHETIC (deterministic). Live D1 realtime data is not connected yet.";
+  "SYNTHETIC DEMO NUMBERS: made up (deterministic), NOT satellite observations. The app shows a demo-data notice automatically; call them synthetic where you cite them. Never call them detected/observed.";
 
 // ---------- deterministic helpers ----------
 

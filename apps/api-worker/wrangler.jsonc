@@ -1,4 +1,5 @@
 {
+  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
   "main": "src/index.ts",
@@ -12,6 +13,8 @@
     // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
     // AI Gateway catalog id (<author>/<model>).
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    // Tried when CHAT_MODEL fails before producing output.
+    "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
     // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
     "WEB_SEARCH_PROVIDER": "tavily",
     // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.

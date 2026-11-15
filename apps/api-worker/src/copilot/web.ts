@@ -118,19 +118,97 @@ export function createTavilySource(apiKey: string, fetchImpl: typeof fetch = fet
   };
 }
 
+// ---------- citations ----------
+
+/** Publisher names by host suffix. Anything else is named by its bare hostname. */
+const PUBLISHERS: [string, string][] = [
+  ["wikipedia.org", "Wikipedia"],
+  ["storymaps.arcgis.com", "ArcGIS StoryMap"],
+  ["arcgis.com", "ArcGIS"],
+  ["fire.ca.gov", "CAL FIRE"],
+  ["inciweb.wildfire.gov", "InciWeb"],
+  ["nifc.gov", "NIFC"],
+  ["ciffc.ca", "CIFFC"],
+  ["earthobservatory.nasa.gov", "NASA Earth Observatory"],
+  ["firms.modaps.eosdis.nasa.gov", "NASA FIRMS"],
+  ["nasa.gov", "NASA"],
+  ["weather.gov", "National Weather Service"],
+  ["noaa.gov", "NOAA"],
+  ["fs.usda.gov", "US Forest Service"],
+  ["airnow.gov", "AirNow"],
+  ["latimes.com", "Los Angeles Times"],
+  ["sfchronicle.com", "San Francisco Chronicle"],
+  ["nytimes.com", "The New York Times"],
+  ["apnews.com", "AP News"],
+  ["reuters.com", "Reuters"],
+  ["cnn.com", "CNN"],
+  ["nbcnews.com", "NBC News"],
+  ["abc7news.com", "ABC7 News"],
+  ["6abc.com", "6abc"],
+  ["ruralhealthinfo.org", "Rural Health Information Hub"]
+];
+
+/** The site/publisher a URL belongs to, e.g. "Wikipedia" or "ArcGIS StoryMap". */
+export function sourceName(url: string): string {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+  const hit = PUBLISHERS.find(([suffix]) => host === suffix || host.endsWith(`.${suffix}`));
+  return hit ? hit[1] : host;
+}
+
+export const citationLink = (url: string) => `[${sourceName(url)}](${url})`;
+
+type TextModelOutput = { type: "text"; value: string };
+type ToolWithTextOutput<O> = { toModelOutput(options: { output: O }): TextModelOutput };
+
+/**
+ * Append ready-made citation links (outside the untrusted-content wrapper) so the
+ * model cites the exact page with its real publisher name instead of a
+ * paraphrased or relabelled source.
+ */
+function withCitations<O, T extends ToolWithTextOutput<O>>(tool: T, cite: (output: O) => string | null): T {
+  return {
+    ...tool,
+    toModelOutput: (options: { output: O }) => {
+      const base = tool.toModelOutput(options);
+      const note = cite(options.output);
+      return note ? { type: "text" as const, value: `${base.value}\n\n${note}` } : base;
+    }
+  };
+}
+
+export function fetchCitationNote(output: { url?: string; finalUrl?: string }): string | null {
+  const url = output.finalUrl || output.url;
+  return url
+    ? `CITATION: if you use any fact from this page, cite it inline exactly as ${citationLink(url)} (this is its real publisher; do not rename it).`
+    : null;
+}
+
+export function searchCitationNote(output: { items?: { url: string }[] }): string | null {
+  const items = output.items ?? [];
+  if (!items.length) return null;
+  return [
+    "CITATION: cite any fact from these results inline with its own link, using these exact labels (real publishers; do not rename them):",
+    ...items.map((it, i) => `${i + 1}. ${citationLink(it.url)}`)
+  ].join("\n");
+}
+
 let warnedNoKey = false;
 
 export function createWebTools(env: Env): ToolSet {
-  const web_fetch = webFetchTool({ binding: env.AI, pageChars: 12_000 });
+  const web_fetch = withCitations(webFetchTool({ binding: env.AI, pageChars: 12_000 }), fetchCitationNote);
+  const searchTool = (t: ReturnType<typeof webSearchTool>) => withCitations(t, searchCitationNote);
 
   const provider = (env.WEB_SEARCH_PROVIDER || "tavily").toLowerCase();
   if (provider === "cloudflare") {
     return {
-      web_search: webSearchTool({
-        binding: env.AI,
-        gateway: env.AI_GATEWAY_ID,
-        description: WEB_SEARCH_DESCRIPTION
-      }),
+      web_search: searchTool(
+        webSearchTool({ binding: env.AI, gateway: env.AI_GATEWAY_ID, description: WEB_SEARCH_DESCRIPTION })
+      ),
       web_fetch
     };
   }
@@ -146,10 +224,9 @@ export function createWebTools(env: Env): ToolSet {
   }
 
   return {
-    web_search: webSearchTool({
-      source: createTavilySource(env.TAVILY_API_KEY),
-      description: WEB_SEARCH_DESCRIPTION
-    }),
+    web_search: searchTool(
+      webSearchTool({ source: createTavilySource(env.TAVILY_API_KEY), description: WEB_SEARCH_DESCRIPTION })
+    ),
     web_fetch
   };
 }

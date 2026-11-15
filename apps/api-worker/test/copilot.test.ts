@@ -169,3 +169,104 @@ describe("parseContext", () => {
     expect(parseContext(undefined)).toBeNull();
   });
 });
+
+describe("system prompt", async () => {
+  const { buildSystemPrompt, LANGUAGE_RULE } = await import("../src/copilot/prompt");
+  const base = { today: "2026-11-15", context: null, memories: [], webSearchEnabled: true };
+
+  it("states the language rule at the top and the bottom", () => {
+    const p = buildSystemPrompt({ ...base, dataSource: "mock" });
+    expect(p.startsWith(LANGUAGE_RULE)).toBe(true);
+    expect(p.trimEnd().endsWith(LANGUAGE_RULE)).toBe(true);
+  });
+
+  it("includes mock honesty rules only for mock data", () => {
+    expect(buildSystemPrompt({ ...base, dataSource: "mock" })).toMatch(/SYNTHETIC numbers/);
+    expect(buildSystemPrompt({ ...base, dataSource: "live" })).not.toMatch(/SYNTHETIC/);
+  });
+
+  it("covers tool choice, citations and 'this area'", () => {
+    const p = buildSystemPrompt({ ...base, dataSource: "live" });
+    expect(p).toMatch(/get_spots_summary FIRST/);
+    expect(p).toMatch(/web_fetch/);
+    expect(p).toMatch(/arcgis\.com StoryMap/);
+    expect(p).toMatch(/not "your area"/);
+  });
+});
+
+describe("web citations", async () => {
+  const { sourceName, fetchCitationNote, searchCitationNote } = await import("../src/copilot/web");
+
+  it("names sources by their real publisher", () => {
+    expect(sourceName("https://en.wikipedia.org/wiki/August_Complex_fire")).toBe("Wikipedia");
+    expect(sourceName("https://storymaps.arcgis.com/stories/1a0a")).toBe("ArcGIS StoryMap");
+    expect(sourceName("https://www.fire.ca.gov/incidents/2020")).toBe("CAL FIRE");
+    expect(sourceName("https://earthobservatory.nasa.gov/images/1")).toBe("NASA Earth Observatory");
+    expect(sourceName("https://www.example-news.com/a")).toBe("example-news.com");
+  });
+
+  it("gives the model an exact link to copy", () => {
+    expect(fetchCitationNote({ url: "https://a.org/x", finalUrl: "https://en.wikipedia.org/wiki/X" })).toContain(
+      "[Wikipedia](https://en.wikipedia.org/wiki/X)"
+    );
+    const note = searchCitationNote({ items: [{ url: "https://storymaps.arcgis.com/stories/1" }] })!;
+    expect(note).toContain("1. [ArcGIS StoryMap](https://storymaps.arcgis.com/stories/1)");
+    expect(searchCitationNote({ items: [] })).toBeNull();
+  });
+});
+
+describe("demo disclaimer transform", async () => {
+  const { demoDisclaimerTransform, SYNTHETIC_NOTICE, SAMPLE_NOTICE } = await import("../src/copilot/disclaimer");
+  type Chunk = import("ai").UIMessageChunk;
+
+  async function run(chunks: Chunk[]): Promise<Chunk[]> {
+    const out: Chunk[] = [];
+    const rs = new ReadableStream<Chunk>({
+      start(c) {
+        chunks.forEach((x) => c.enqueue(x));
+        c.close();
+      }
+    }).pipeThrough(demoDisclaimerTransform());
+    for await (const ch of rs as unknown as AsyncIterable<Chunk>) out.push(ch);
+    return out;
+  }
+  const tool = (id: string, name: string, output: unknown): Chunk[] => [
+    { type: "tool-input-available", toolCallId: id, toolName: name, input: {} } as Chunk,
+    { type: "tool-output-available", toolCallId: id, output } as Chunk
+  ];
+  const text = (id: string, delta: string): Chunk[] => [
+    { type: "text-start", id } as Chunk,
+    { type: "text-delta", id, delta } as Chunk,
+    { type: "text-end", id } as Chunk
+  ];
+  const texts = (cs: Chunk[]) => cs.filter((c) => c.type === "text-delta").map((c) => (c as { delta: string }).delta);
+
+  it("prepends the synthetic notice once, right after the first post-tool text-start", async () => {
+    const out = await run([
+      ...tool("1", "get_spots_summary", { dataSource: "mock" }),
+      ...tool("2", "get_calendar", { dataSource: "mock" }),
+      ...text("t1", "Answer."),
+      ...text("t2", "More.")
+    ]);
+    const deltas = texts(out);
+    expect(deltas[0]).toContain(SYNTHETIC_NOTICE);
+    expect(deltas[0]).toMatch(/real NASA FIRMS sample/);
+    expect(deltas.slice(1)).toEqual(["Answer.", "More."]);
+  });
+
+  it("uses the sample notice for spots only, and nothing for web-only or live turns", async () => {
+    expect(texts(await run([...tool("1", "get_spots_summary", { dataSource: "mock" }), ...text("t", "x")]))[0]).toContain(
+      SAMPLE_NOTICE
+    );
+    expect(texts(await run([...tool("1", "web_search", { items: [] }), ...text("t", "x")]))).toEqual(["x"]);
+    expect(texts(await run([...tool("1", "get_calendar", { dataSource: "live" }), ...text("t", "x")]))).toEqual(["x"]);
+  });
+
+  it("does not attach the notice to narration written before any tool ran", async () => {
+    const deltas = texts(
+      await run([...text("t0", "Looking…"), ...tool("1", "get_calendar", { dataSource: "mock" }), ...text("t1", "Answer.")])
+    );
+    expect(deltas[0]).toBe("Looking…");
+    expect(deltas[1]).toContain(SYNTHETIC_NOTICE);
+  });
+});

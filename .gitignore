@@ -29,3 +29,6 @@ data/
 .DS_Store
 .vscode/
 .idea/
+
+# Model comparison output (apps/api-worker/scripts/compare-models.mjs)
+compare-models.json

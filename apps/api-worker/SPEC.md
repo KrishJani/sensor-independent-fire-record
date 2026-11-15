@@ -23,7 +23,7 @@ Harmonization math such as α, calendars and anomalies comes from `@repo/harmoni
 Vars:
 
 - `AI_GATEWAY_ID`
-- `CHAT_MODEL`, default `@cf/moonshotai/kimi-k2.6` (Workers AI id or AI Gateway catalog id; fallback `@cf/zai-org/glm-4.7-flash`)
+- `CHAT_MODEL`, default `@cf/moonshotai/kimi-k2.6` (Workers AI id or AI Gateway catalog id), and `CHAT_FALLBACK_MODEL`, default `@cf/zai-org/glm-4.7-flash`. The model comparison is in `CHAT.md`.
 - `WEB_SEARCH_PROVIDER` (`tavily` | `cloudflare`), secret `TAVILY_API_KEY`
 - `FIRE_DATA_SOURCE` (`mock` until LiveFireData lands)
 - `CALIBRATION_START_YEAR`, `CALIBRATION_END_YEAR`, `BASELINE_START_YEAR`, `BASELINE_END_YEAR`
@@ -190,8 +190,10 @@ It is implemented in `src/copilot/`. Run instructions, configuration and the ful
 
 ```ts
 const ai = createAI({ binding: env.AI, id: env.AI_GATEWAY_ID });   // agents/models/ai-sdk
-streamText({ model: ai(env.CHAT_MODEL, { fallback: ["@cf/zai-org/glm-4.7-flash"] }),
-             system, messages, tools, stopWhen: isStepCount(6), abortSignal });
+streamText({ model: ai(env.CHAT_MODEL, { fallback: [env.CHAT_FALLBACK_MODEL] }),   // default glm-4.7-flash
+             system, messages, tools, stopWhen: isStepCount(8), maxOutputTokens: 4096,
+             prepareStep: last step → toolChoice "none", abortSignal });
+// The UI stream is piped through demoDisclaimerTransform() when FIRE_DATA_SOURCE is mock.
 ```
 
 The gateway (`nasa-fire-copilot`, which must exist in the account) provides logging, rate limiting (30 requests per minute, configured in the gateway) and caching. `CHAT_MODEL` can be a Workers AI id or an AI Gateway catalog id.
@@ -222,7 +224,11 @@ The system prompt, rebuilt every turn, includes today's date, the map context an
 - It notes that satellites miss fires under cloud or smoke.
 - Web facts are cited as markdown links, with official sources preferred (CAL FIRE, InciWeb, NIFC, CIFFC, NASA, NOAA). Web pages are untrusted data. "Our satellite record" is kept separate from "the web".
 - It never gives evacuation orders, and points users to official authorities and 911.
-- When the data source is mock, it tells the user the numbers are demo data.
+- When the data source is mock, the server inserts a demo-data notice before the answer (synthetic calendar figures, or real but limited sample detections). Synthetic numbers are never called observed, and are never tied causally to real events.
+- It answers in the language of the user's latest message (English by default) and never switches mid-answer. This rule is stated at the top and the bottom of the prompt.
+- Tool choice: `get_spots_summary` first for a specific place and time window; `get_calendar` for history, seasonality and "is this normal" questions.
+- Web facts link the exact page they came from, including pages read with `web_fetch`. Sources are named by their real publisher; the web tools append a ready-made `CITATION:` link.
+- It says "this area", not "your area", unless the user said the area is theirs.
 - Style: the answer first in 1–3 sentences, then a short list.
 
 ## 5. Performance targets

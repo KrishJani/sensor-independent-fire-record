@@ -45,7 +45,7 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
   return {
     get_calendar: tool({
       description:
-        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for an area: peak month/year, critical fire-season months, climatology (median, P10–P90 per calendar month), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality and 'how unusual was X' questions.",
+        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for an area: peak month/year, critical fire-season months, climatology (median, P10–P90 per calendar month), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality, trends and 'is this normal / how unusual' questions. For 'what happened here in <month>' call get_spots_summary first (calling both is fine).",
       inputSchema: z.object({
         bbox: bboxArg,
         from: date.optional().describe("Start date. Omit to use the map's range."),
@@ -70,7 +70,7 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
 
     get_spots_summary: tool({
       description:
-        "Hotspot detections in an area and date range: detection counts, active cell-days per satellite, daily activity, last-seen time and the top detections by fire radiative power (FRP, MW, labelled by sensor). mode 'archival' = finalized FIRMS SP data, 'realtime' = near-real-time NRT data.",
+        "Call this FIRST for questions about a specific place and time window ('what happened here in August 2020', 'what is burning now'). Returns hotspot detections in an area and date range: detection counts, active cell-days per satellite, daily activity, last-seen time and the top detections by fire radiative power (FRP, MW, labelled by sensor). mode 'archival' = finalized FIRMS SP data (past), 'realtime' = near-real-time NRT data (now / last days).",
       inputSchema: z.object({
         mode: z.enum(["archival", "realtime"]).optional().describe("Omit to use the map's active tab."),
         bbox: bboxArg,
@@ -95,7 +95,7 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
 
     get_month_to_date: tool({
       description:
-        "Realtime: this month's harmonized activity so far in an area compared with the historical median for the same days of the month. Use for 'is this a bad month / how does now compare' questions.",
+        "Realtime: this month's harmonized activity so far in an area compared with the historical median for the same days of the month. Use for 'is this a bad month / how does now compare' questions; for 'what is burning now' call get_spots_summary (mode realtime) first.",
       inputSchema: z.object({ bbox: bboxArg }),
       execute: withErrors(async (args: { bbox?: Bbox }) => {
         const bbox = resolveBbox(args.bbox, getContext());

@@ -15,7 +15,8 @@ src/copilot/prompt.ts     system prompt (rebuilt every turn)
 src/data/fireData.ts      FireData interface + createFireData(env)  ← LiveFireData TODO here
 src/data/mockFireData.ts  demo data source (see "What is mocked")
 src/data/sample-fixture.json  built from sample_api/ by scripts/build-fixtures.mjs
-scripts/chat-smoke.mjs    end-to-end WebSocket smoke test
+scripts/chat-smoke.mjs    end-to-end WebSocket smoke test with answer-quality checks
+scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and prints a scorecard
 ```
 
 ## Setup (once)
@@ -32,21 +33,31 @@ cd apps/api-worker
 # Hyperdrive has a placeholder id; the copilot does not use it, but wrangler needs a local string.
 export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://dev:dev@localhost:5432/dev"
 pnpm dev                 # http://localhost:8787
-pnpm smoke               # in another terminal: two-turn chat over WebSocket
+pnpm smoke               # in another terminal: two-turn chat over WebSocket + quality checks
+pnpm compare-models      # starts its own wrangler dev per model on :8790 (no pnpm dev needed)
 pnpm test                # vitest: mock data, Tavily mapping, memory store, context parsing
 pnpm typecheck
 pnpm fixtures            # rebuild src/data/sample-fixture.json from sample_api/
 pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict-vars=false)
 ```
 
-`pnpm smoke` respects `HOST` (default `localhost:8787`) and `SESSION`.
+`pnpm smoke` respects `HOST` (default `localhost:8787`), `SESSION`, `SMOKE_JSON=1` (one-line JSON result) and `SMOKE_DEBUG=1` (log every stream chunk type). It exits 1 when a check fails:
+
+| Turn | Check |
+|---|---|
+| both | FAIL if the reply contains CJK characters (language drift) or names a source in brackets without a link (`[Wikipedia; CAL FIRE]`, `[link]`); WARN on "your area" |
+| 1 ("What happened in this area in August 2020?") | FAIL if `get_spots_summary` is not called, or if mock data was used and the first sentence does not mention demo/synthetic data |
+| 2 ("…what does the news say about the August Complex fire?") | FAIL if neither `web_search` nor `web_fetch` is called, or if a page read with `web_fetch` is not linked in the reply |
+
+`pnpm compare-models` takes `MODELS` (comma-separated), `RUNS` (default 2), `PORT` (default 8790) and `OUT` (full replies as JSON, default `compare-models.json`).
 
 ## Configuration
 
 | Name | Kind | Default | Notes |
 |---|---|---|---|
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
-| `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. Fallback model: `@cf/zai-org/glm-4.7-flash`. |
+| `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
+| `CHAT_FALLBACK_MODEL` | var | `@cf/zai-org/glm-4.7-flash` | Tried when `CHAT_MODEL` fails before producing output. |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
@@ -56,10 +67,29 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 
 **Switch search:** set `WEB_SEARCH_PROVIDER` to `cloudflare` to use the Cloudflare Web Search API through `env.AI` and the gateway. It needs AI Gateway credits or a provider key on the gateway. `tavily` calls `https://api.tavily.com/search` directly with the secret key.
 
+## Model comparison (2026-11-15)
+
+`pnpm compare-models` with the two smoke questions. 21 runs in total over three rounds. The fixes landed between rounds, so failures in early rounds include problems that are now handled in code.
+
+| Model | Result | Notes |
+|---|---|---|
+| `@cf/moonshotai/kimi-k2.6` | **best (default)** | No CJK in 7 runs once the language rule was added. The best tool choice (spots first, then calendar), and it links fetched pages once given the `CITATION:` line. Weaknesses: slow (~35–50 s per turn), occasionally names a source in brackets without a link, and misread one FRP value (wrote ~23.3 MW for a 20,273.9 MW tool value). |
+| `@cf/zai-org/glm-4.7-flash` | second (fallback) | Switched to Chinese in 1 of 6 runs **despite** the language rule. Once relabelled a source as "InciWeb", left one fetched StoryMap uncited, and mixed web facts into the satellite summary. Similar speed to kimi. |
+| `@cf/openai/gpt-oss-120b` | not recommended | Fastest (~10–15 s per turn), but truncated answers until `maxOutputTokens` was set, and in 2 of 6 turns it streamed raw template tokens (`analysis<\|end\|>`, `<\|call\|>`) instead of an answer. |
+
+Fixes from this comparison that apply to every model:
+- the language rule at the top and bottom of the prompt;
+- the demo-data notice inserted by the server;
+- `CITATION:` lines on web tool output;
+- a forced text-only final step, so a turn never ends in a tool loop with no answer;
+- `maxOutputTokens: 4096`.
+
+The final round was cut short when the account hit the **Workers AI free tier (10,000 neurons a day)**: one comparison round of 3 models × 3 runs uses most of it. Re-run `pnpm compare-models` on the Workers Paid plan before changing the default.
+
 ## Agent behaviour
 
 - **Routing:** `/agents/fire-copilot-agent/<sessionId>` (WebSocket and HTTP) via `routeAgentRequest`. The Durable Object binding is named `FireCopilotAgent`, the same as the class, because `routeAgentRequest` resolves bindings by class name.
-- **Per turn:** parse `body.context` (invalid context is logged and ignored). If it is valid, store it with `setState({ context, contextUpdatedAt })`. Then build the tools and the system prompt (date, map context, memories, rules) and send the **last 30 messages** to the model, with up to 6 tool steps. The abort signal is forwarded, so "stop" cancels the LLM call.
+- **Per turn:** parse `body.context` (invalid context is logged and ignored). If it is valid, store it with `setState({ context, contextUpdatedAt })`. Then build the tools and the system prompt (date, map context, memories, rules) and send the **last 30 messages** to the model, with up to 8 model steps (the last one is forced to be text-only, so a turn never ends in the middle of a tool loop) and a 4096-token output budget. The abort signal is forwarded, so "stop" cancels the LLM call.
 - **Memory:** the transcript is persisted by `AIChatAgent`, capped at 200 messages. Long-term facts are kept in the `memories` table, which is injected into every prompt and written by the `remember` tool. The latest map context is kept in agent state.
 - **Tools:** all arguments are optional and fall back to the stored context. With no bbox, a tool returns `{ "error": "no_area" }`, and the model asks the user to select an area.
 
@@ -73,13 +103,16 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 | `web_search` | `query, limit?` | news/agency results (never used for counts) |
 | `web_fetch` | `url, offset?, format?` | page as Markdown, wrapped as untrusted content |
 
+Both web tools end their model-facing output with a `CITATION:` line giving the exact markdown link to copy. The publisher name comes from the URL (`sourceName()` in `web.ts`: wikipedia.org → Wikipedia, storymaps.arcgis.com → ArcGIS StoryMap, fire.ca.gov → CAL FIRE, …; any other host is named by its hostname). This stops models from citing by name without a link, or relabelling a StoryMap as "InciWeb".
+
 ## What is mocked
 
 `createFireData(env)` always returns `MockFireData` for now:
 
 - `get_spots_summary` uses **real** FIRMS detections from `sample_api/` (California 2020-08-15 → 08-19, MODIS + VIIRS S-NPP, plus 8 MODIS NRT rows from 2026-11-13). These are filtered and aggregated to 0.05° cell-days per satellite by `scripts/build-fixtures.mjs`.
 - `get_calendar` and `get_month_to_date` return **synthetic**, deterministic, California-shaped numbers: peaks in Jul–Sep, and standout months such as Aug/Sep 2020, Nov 2018, Dec 2017 and Jan 2025.
-- Every result carries `dataSource: "mock"` and a `note`. The system prompt makes the model tell the user that the numbers are demo data.
+- Every result carries `dataSource: "mock"` and a `note`.
+- **Demo-data notice (server-side):** when a turn uses a mock data tool, `src/copilot/disclaimer.ts` inserts a notice at the start of the first answer text written after the tool result. Calendar or month-to-date figures get "_Demo data: the calendar figures below are synthetic, not satellite observations._"; spots alone get a note that the hotspot counts are real sample detections from a limited sample. This is done in code because every model tested ignored a "start your answer with…" instruction. The prompt also forbids calling synthetic numbers observed, or tying them causally to real events.
 
 To go live, implement `LiveFireData` (see the TODO in `src/data/fireData.ts`), using the same internal functions as `POST /api/calendar` and `/api/*/spots`, and return it when `FIRE_DATA_SOURCE=live`.
 

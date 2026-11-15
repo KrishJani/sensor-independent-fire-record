@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "fixtures": "node scripts/build-fixtures.mjs",
     "smoke": "node scripts/chat-smoke.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "compare-models": "node scripts/compare-models.mjs"
   },
   "dependencies": {
     "@ai-sdk/provider": "^4.0.38",
