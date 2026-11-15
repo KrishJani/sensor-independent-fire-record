@@ -95,7 +95,7 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
         'circle-radius': groundRadius(6),
         'circle-color': 'rgba(0,0,0,0)',
         'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 10,
+        'circle-stroke-width': 4,
         'circle-stroke-opacity': 0.95,
         'circle-pitch-alignment': 'map',
       },
@@ -107,8 +107,8 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
       paint: {
         'circle-radius': groundRadius(6),
         'circle-color': 'rgba(0,0,0,0)',
-        'circle-stroke-color': 'rgba(15,15,20,0.7)',
-        'circle-stroke-width': 4.5,
+        'circle-stroke-color': 'rgba(10,10,12,0.6)',
+        'circle-stroke-width': 3,
         'circle-stroke-opacity': ['match', ['get', 'status'], 'inactive', 0.35, 1],
         'circle-pitch-alignment': 'map',
       },
@@ -120,13 +120,10 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
       paint: {
         'circle-radius': groundRadius(6),
         'circle-color': ramp('frp', INCIDENT_FRP_STOPS),
-        'circle-opacity': [
-          'interpolate', ['linear'], ['zoom'],
-          4, ['match', ['get', 'status'], 'inactive', 0.12, 0.32],
-          10, ['match', ['get', 'status'], 'inactive', 0.04, 0.1],
-        ],
+        // Outline ring with a barely-there fill, so the red detection dots inside stay visible.
+        'circle-opacity': ['match', ['get', 'status'], 'inactive', 0.02, 0.05],
         'circle-stroke-color': ramp('frp', INCIDENT_FRP_STOPS),
-        'circle-stroke-width': 2.5,
+        'circle-stroke-width': 1.5,
         'circle-stroke-opacity': ['match', ['get', 'status'], 'inactive', 0.4, 1],
         'circle-pitch-alignment': 'map',
       },
