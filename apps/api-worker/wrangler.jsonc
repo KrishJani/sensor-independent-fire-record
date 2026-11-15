@@ -43,6 +43,10 @@
     // No local implementation: under `wrangler dev` this runs against the logged-in account.
     "remote": true
   },
+  "services": [
+    // apps/realtime-worker: live/replay fire incidents for the get_live_incidents chat tool.
+    { "binding": "REALTIME", "service": "nasa-fire-realtime" }
+  ],
   "durable_objects": {
     "bindings": [
       {

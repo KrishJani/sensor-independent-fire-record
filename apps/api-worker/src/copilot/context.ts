@@ -33,7 +33,12 @@ export const MapContextSchema = z.object({
   from: isoDate,
   to: isoDate,
   // Free-form summary of what the calendar drawer is showing. Truncated before use.
-  calendarSummary: z.unknown().optional()
+  calendarSummary: z.unknown().optional(),
+  // Realtime pipeline stream the map is showing: "live" or "replay:<id>" (apps/realtime-worker).
+  realtimeStream: z
+    .string()
+    .regex(/^(live|replay:[a-z0-9]{6,32})$/)
+    .optional()
 });
 
 export type MapContext = z.infer<typeof MapContextSchema>;
@@ -63,6 +68,12 @@ export function describeContext(ctx: MapContext | null): string {
         (ctx.aoi.geometry ? ` (${ctx.aoi.geometry.type} drawn)` : "")
       : "Area of interest: none selected"
   ];
+  if (ctx.realtimeStream) {
+    lines.push(
+      `Realtime stream on the map: ${ctx.realtimeStream}` +
+        (ctx.realtimeStream === "live" ? "" : " (a replay of a stored historical scenario, not current activity)")
+    );
+  }
   if (ctx.calendarSummary !== undefined) {
     const s = JSON.stringify(ctx.calendarSummary);
     lines.push(`Calendar summary shown to the user: ${s.length > 1500 ? s.slice(0, 1500) + "…" : s}`);

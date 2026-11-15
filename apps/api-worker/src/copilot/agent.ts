@@ -14,6 +14,7 @@ import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
 import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
 import { buildSystemPrompt } from "./prompt";
+import { createRealtimeTools } from "./realtime";
 import { createFireTools } from "./tools";
 import { createWebTools } from "./web";
 
@@ -60,8 +61,10 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
 
     const data = createFireData(this.env);
     const webTools = createWebTools(this.env);
+    const realtimeTools = createRealtimeTools(this.env.REALTIME, () => this.state.context);
     const tools: ToolSet = {
       ...createFireTools({ data, memory: this.memory, getContext: () => this.state.context }),
+      ...realtimeTools,
       ...webTools
     };
 
@@ -77,7 +80,8 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
         context: this.state.context,
         memories: this.memory.list(),
         dataSource: data.source,
-        webSearchEnabled: "web_search" in webTools
+        webSearchEnabled: "web_search" in webTools,
+        realtimeEnabled: "get_live_incidents" in realtimeTools
       }),
       messages: await convertToModelMessages(this.messages.slice(-MODEL_WINDOW), {
         tools,

@@ -46,6 +46,8 @@ export interface IncidentState {
   sumLon: number;
   frpTotal: number;
   frpMax: number;
+  /** Sensor of the peak-FRP detection (FRP is not harmonized across sensors). */
+  frpMaxSensor?: Sensor | null;
   firstT: number;
   lastT: number;
   bbox: Bbox;
@@ -70,6 +72,7 @@ export interface IncidentSummary {
   areaKm2: number;
   frpTotalMw: number;
   frpMaxMw: number;
+  frpMaxSensor: Sensor | null;
   firstSeen: number;
   lastSeen: number;
   centroid: [lon: number, lat: number];
@@ -89,6 +92,7 @@ export function emptyState(id: string, stream: string): IncidentState {
     sumLon: 0,
     frpTotal: 0,
     frpMax: 0,
+    frpMaxSensor: null,
     firstT: Number.POSITIVE_INFINITY,
     lastT: Number.NEGATIVE_INFINITY,
     bbox: [180, 90, -180, -90],
@@ -108,7 +112,10 @@ export function applyDetections(s: IncidentState, ds: Detection[], streamT: numb
     s.sumLat += d.lat;
     s.sumLon += d.lon;
     s.frpTotal += d.frp;
-    s.frpMax = Math.max(s.frpMax, d.frp);
+    if (d.frp > s.frpMax || !s.frpMaxSensor) {
+      s.frpMax = Math.max(s.frpMax, d.frp);
+      s.frpMaxSensor = d.sensor;
+    }
     s.firstT = Math.min(s.firstT, d.t);
     s.lastT = Math.max(s.lastT, d.t);
     s.bbox = [Math.min(s.bbox[0], d.lon), Math.min(s.bbox[1], d.lat), Math.max(s.bbox[2], d.lon), Math.max(s.bbox[3], d.lat)];
@@ -172,6 +179,7 @@ export function summarize(s: IncidentState, streamT = s.streamT): IncidentSummar
     areaKm2: round1(areaKm2(s)),
     frpTotalMw: round1(s.frpTotal),
     frpMaxMw: round1(s.frpMax),
+    frpMaxSensor: s.frpMaxSensor ?? null,
     firstSeen: s.firstT,
     lastSeen: s.lastT,
     centroid: [round4(s.sumLon / n), round4(s.sumLat / n)],

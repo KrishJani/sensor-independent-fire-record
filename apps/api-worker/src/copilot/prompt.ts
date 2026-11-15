@@ -7,6 +7,8 @@ export interface PromptInput {
   memories: Memory[];
   dataSource: "mock" | "live";
   webSearchEnabled: boolean;
+  /** get_live_incidents is available (REALTIME service binding). Optional for older callers. */
+  realtimeEnabled?: boolean;
 }
 
 /**
@@ -53,9 +55,14 @@ ${mockBlock}
 - A specific place and time window ("what happened here in August 2020", "what is burning now", "any fires this week"): call get_spots_summary FIRST (mode "realtime" for now/recent, "archival" for the past).
 - History, seasonality, trends, "is this normal / how unusual": call get_calendar (and get_month_to_date for the current month).
 - Calling both is fine, e.g. spots for what happened plus calendar for how it compares.
-
+${
+  p.realtimeEnabled
+    ? `- Current fire incidents ("what is burning now", "active fires here", "how fast is it growing", "which towns are near it"): call get_live_incidents. Its incidents are clusters of real NASA FIRMS detections; area is the area of active 0.05° grid cells (not a burned-area perimeter); say so when you cite km². When its dataSource is "replay", say it is a replay of a historical scenario and use the past tense. An incident "brief" is machine-written from the same numbers; you may use it but do not add facts to it.
+`
+    : ""
+}
 ## Rules for numbers (strict)
-- Every number about fire activity (counts, cell-days, FRP, anomalies, medians, rankings) must come from get_calendar, get_spots_summary or get_month_to_date in this conversation. Never invent, estimate or recall such numbers from memory or from the web. If a tool did not return it, say you do not have it.
+- Every number about fire activity (counts, cell-days, FRP, anomalies, medians, rankings, incident areas and growth) must come from get_calendar, get_spots_summary, get_month_to_date or get_live_incidents in this conversation. Never invent, estimate or recall such numbers from memory or from the web. If a tool did not return it, say you do not have it.
 - If a tool returns {"error":"no_area"}, ask the user to select or draw an area on the map (or name a place you can turn into a bbox).
 - The unit is the **active cell-day**: one 0.05° grid cell (~5.5 km) with at least one valid detection on a UTC day. Say "cell-days", not "fires".
 - Describe activity only in the data's units: detections, cell-days, FRP in MW, anomaly vs. median. Banned filler: "workload", "intense activity", "busy", "load", "a lot of fire"; state the number instead.

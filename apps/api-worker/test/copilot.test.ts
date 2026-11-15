@@ -400,3 +400,59 @@ describe("answer post-processor", async () => {
     expect(pp.userOwnsArea(messages.slice(1))).toBe(false);
   });
 });
+
+describe("get_live_incidents (realtime service binding)", async () => {
+  const { getLiveIncidents } = await import("../src/copilot/realtime");
+  const incident = {
+    id: "replay-abc123def0.4",
+    status: "active",
+    significant: true,
+    mergedInto: null,
+    detections: 3550,
+    cells: 71,
+    areaKm2: 1718.9,
+    frpMaxMw: 6718,
+    frpMaxSensor: "VIIRS",
+    firstSeen: Date.UTC(2020, 7, 18, 6, 7),
+    lastSeen: Date.UTC(2020, 7, 19, 21, 42),
+    centroid: [-122.209, 38.551],
+    bbox: [-122.55, 38.3, -121.98, 38.88],
+    growthKm2PerDay: 1621.9,
+    sensors: { VIIRS: 3168, MODIS: 382 }
+  };
+  const calls: string[] = [];
+  const fake = {
+    async fetch(url: string) {
+      calls.push(url);
+      const u = new URL(url);
+      if (u.pathname.startsWith("/realtime/replay/")) return Response.json({ scenario: "quebec-2023-06", status: "running", progress: 0.42 });
+      if (u.pathname === "/realtime/incidents") return Response.json({ streamT: Date.UTC(2020, 7, 19, 22), count: 1, incidents: [incident] });
+      if (u.pathname.startsWith("/realtime/incidents/"))
+        return Response.json({
+          brief: { text: "The fire covers 1718.9 km2." },
+          enrichment: { places: { status: "ok", data: [{ name: "Napa", distanceKm: 12.1, direction: "SW" }] } }
+        });
+      return new Response("nope", { status: 404 });
+    }
+  };
+  const ctx = { tab: "realtime" as const, aoi: { bbox: [-123, 38, -121, 39] as [number, number, number, number] }, from: "2020-08-15", to: "2020-08-19" };
+
+  it("defaults to the map bbox and live stream, tags dataSource", async () => {
+    calls.length = 0;
+    const r = (await getLiveIncidents(fake, {}, ctx)) as Record<string, any>;
+    expect(r.dataSource).toBe("live");
+    expect(r.stream).toBe("live");
+    expect(calls[0]).toContain("bbox=-123%2C38%2C-121%2C39");
+    expect(calls[0]).toContain("stream=live");
+    expect(r.incidents[0]).toMatchObject({ areaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestTowns: ["Napa (12.1 km SW)"] });
+  });
+
+  it("accepts a replay stream (from args or context) and labels it as a replay", async () => {
+    const r = (await getLiveIncidents(fake, {}, { ...ctx, realtimeStream: "replay:abc123def0" })) as Record<string, any>;
+    expect(r.dataSource).toBe("replay");
+    expect(r.replay).toEqual({ scenario: "quebec-2023-06", status: "running", progress: 0.42 });
+    expect(r.note).toMatch(/REPLAY/);
+    const bad = (await getLiveIncidents(fake, { stream: "replay:../x" }, ctx)) as Record<string, any>;
+    expect(bad.error).toBe("bad_stream");
+  });
+});

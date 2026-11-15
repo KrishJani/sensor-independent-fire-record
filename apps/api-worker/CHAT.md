@@ -11,6 +11,7 @@ src/copilot/context.ts    zod schema for body.context sent by the web app
 src/copilot/memory.ts     memories table (aoi | preference | finding), dedupe, cap 50, keyword search
 src/copilot/tools.ts      get_calendar, get_spots_summary, get_month_to_date, remember, recall
 src/copilot/web.ts        web_fetch (always) + web_search (Tavily or Cloudflare)
+src/copilot/realtime.ts   get_live_incidents (realtime-worker via the REALTIME service binding)
 src/copilot/prompt.ts     system prompt (rebuilt every turn)
 src/copilot/disclaimer.ts demo-data notice inserted into the stream
 src/copilot/postprocess.ts final pass: text-part spacing, link verification, "your area" → "this area"
@@ -102,6 +103,7 @@ The final round was cut short when the account hit the **Workers AI free tier (1
 | `get_calendar` | `bbox?, from?, to?, months?` | summary (peak month/year, critical months, totals), climatology, annual, top 8 notable months |
 | `get_spots_summary` | `mode?, bbox?, from?, to?` | detection counts, cell-days per satellite, daily activity, last seen, top detections by FRP |
 | `get_month_to_date` | `bbox?` | this month so far vs historical median |
+| `get_live_incidents` | `stream?, bbox?, status?, limit?` | fire incidents from `apps/realtime-worker` (live or a replay): area of active cells, 24 h growth, detections, peak FRP with sensor, AI brief and nearest towns. Tagged `dataSource: "live" \| "replay"`. Only registered when the `REALTIME` service binding exists. |
 | `remember` | `kind, content` | saved memory |
 | `recall` | `query` | matching memories |
 | `web_search` | `query, limit?` | news/agency results (never used for counts) |
@@ -166,7 +168,8 @@ const { messages, sendMessage, status, stop, clearHistory } = useAgentChat({
   aoi: { bbox: [w, s, e, n], label?: string, geometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon } | null,
   from: "YYYY-MM-DD",
   to: "YYYY-MM-DD",
-  calendarSummary?: unknown   // what the calendar drawer shows; truncated to 1.5 KB in the prompt
+  calendarSummary?: unknown,  // what the calendar drawer shows; truncated to 1.5 KB in the prompt
+  realtimeStream?: "live" | `replay:${string}`  // stream the map shows (apps/realtime-worker/REALTIME.md)
 }
 ```
 
