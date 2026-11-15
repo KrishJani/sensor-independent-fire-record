@@ -748,3 +748,16 @@
   color: var(--label-secondary);
   white-space: nowrap;
 }
+
+/* Ended replay: a clear "finished, start again" state instead of a stopped clock */
+
+.rt-hud__ended .rt-hud__clock {
+  margin-bottom: 2px;
+}
+
+.rt-hud__ended-at {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--label-secondary);
+}

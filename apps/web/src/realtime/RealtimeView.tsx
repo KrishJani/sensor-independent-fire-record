@@ -114,8 +114,17 @@ export function RealtimeView({ map, onContextChange }: Props) {
     });
   }, [onContextChange, stream, contextLabel, scenario]);
 
-  const replayStatus = rt.replay?.status ?? replay.info?.status ?? 'running';
-  const replayProgress = rt.replay?.progress ?? replay.info?.progress ?? 0;
+  // Socket status for this stream, or the polled ReplayInfo; an ended state from either wins.
+  const wsReplay = rt.replay?.stream === stream ? rt.replay : null;
+  const ended = (s?: string) => s === 'done' || s === 'stopped' || s === 'error';
+  const replayStatus =
+    [wsReplay?.status, replay.info?.status].find(ended) ??
+    wsReplay?.status ??
+    replay.info?.status ??
+    'running';
+  const replayProgress = ended(replayStatus)
+    ? Math.max(wsReplay?.progress ?? 0, replay.info?.progress ?? 0)
+    : (wsReplay?.progress ?? replay.info?.progress ?? 0);
   const speedLabel =
     SPEEDS.find((s) => Number(s.id) === replay.info?.speed)?.label ??
     `${Math.round((replay.info?.speed ?? 12000) / 3600)} h/s`;

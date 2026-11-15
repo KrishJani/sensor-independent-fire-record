@@ -18,6 +18,13 @@ interface Props {
   onRestart(): void;
 }
 
+type EndedStatus = 'done' | 'stopped' | 'error';
+const ENDED_TEXT: Record<EndedStatus, string> = {
+  done: 'Replay finished',
+  stopped: 'Replay stopped',
+  error: 'Replay failed',
+};
+
 const STATUS_TEXT: Record<ReplayStatus, string> = {
   running: 'Playing',
   paused: 'Paused',
@@ -41,9 +48,21 @@ export function ReplayHud(p: Props) {
         </span>
       </div>
 
-      <div className="rt-hud__clock" aria-live="off">
-        {p.clock !== null ? fmtClock(p.clock) : 'Loading…'}
-      </div>
+      {ended ? (
+        <div className="rt-hud__ended" role="status">
+          <div className="rt-hud__clock">{ENDED_TEXT[p.status as EndedStatus]}</div>
+          {p.clock !== null && (
+            <p className="rt-hud__ended-at">
+              {p.status === 'done' ? 'Played through' : 'Stopped at'} {fmtClock(p.clock)}. Start it again
+              to watch the fires develop from June 1.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="rt-hud__clock" aria-live="off">
+          {p.clock !== null ? fmtClock(p.clock) : 'Loading…'}
+        </div>
+      )}
 
       <div className="rt-hud__bottom">
         <div
@@ -65,7 +84,7 @@ export function ReplayHud(p: Props) {
             </span>
           ) : ended ? (
             <button type="button" className="rt-button" disabled={p.busy} onClick={p.onRestart}>
-              <PlayIcon /> Restart
+              <PlayIcon /> Start again
             </button>
           ) : (
             <>

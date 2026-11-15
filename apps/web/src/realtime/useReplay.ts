@@ -4,6 +4,7 @@ import { clearPresenterKey, presenterKey } from './presenter';
 import type { ReplayInfo } from './types';
 
 const STORAGE_KEY = 'skywalkers77.realtime.replay.v1';
+const STATUS_POLL_MS = 10_000;
 
 function load(): { mode: 'live' | 'replay'; id: string | null } {
   try {
@@ -60,6 +61,19 @@ export function useReplay() {
       alive = false;
     };
   }, []);
+
+  // The WebSocket normally reports the end, but a page that joined late or lost the socket may
+  // miss it; polling keeps the status honest so the HUD never shows a frozen "Playing" clock.
+  const liveId = info && (info.status === 'running' || info.status === 'paused') ? info.id : null;
+  useEffect(() => {
+    if (!liveId) return;
+    const t = setInterval(() => {
+      getReplay(liveId)
+        .then((r) => setInfo((prev) => (prev?.id === r.id ? r : prev)))
+        .catch(() => {});
+    }, STATUS_POLL_MS);
+    return () => clearInterval(t);
+  }, [liveId]);
 
   const setMode = useCallback((m: 'live' | 'replay') => {
     setModeState(m);

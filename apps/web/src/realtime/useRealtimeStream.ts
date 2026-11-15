@@ -55,7 +55,8 @@ export interface RealtimeStreamState {
   points: PointBuffer;
   /** Stream time: replay clock, or the latest detection time for live. */
   clock: number | null;
-  replay: { status: ReplayStatus; progress: number } | null;
+  /** Replay status from the socket, tagged with the stream it belongs to. */
+  replay: { stream: StreamId; status: ReplayStatus; progress: number } | null;
   connection: ConnectionStatus;
 }
 
@@ -151,7 +152,7 @@ export function useRealtimeStream(
             advance(m.t);
             break;
           case 'replay.status':
-            setReplay({ status: m.status, progress: m.progress });
+            setReplay({ stream, status: m.status, progress: m.progress });
             break;
           case 'error':
             console.warn('[realtime] server error:', m.message);
