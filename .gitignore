@@ -32,3 +32,4 @@ data/
 
 # Model comparison output (apps/api-worker/scripts/compare-models.mjs)
 compare-models.json
+*.tsbuildinfo
