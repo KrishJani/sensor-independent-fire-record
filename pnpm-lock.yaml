@@ -79,6 +79,12 @@ importers:
 
   packages/harmonizer: {}
 
+  scripts/backfill:
+    dependencies:
+      '@repo/harmonizer':
+        specifier: workspace:*
+        version: link:../../packages/harmonizer
+
 packages:
 
   '@babel/code-frame@7.29.7':

@@ -7,7 +7,8 @@ Edge-native wildfire analytics platform harmonizing 26+ years of historical **MO
 - **`apps/web`**: React + Mapbox GL JS frontend deployed on Cloudflare Pages.
 - **`apps/api-worker`**: Public Hono API serving `/api/calendar` (merging PlanetScale Postgres + D1) and `/api/chat` (AI Gateway + Agent Memory).
 - **`apps/ingest-worker`**: Scheduled Cron Worker ingesting 3-hour `_NRT` detections into D1 and 24-hour finalized `_SP` detections into PlanetScale.
-- **`packages/harmonizer`**: Shared pure-TypeScript spatial gridding (`0.05°`), overpass deduplication, and dynamic $\alpha_m$ calibration math.
+- **`packages/harmonizer`**: Shared pure-TypeScript spatial gridding (`0.05°`), overpass deduplication, and monthly $\alpha_m = \sum V / \sum M$ calibration to VIIRS-equivalent cell-days (see [`docs/HARMONIZATION.md`](docs/HARMONIZATION.md)).
+- **`scripts/backfill`**: Historical FIRMS SP archive → harmonized CSVs in `data/harmonized/` (see [`scripts/backfill/README.md`](scripts/backfill/README.md)).
 - **`packages/db`**: SQL migrations and query helpers for Cloudflare D1 (SQLite) and PlanetScale (Postgres).
 
 ## First-Time Deployment Order

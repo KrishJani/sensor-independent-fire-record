@@ -9,8 +9,12 @@ export interface DateWindow {
 
 export const MODIS_RECORD_START: ISODate = '2000-11-01';
 
-/** Days of NRT data kept in D1 before Standard Processing (SP) supersedes it. */
-export const REALTIME_WINDOW_DAYS = 60;
+/**
+ * Rolling realtime window: D1 keeps exactly the last 92 days of NRT data; older dates are
+ * archival (Postgres). Must match D1_RETENTION_DAYS in apps/ingest-worker/wrangler.jsonc.
+ * TODO(stage 3): read the bounds from GET /api/meta instead of hardcoding.
+ */
+export const REALTIME_WINDOW_DAYS = 92;
 
 export function dateWindow(tab: Tab, today: ISODate = todayUTC()): DateWindow {
   const realtimeStart = addDays(today, -REALTIME_WINDOW_DAYS);

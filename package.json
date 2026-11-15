@@ -5,7 +5,9 @@
     "dev:web": "pnpm --filter web dev",
     "dev:api": "pnpm --filter api-worker exec wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
     "dev:ingest": "pnpm --filter ingest-worker exec wrangler dev --port 8788 --test-scheduled --persist-to ../../.wrangler/shared-state",
-    "typegen": "pnpm --filter api-worker --filter ingest-worker exec wrangler types"
+    "typegen": "pnpm --filter api-worker --filter ingest-worker exec wrangler types",
+    "test": "node --test \"packages/*/test/*.test.ts\" \"scripts/*/test/*.test.ts\"",
+    "backfill": "node --env-file-if-exists=.env scripts/backfill/src/cli.ts"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

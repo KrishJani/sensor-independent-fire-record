@@ -74,6 +74,7 @@ Both workers reference the **same Hyperdrive config ID** and the **same D1 `data
 | `MODIS_SP` | MODIS C6.1 | archival | `TERRA`, `AQUA` |
 | `VIIRS_SNPP_SP` | VIIRS 375 m | archival | `SNPP` |
 | `VIIRS_NOAA20_SP` | VIIRS 375 m | archival | `NOAA20` |
+| `VIIRS_NOAA21_SP` | VIIRS 375 m | archival | `NOAA21` (from 2023-03-01) |
 | `MODIS_NRT` | MODIS C6.1 | realtime | `TERRA`, `AQUA` |
 | `VIIRS_SNPP_NRT` | VIIRS 375 m | realtime | `SNPP` |
 | `VIIRS_NOAA20_NRT` | VIIRS 375 m | realtime | `NOAA20` |

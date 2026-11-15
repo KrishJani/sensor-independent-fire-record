@@ -1,0 +1,11 @@
+{
+  "$comment": "Fallback start dates for each satellite's FIRMS SP record. The FIRMS availability API (data/raw/availability.csv, written by `backfill availability`) overrides these when present. Outages: add confirmed instrument outages here (inclusive dates); the backfill also auto-detects zero-detection days (see docs/HARMONIZATION.md §4.2).",
+  "satellites": {
+    "TERRA":  { "source": "MODIS_SP",        "nrtSource": "MODIS_NRT",        "start": "2000-11-01" },
+    "AQUA":   { "source": "MODIS_SP",        "nrtSource": "MODIS_NRT",        "start": "2002-07-04" },
+    "SNPP":   { "source": "VIIRS_SNPP_SP",   "nrtSource": "VIIRS_SNPP_NRT",   "start": "2012-01-20" },
+    "NOAA20": { "source": "VIIRS_NOAA20_SP", "nrtSource": "VIIRS_NOAA20_NRT", "start": "2018-04-01" },
+    "NOAA21": { "source": "VIIRS_NOAA21_SP", "nrtSource": "VIIRS_NOAA21_NRT", "start": "2023-03-01" }
+  },
+  "outages": []
+}

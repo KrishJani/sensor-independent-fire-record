@@ -38,8 +38,8 @@ Vars:
   - `cells`: 100 deg²
   - `coarse`: unlimited
 - Dates are `YYYY-MM-DD` UTC.
-  - Archival: clamped to `[2000-11-01, sp_latest_date]`.
-  - Realtime: clamped to `(sp_latest_date, today]`, which is the D1 window.
+  - Archival: clamped to `[2000-11-01, today − 93 days]` (Postgres: SP, plus provisional NRT where SP is not yet published).
+  - Realtime: clamped to `[today − 92 days, today]`, which is the D1 window (`D1_RETENTION_DAYS = 92`).
 - `geometry` (POST bodies) is a GeoJSON `Polygon` or `MultiPolygon` with at most 500 vertices. It is reduced to a bbox for SQL, and then the harmonizer runs `pointInPolygon` on cell centers.
 - Errors are returned as `{ error: { code, message } }` with status 400, 422 or 500.
 - CORS is restricted to `ALLOWED_ORIGINS`.
@@ -71,7 +71,7 @@ The web app calls this once on load, and the Realtime tab polls it every 5 minut
 }
 ```
 
-`realtime.minDate` is `min(latestBySatellite) + 1 day`. That is the earliest date with no SP coverage in Postgres for at least one satellite.
+`realtime.minDate` is `today − 92 days`, and `archival.maxDate` is the day before it. The boundary is a fixed date (ingest-worker spec, §3.3), not the SP high-water mark. `latestBySatellite` is still reported so the UI can show which archival months are provisional (NRT not yet replaced by SP).
 
 ### `GET /api/archival/spots?bbox=&from=&to=&level=coarse|cells|points`
 

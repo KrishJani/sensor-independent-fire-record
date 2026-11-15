@@ -5,23 +5,27 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": [
-      "0 */3 * * *", // Every 3 hours: pull _NRT detections -> grid -> upsert to D1
-      "0 2 * * *"    // Daily at 02:00 UTC: pull finalized _SP detections -> PlanetScale & prune D1
-    ]
+    // ONE cron (SPEC §2). Every 3 h: NRT → D1, always. The 24 h SP job (→ Postgres) and the
+    // 92-day D1 → Postgres handover run on the same tick, gated by the KV key
+    // ingest:sp:last_success_at, so jobs never overlap and a missed daily run catches up.
+    "crons": ["0 */3 * * *"]
   },
   "vars": {
-    "NRT_LOOKBACK_DAYS": "2",
-    "SP_LOOKBACK_DAYS": "3",
-    "D1_RETENTION_DAYS": "150"
+    "SP_INTERVAL_HOURS": "24",
+    "NRT_DAY_RANGE": "2",
+    // Rolling realtime window. D1 keeps exactly the last 92 days; older dates are handed
+    // over to Postgres (SP if published, else provisional NRT that SP later replaces).
+    "D1_RETENTION_DAYS": "92",
+    "FIRMS_MAX_TX_PER_RUN": "1500"
   },
   "d1_databases": [
     {
       "binding": "NRT_DB",
       "database_name": "firms-nrt-cells",
       // Paste the exact database_id generated when deploying api-worker
-      // (or use "67676767" temporarily for local-only wrangler dev)
-      "database_id": "<PASTE_SHARED_D1_DATABASE_ID>"
+      // (any placeholder works for local-only `wrangler dev`)
+      "database_id": "<PASTE_SHARED_D1_DATABASE_ID>",
+      "migrations_dir": "../../packages/db/d1"
     }
   ],
   "hyperdrive": [
@@ -29,5 +33,14 @@
       "binding": "HYPERDRIVE",
       "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
     }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "INGEST_STATE",
+      // Same namespace id in api-worker (read-only there). Create with:
+      //   npx wrangler kv namespace create INGEST_STATE
+      "id": "<PASTE_SHARED_KV_NAMESPACE_ID>"
+    }
   ]
+  // secret: FIRMS_MAP_KEY  →  npx wrangler secret put FIRMS_MAP_KEY   (local: apps/ingest-worker/.dev.vars)
 }
