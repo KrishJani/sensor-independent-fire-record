@@ -9,6 +9,21 @@ export interface Region {
   id: string;
   name: string;
   bbox: Bbox;
+  /** Regions sharing a group tile without overlap; group totals are sums of the regions. */
+  group?: string;
+  /** Ids of earlier regions whose bboxes are cut out of this one. */
+  exclude?: string[];
+}
+
+/** The bboxes a region must exclude (resolved from ids). */
+export function excludedBboxes(cfg: RegionsConfig, r: Region): Bbox[] {
+  return (r.exclude ?? []).map((id) => getRegion(cfg, id).bbox);
+}
+
+/** Point-in-region with exclusions (bboxes are inclusive on all edges, so ties go to the earlier region). */
+export function regionContains(r: Region, excluded: Bbox[], lat: number, lon: number): boolean {
+  const inB = (b: Bbox) => lon >= b[0] && lat >= b[1] && lon <= b[2] && lat <= b[3];
+  return inB(r.bbox) && !excluded.some(inB);
 }
 
 export interface RegionsConfig {

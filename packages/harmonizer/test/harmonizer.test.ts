@@ -323,7 +323,7 @@ describe('validation', () => {
 describe('anomalies', () => {
   const cal = (vals: [number, number][]): H.CalendarCell[] =>
     vals.map(([year, v]) => ({
-      year, month: 8, harmonizedCellDays: v, rawDetections: 0, unscaledCellDays: 0, modisScaledCellDays: 0, nModisDays: 0, modisCellDays: 0, viirsCellDays: 0, sourceMix: 1, nDays: 31,
+      year, month: 8, harmonizedCellDays: v, rawDetections: 0, unscaledCellDays: 0, modisScaledCellDays: 0, nModisDays: 0, scaledCellDays: 0, harmonizedLo: null, harmonizedHi: null, modisCellDays: 0, viirsCellDays: 0, sourceMix: 1, nDays: 31,
       nViirsDays: 31, nModisScaledDays: 0, nNoneDays: 0, peakFrpMw: null, peakFrpSensor: null, complete: true,
     }));
   it('median, robust z and class against a known baseline (target year excluded)', () => {
@@ -499,5 +499,90 @@ describe('activity-dependent α (Poisson GLM)', () => {
     // Out-of-sample validation runs and the model beats the constant ratio on this data.
     const v = H.validateModel(daily, av, model, { years: [2013, 2016] });
     assert.ok(v.configs.TA.loyo.mdape! <= v.configs.TA.loyoConstantRatio.mdape!);
+  });
+});
+
+describe('two-component α (v1.2): VIIRS-only background + scaled MODIS', () => {
+  // Noise-free synthetic: V = n·b_m + n·e^{a_m}·r^β, activity varying by year.
+  const synth = (beta: number, b: (m: number) => number, a: (m: number) => number) => {
+    const pairs: H.MonthPair[] = [];
+    for (let y = 2013; y <= 2021; y++)
+      for (let m = 1; m <= 12; m++) {
+        const n = 30;
+        const rate = 1 + ((y * 7 + m * 3) % 40);
+        pairs.push({ year: y, month: m, n, m: rate * n, v: n * b(m) + n * Math.exp(a(m)) * rate ** beta });
+      }
+    return pairs;
+  };
+
+  it('recovers background, intercepts and β', () => {
+    const f = H.fitAlphaGLM(synth(0.85, (m) => 2 + m / 4, () => 0.4), { background: true });
+    assert.ok(Math.abs(f.beta - 0.85) < 0.01, `beta ${f.beta}`);
+    for (let m = 1; m <= 12; m++) assert.ok(Math.abs(f.b[m - 1] - (2 + m / 4)) / (2 + m / 4) < 0.05, `b_${m} ${f.b[m - 1]}`);
+  });
+
+  it('finds no background when there is none (boundary check), and nests v1.1', () => {
+    const pairs = synth(0.8, () => 0, () => 0.6);
+    const f = H.fitAlphaGLM(pairs, { background: true });
+    assert.ok(f.b.every((x) => x === 0));
+    assert.ok(Math.abs(f.beta - 0.8) < 1e-6);
+  });
+
+  it('α_eff = b/r + e^a·r^(β−1): month totals reproduce the model mean', () => {
+    const mc = H.fitModelConfig(synth(0.85, () => 3, () => 0.4), 'TA', { years: [2013, 2021] });
+    assert.ok(mc.backgroundShare > 0.05 && mc.backgroundShare < 0.9, `share ${mc.backgroundShare}`);
+    const rate = mc.typicalRate[6];
+    const al = H.alphaAt(mc, 7, rate);
+    const direct = mc.background[6] / rate + Math.exp(mc.a[6] + (mc.beta - 1) * Math.log(rate));
+    assert.ok(Math.abs(al - direct) < 1e-12);
+    assert.ok(mc.test!.df === 13 && mc.test!.p < 1e-6); // constant ratio rejected
+  });
+
+  it('chi-square tail probabilities are right', () => {
+    assert.ok(Math.abs(H.chi2Sf(3.841, 1) - 0.05) < 1e-3);
+    assert.ok(Math.abs(H.chi2Sf(22.362, 13) - 0.05) < 1e-3);
+  });
+});
+
+describe('noise-aware validation and uncertainty bands (v1.2)', () => {
+  it('a correct model on noisy data passes the noise-aware bias check; bands bracket truth', () => {
+    // Daily counts drawn with Poisson noise from V = b + e^a·M^0.8 per day; activity varies by month and year.
+    const rnd = H.mulberry32(11);
+    const pois = (l: number) => { let k = 0, p = 1; const L = Math.exp(-l); do { k++; p *= rnd(); } while (p > L); return k - 1; };
+    const daily: H.DailyCounts[] = [];
+    for (const d of H.dateRange('2013-01-01', '2021-12-31')) {
+      const lvl = 3 + ((+d.slice(0, 4) * 7 + +d.slice(5, 7) * 5) % 25);
+      const m = pois(lvl);
+      daily.push(counts(d, { TERRA: m, AQUA: m, SNPP: pois(1.5 + Math.exp(0.5) * lvl ** 0.8) }, m));
+    }
+    const av = avail({ TERRA: ['2013-01-01', '2021-12-31'], AQUA: ['2013-01-01', '2021-12-31'], SNPP: ['2013-01-01', '2021-12-31'] });
+    const model = H.fitAlphaModel(daily, av, { years: [2013, 2021] });
+    const v = H.validateModel(daily, av, model, { years: [2013, 2021], noiseSims: 40, seed: 3 });
+    assert.equal(v.biasCheck, 'noise-aware');
+    assert.equal(v.acceptance.unbiasedAcrossActivity, true, JSON.stringify(v.configs.TA.noise));
+    const u = v.configs.TA.uncertainty!;
+    assert.ok(u.monthly[0] < 1 && u.monthly[1] > 1 && u.annual[0] <= 1 && u.annual[1] >= 1);
+    assert.equal(v.confidence.level, 'ok');
+  });
+
+  it('bands widen only the MODIS-scaled part of a month', () => {
+    const c = { harmonizedCellDays: 100, scaledCellDays: 40 } as H.CalendarCell;
+    H.applyBands([c], [0.8, 1.25]);
+    assert.equal(c.harmonizedLo, 100 - 40 * 0.2);
+    assert.equal(c.harmonizedHi, 100 + 40 * 0.25);
+  });
+});
+
+describe('model selection (v1.2)', () => {
+  it('uses the constant ratio when the data do not reject it', () => {
+    // Proportional data with Poisson noise: V ~ Poisson(2·M), no background, β = 1.
+    const rnd = H.mulberry32(5);
+    const pois = (l: number) => { let k = 0, p = 1; const L = Math.exp(-l); do { k++; p *= rnd(); } while (p > L); return k - 1; };
+    const pairs: H.MonthPair[] = [];
+    for (let y = 2013; y <= 2021; y++) for (let m = 1; m <= 12; m++) { const M = 5 + ((y * 3 + m) % 20); pairs.push({ year: y, month: m, n: 30, m: M, v: pois(2 * M) }); }
+    const mc = H.fitModelConfig(pairs, 'TA', { years: [2013, 2021] });
+    assert.equal(mc.kind, 'ratio');
+    assert.match(mc.reason!, /do not reject the constant ratio/);
+    assert.ok(mc.test!.p > 0.05);
   });
 });

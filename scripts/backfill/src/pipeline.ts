@@ -22,6 +22,7 @@ import {
   fmt,
   alphaRow,
   buildCalendar,
+  applyBands,
   buildCellDays,
   calendarRow,
   cellDayRow,
@@ -54,6 +55,7 @@ import {
   type ResolutionDaily,
   withoutDates,
   MODIS_CONFIGS,
+  type Bbox,
   type DailyCounts,
   type Detection,
   type ParseStats,
@@ -66,6 +68,8 @@ import { parseAvailability } from './firms.ts';
 
 export interface RunOptions {
   region: Region;
+  /** Bboxes of earlier regions in the same group, cut out of this region (no overlap). */
+  excludeBboxes?: Bbox[];
   from: string;
   to: string;
   rawDir: string;
@@ -79,6 +83,8 @@ export interface RunOptions {
   autoOutages: boolean;
   minOtherCellsForOutage: number;
   bootstrapReps: number;
+  /** Parametric-bootstrap simulations for the noise-aware bias check (0 = fixed threshold). */
+  noiseSims?: number;
   /** Grid sizes (degrees) for the sensitivity diagnostic; empty = off. */
   gridSensitivity: number[];
   dryRun: boolean;
@@ -154,7 +160,9 @@ export async function runBackfill(o: RunOptions) {
   const t0 = Date.now();
   const { log } = o;
   const sensors = loadSensors();
-  const inside = (d: Detection) => d.acqDate >= o.from && d.acqDate <= o.to && inBbox(d.lat, d.lon, o.region.bbox);
+  const excluded = o.excludeBboxes ?? [];
+  const inside = (d: Detection) =>
+    d.acqDate >= o.from && d.acqDate <= o.to && inBbox(d.lat, d.lon, o.region.bbox) && !excluded.some((b) => inBbox(d.lat, d.lon, b));
   const isNrtRow = (d: Detection) => /NRT/i.test(d.version);
 
   const inputs = listCsvFiles(o.rawDir).map((p) => describeInput(p, o.rawDir));
@@ -300,7 +308,15 @@ export async function runBackfill(o: RunOptions) {
   const effective = effectiveAlphas(model, daily, availability, { from: o.from, to: o.to });
   const harmonized = harmonizeDaily(daily, availability, resolverFromEffective(effective, model), { from: o.from, to: o.to });
   const calendar = buildCalendar(harmonized);
-  const validation = validateModel(daily, availability, model, { years: o.calibrationYears, k: o.k, minMonthlyCells: o.minMonthlyCells });
+  const validation = validateModel(daily, availability, model, {
+    years: o.calibrationYears,
+    k: o.k,
+    minMonthlyCells: o.minMonthlyCells,
+    noiseSims: o.noiseSims ?? 0,
+    seed: 20260101,
+  });
+  // 90% bands on the MODIS-scaled part of each month, from the held-out (LOYO) errors.
+  applyBands(calendar, validation.configs.TA.uncertainty?.monthly ?? null);
   const alpha = modelAsTable(model);
   // Same availability for every grid size, so cell size is the only variable.
   const sensitivity: GridSensitivityReport | null = perGrid.size

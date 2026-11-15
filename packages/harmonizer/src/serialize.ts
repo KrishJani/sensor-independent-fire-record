@@ -92,7 +92,7 @@ export function alphaRow(a: Alpha): string {
 }
 
 export const CALENDAR_HEADER =
-  'year,month,harmonized_cell_days,modis_cell_days,viirs_cell_days,source_mix,n_days,n_viirs_days,n_modis_scaled_days,n_none_days,peak_frp_mw,peak_frp_sensor,complete,raw_detections,unscaled_cell_days,modis_scaled_cell_days,n_modis_days';
+  'year,month,harmonized_cell_days,modis_cell_days,viirs_cell_days,source_mix,n_days,n_viirs_days,n_modis_scaled_days,n_none_days,peak_frp_mw,peak_frp_sensor,complete,raw_detections,unscaled_cell_days,modis_scaled_cell_days,n_modis_days,scaled_cell_days,harmonized_lo,harmonized_hi';
 
 export function calendarRow(c: CalendarCell): string {
   return line([
@@ -113,6 +113,9 @@ export function calendarRow(c: CalendarCell): string {
     c.unscaledCellDays,
     fmt(c.modisScaledCellDays, 2),
     c.nModisDays,
+    fmt(c.scaledCellDays, 2),
+    fmt(c.harmonizedLo, 2),
+    fmt(c.harmonizedHi, 2),
   ]);
 }
 

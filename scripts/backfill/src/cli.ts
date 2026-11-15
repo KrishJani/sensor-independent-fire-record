@@ -4,11 +4,13 @@
 
 import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { getRegion, loadRegions, REPO_ROOT, SP_SOURCES } from './config.ts';
+import { excludedBboxes, getRegion, loadRegions, REPO_ROOT, SP_SOURCES } from './config.ts';
 import { download, fetchAvailability } from './download.ts';
 import { FirmsFatalError } from './firms.ts';
 import { runBackfill, verifyOutputs } from './pipeline.ts';
 import { runGlobal } from './global.ts';
+import { aggregateGroup } from './aggregate.ts';
+import { buildReport } from './report.ts';
 import { DEFAULT_SENSITIVITY_GRIDS, alphaAt, fmt } from '../../../packages/harmonizer/src/index.ts';
 
 const { positionals, values } = parseArgs({
@@ -22,6 +24,7 @@ const { positionals, values } = parseArgs({
     sources: { type: 'string', default: SP_SOURCES.join(',') },
     'calibration-years': { type: 'string' },
     'bootstrap-reps': { type: 'string', default: '1000' },
+    'noise-sims': { type: 'string', default: '200' },
     'grid-sensitivity': { type: 'boolean', default: false },
     'grid-sizes': { type: 'string', default: DEFAULT_SENSITIVITY_GRIDS.join(',') },
     'min-interval-ms': { type: 'string', default: '400' },
@@ -29,6 +32,7 @@ const { positionals, values } = parseArgs({
     'no-auto-outages': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
+    group: { type: 'string', default: 'us' },
     quiet: { type: 'boolean', default: false },
   },
 });
@@ -75,6 +79,7 @@ async function main() {
       const cy = values['calibration-years']?.split('-').map(Number) as [number, number] | undefined;
       const res = await runBackfill({
         region,
+        excludeBboxes: excludedBboxes(cfg, region),
         from: values.from!,
         to,
         rawDir,
@@ -88,15 +93,17 @@ async function main() {
         autoOutages: !values['no-auto-outages'],
         minOtherCellsForOutage: 20,
         bootstrapReps: +values['bootstrap-reps']!,
+        noiseSims: +values['noise-sims']!,
         gridSensitivity: values['grid-sensitivity'] ? values['grid-sizes']!.split(',').map(Number) : [],
         dryRun: values['dry-run']!,
         log,
       });
       const mt = res.model.TA;
       const pc = (x: number | null) => (x === null ? 'n/a' : `${fmt(x * 100, 1)}%`.padStart(6));
-      console.log(`\nα model (TA = Terra∪Aqua): ${mt.kind === 'glm' ? 'activity-dependent (Poisson GLM)' : 'constant ratio'}` +
+      console.log(`\nα model (TA = Terra∪Aqua): ${mt.kind === 'glm' ? 'two-component (VIIRS-only background + activity-scaled MODIS)' : 'constant ratio'}` +
         `  β = ${fmt(mt.beta, 3)}${mt.betaCi ? ` (90% CI ${fmt(mt.betaCi[0], 3)}–${fmt(mt.betaCi[1], 3)})` : ''}` +
-        (mt.test ? `  test of β = 1: F = ${fmt(mt.test.f, 1)}, p = ${mt.test.p < 1e-4 ? '<0.0001' : fmt(mt.test.p, 4)}` : '') +
+        `  background = ${fmt(mt.backgroundShare * 100, 1)}% of VIIRS` +
+        (mt.test ? `\n  test vs constant ratio: F(${mt.test.df}) = ${fmt(mt.test.f, 1)}, p = ${mt.test.p < 1e-4 ? '<0.0001' : fmt(mt.test.p, 4)}` : '') +
         (mt.reason ? `\n  note: ${mt.reason}` : ''));
       console.log('month  α typical  (90% CI)     α quiet  α busy   cells/day (min–typ–max)');
       for (let i = 0; i < 12; i++) {
@@ -108,6 +115,9 @@ async function main() {
       for (const [name, sc] of [['in-sample', v.inSample], ['leave-one-year-out', v.loyo], ['  constant ratio (β = 1), LOYO', v.loyoConstantRatio]] as const)
         console.log(`  ${name.padEnd(34)} ${pc(sc.mdape)}  ${pc(sc.topDecileBias)}  ${pc(sc.bottomQuartileBias).padStart(9)}  ${pc(sc.totalBias)}  ${sc.residualBeta === null ? 'n/a' : `${fmt(sc.residualBeta, 3)} ±${fmt(sc.residualBetaSe, 3)}`}`);
       console.log(`  transition step ${pc(v.continuity.medianStepPct)}  (worst year ${pc(v.continuity.worstYearPct)})`);
+      if (v.noise) console.log(`  noise check (${v.noise.sims} sims, dispersion ${fmt(v.noise.dispersion, 1)}): a correct model scores residual β ${fmt(v.noise.residualBeta[0], 2)}–${fmt(v.noise.residualBeta[2], 2)}, error ${pc(v.noise.mdape[0]).trim()}–${pc(v.noise.mdape[2]).trim()}; real residual β at percentile ${fmt(v.noise.realResidualBetaPct, 0)}`);
+      if (v.uncertainty) console.log(`  90% band on MODIS-scaled values: month ×${fmt(v.uncertainty.monthly[0], 2)}–${fmt(v.uncertainty.monthly[1], 2)}, year ×${fmt(v.uncertainty.annual[0], 2)}–${fmt(v.uncertainty.annual[1], 2)}`);
+      console.log(`  confidence: ${res.validation.confidence.level}${res.validation.confidence.reason ? ` (${res.validation.confidence.reason})` : ''};  bias check: ${res.validation.biasCheck}`);
       console.log('acceptance:', JSON.stringify(res.validation.acceptance));
       if (res.sensitivity) {
         const pct = (x: number | null) => (x === null ? 'n/a' : `${fmt(x * 100, 1)}%`);
@@ -142,6 +152,23 @@ async function main() {
       if (g.pending.length) console.log(`\nnot finished — keep (${g.pending.length}):\n  ${g.pending.join('\n  ')}`);
       return;
     }
+    case 'aggregate': {
+      const g = await aggregateGroup(cfg, values.group!, join(REPO_ROOT, 'data/harmonized'), log);
+      const pc = (x: unknown) => (typeof x === 'number' ? `${fmt(x * 100, 1)}%` : 'n/a').padStart(7);
+      console.log(`\n${values.group} = sum of ${g.summaries.length} regions, ${g.from} → ${g.to}\n`);
+      console.log('region               model   β      LOYO   (β=1)   busiest (β=1)    quietest (β=1)    step   accept');
+      for (const s of g.summaries as Record<string, number | string | boolean | null>[])
+        console.log(`${String(s.region).padEnd(19)}  ${String(s.kind).padEnd(5)}  ${fmt(s.beta as number, 3)}  ${pc(s.loyo_mdape)} ${pc(s.loyo_mdape_constant_ratio)}  ${pc(s.top10_bias)} ${pc(s.top10_bias_constant_ratio)}  ${pc(s.bottom25_bias)} ${pc(s.bottom25_bias_constant_ratio)}  ${pc(s.transition_step)}   ${[s.acc_loyo, s.acc_no_step, s.acc_unbiased].map((x) => (x === null ? '–' : x ? '✓' : '✗')).join('')}`);
+      console.log('\nMODIS × α vs observed VIIRS, whole group, days where every region had both:');
+      for (const [y, o] of g.overlap) console.log(`  ${y}  VIIRS ${String(o.vi).padStart(7)}  MODIS×α ${fmt(o.ms, 0).padStart(7)}  ${o.vi ? ((o.ms / o.vi - 1) * 100 >= 0 ? '+' : '') + fmt((o.ms / o.vi - 1) * 100, 1) + '%' : ''}`);
+      return;
+    }
+    case 'report': {
+      // --group us  or  --region california  → docs/viz/<id>-before-after.html
+      const asGroup = process.argv.includes('--group');
+      console.log(buildReport(cfg, asGroup ? { group: values.group! } : { region: region.id }, REPO_ROOT));
+      return;
+    }
     case 'verify': {
       const r = verifyOutputs(outDir);
       if (r.ok) console.log(`verify OK: ${outDir}`);
@@ -152,7 +179,7 @@ async function main() {
       return;
     }
     default:
-      throw new Error(`unknown command "${cmd}" (availability | download | run | global | verify)`);
+      throw new Error(`unknown command "${cmd}" (availability | download | run | global | aggregate | report | verify)`);
   }
 }
 

@@ -1,0 +1,671 @@
+{
+  "harmonizer_version": "1.2.0",
+  "region": {
+    "id": "southeast",
+    "group": "us",
+    "name": "Southeast",
+    "bbox": [
+      -94,
+      24,
+      -75,
+      37
+    ],
+    "exclude": [
+      "california",
+      "pacific_northwest",
+      "southwest",
+      "interior_west",
+      "great_plains"
+    ]
+  },
+  "range": {
+    "from": "2000-11-01",
+    "to": "2025-12-31"
+  },
+  "calibration_years": [
+    2013,
+    2021
+  ],
+  "alpha_shrinkage_k": 50,
+  "static_mask_min_detections": 3,
+  "auto_outages": true,
+  "grid_sensitivity": null,
+  "inputs": {
+    "count": 48,
+    "digest": "77e86543b2fbc58297bb5f84e8b54e66c9d0433b5da4675caf04ca1f6a14b145",
+    "skipped": [],
+    "files": [
+      {
+        "path": "archive/modis_2000_United_States.csv",
+        "sha256": "828c387fc664a2317d4b53988fb07893f7f6ac74d759d98af1cfcec6be8e211b",
+        "rows": 3781,
+        "parsed": 3781,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2001_United_States.csv",
+        "sha256": "887d81f34a76a6461c9788f868965e24d907c9045b619478fb38498fd9191901",
+        "rows": 44941,
+        "parsed": 44941,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2002_United_States.csv",
+        "sha256": "f6eaf4b0e42d55f6cbde1bcea80e87197e7e889d3f722557e642aeed2a2441e9",
+        "rows": 79715,
+        "parsed": 79715,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2003_United_States.csv",
+        "sha256": "69768c918f4f1b98506200f7f35fbd0953b2309990273a84b7e5559a4147f8c8",
+        "rows": 114471,
+        "parsed": 114471,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2004_United_States.csv",
+        "sha256": "a27be492f0afde16cc6d66fe0287b904b0312a6c54ab548ec61b6ed4912ea3af",
+        "rows": 158385,
+        "parsed": 158385,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2005_United_States.csv",
+        "sha256": "60eef7a5497c4e29b25f21655cbd56c722e4b03c7909318deed5bd51a688392c",
+        "rows": 171160,
+        "parsed": 171160,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2006_United_States.csv",
+        "sha256": "fdab9f3e3346c915191035c2afaf6b70d6249e4c9e84a374bbb3006de9277320",
+        "rows": 126737,
+        "parsed": 126737,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2007_United_States.csv",
+        "sha256": "8e85f4ec10f1aa91598efce79c77bb5ca27181aa72556e00a5129c7f28864160",
+        "rows": 142420,
+        "parsed": 142420,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2008_United_States.csv",
+        "sha256": "004596cff60e50d064149fff32c781ec51f14d9078787ba93a668fea7655cee3",
+        "rows": 119797,
+        "parsed": 119797,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2009_United_States.csv",
+        "sha256": "d8f3af0dd28182593d197ae0fea25a73e4189be2a4b50fe7eab03688cef05594",
+        "rows": 115174,
+        "parsed": 115174,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2010_United_States.csv",
+        "sha256": "daa9fe7565393da5520cdb13e07525916fd2a4522f0e03cc4de3dffef2b2c59f",
+        "rows": 98322,
+        "parsed": 98322,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2011_United_States.csv",
+        "sha256": "25a62ab00492c04ebf0a68c211cf5c2b78536b1616b5481bb1aa85fbee3df7d4",
+        "rows": 123867,
+        "parsed": 123867,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2012_United_States.csv",
+        "sha256": "d11a4d7c204981f27d9d7020b7367be49f64976b8e25464271240602d144295f",
+        "rows": 137295,
+        "parsed": 137295,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2013_United_States.csv",
+        "sha256": "2ce080c702a7381bba6a9d0b2926e608da8b37db8e1b5a1ce8b905499a8aecc7",
+        "rows": 102348,
+        "parsed": 102347,
+        "rejected": {
+          "bad_frp": 1
+        }
+      },
+      {
+        "path": "archive/modis_2014_United_States.csv",
+        "sha256": "655279188cce2caa6668f4c671fb5e6ae36259e01c4e9aaa6f0499621c8f96eb",
+        "rows": 98871,
+        "parsed": 98871,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2015_United_States.csv",
+        "sha256": "67d731cc9e42d4279421040c33f7d23a6458ae5196b0aa445fa3115866390b5b",
+        "rows": 146984,
+        "parsed": 146984,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2016_United_States.csv",
+        "sha256": "55f87d1248deb753f3076633809004b136f5937aeab5bb39872b13aad2f03b3a",
+        "rows": 112736,
+        "parsed": 112736,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2017_United_States.csv",
+        "sha256": "d5256d2c936c4cc0cf84fc8fdc4aedc3ed5e7bd00e6080e4c377da51fa6b7009",
+        "rows": 152702,
+        "parsed": 152702,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2018_United_States.csv",
+        "sha256": "5e6bf58957d2735abde985f9bbc205973f2dd5cea8705968b70c6e60afe23855",
+        "rows": 130986,
+        "parsed": 130986,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2019_United_States.csv",
+        "sha256": "a478e23cd205e1367aaa3d543da00f15036ee5e0d81071c530ee78cd1368555e",
+        "rows": 107213,
+        "parsed": 107213,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2020_United_States.csv",
+        "sha256": "466e2c7616fe1d813a7bfa66971160b64d6baf341fab22ffe8fac06dfbf7961a",
+        "rows": 153848,
+        "parsed": 153848,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2021_United_States.csv",
+        "sha256": "bc227a3c85f03fe847d5b96da87cc67588774043c0efa4f0c85179c12187f897",
+        "rows": 163687,
+        "parsed": 163687,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2022_United_States.csv",
+        "sha256": "20710b0b6c1630ca44d39c537abb7c10f9c0050f66770b936edc412ef0e4be76",
+        "rows": 130358,
+        "parsed": 130358,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2023_United_States.csv",
+        "sha256": "8f693b80488414db0494deac1081f4c658769618100e402a830fb823f8f6ec1f",
+        "rows": 94000,
+        "parsed": 94000,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2024_United_States.csv",
+        "sha256": "26c5f22e9d41bd8d5d22402eaf5293dc7a5bc7415d37da42cd2e0a3b78b95ca4",
+        "rows": 123712,
+        "parsed": 123712,
+        "rejected": {}
+      },
+      {
+        "path": "archive/modis_2025_United_States.csv",
+        "sha256": "2b66bf1932202eaa9ddbdf408e2ec590de2bd84abd6c634d68952d4d196c8730",
+        "rows": 109845,
+        "parsed": 109844,
+        "rejected": {
+          "bad_frp": 1
+        }
+      },
+      {
+        "path": "archive/viirs-jpss1_2018_United_States.csv",
+        "sha256": "2239e26a8eb8378d20b69beaf307ab49315b19e3ccf8db076a33c32280a75f8f",
+        "rows": 461477,
+        "parsed": 461477,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2019_United_States.csv",
+        "sha256": "e72e16e2cc21f1448ad16e3d70e2bdc2f9566065bd31d928a010b4987ac7f545",
+        "rows": 451429,
+        "parsed": 451429,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2020_United_States.csv",
+        "sha256": "665dccf07cc84acb3e23e128886394c2b7ece6f165f66569040685e98d0fd7a1",
+        "rows": 665078,
+        "parsed": 665078,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2021_United_States.csv",
+        "sha256": "9abbe7b1f7b58926b3b6a242c9b3ee9d59ba7c98b08ddc1e019d517fb8a6be21",
+        "rows": 670917,
+        "parsed": 670917,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2022_United_States.csv",
+        "sha256": "5896f97ed7a926afa42f715e9a53bd014eaf97ec56fe019be8eb36a9b8ea29d9",
+        "rows": 546431,
+        "parsed": 546431,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2023_United_States.csv",
+        "sha256": "4ba7e307439e9eb7ada988fddb80e5833f062da80b51b2253fe416e23234df69",
+        "rows": 390873,
+        "parsed": 390873,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2024_United_States.csv",
+        "sha256": "50051277ace45fd5dfa833efeafc118c7fd453c227e713c11c4804a11964b077",
+        "rows": 535136,
+        "parsed": 535136,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-jpss1_2025_United_States.csv",
+        "sha256": "e16cca6624e3aebee6b86b63348d74874a0d5dd21467b27d5bd6717d64c59357",
+        "rows": 485403,
+        "parsed": 485403,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2012_United_States.csv",
+        "sha256": "a53d3cd248de33920a6eac8bfcb7c6d67642ec4adbf2162427b2021ec4ea8a4d",
+        "rows": 536477,
+        "parsed": 536477,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2013_United_States.csv",
+        "sha256": "04a0b6ee7238bf349a2383fcecfa7c07d6df53ae99c4d46d634508b352fe741f",
+        "rows": 404761,
+        "parsed": 404761,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2014_United_States.csv",
+        "sha256": "f6689df5187d3965dd16483736487bc42f714e683684fdeebddd40733bc5ba18",
+        "rows": 377204,
+        "parsed": 377204,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2015_United_States.csv",
+        "sha256": "40239627dbcd773dda85e80d4ded6c2ef747c40d9c413cc3755be266f30e08ae",
+        "rows": 581042,
+        "parsed": 581042,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2016_United_States.csv",
+        "sha256": "beb561086694f612700a97c093f551a83835c53ab534fe430ddcfd0b4f301820",
+        "rows": 432975,
+        "parsed": 432975,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2017_United_States.csv",
+        "sha256": "72b71216f7d53afd8fd57384f2618e0805807208e9de88a76ea2e80c059ee7f4",
+        "rows": 596168,
+        "parsed": 596168,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2018_United_States.csv",
+        "sha256": "38963a7315959b2d6db42246c88ba06735e280507e47a70b16ead0620f967b79",
+        "rows": 556244,
+        "parsed": 556244,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2019_United_States.csv",
+        "sha256": "368ddcfce96b63e6a61791809b959ea7e1d0322ff3de04bbd241a8fe75a43eef",
+        "rows": 453400,
+        "parsed": 453400,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2020_United_States.csv",
+        "sha256": "309c1c97f0d81013a4ed28768c3078aafcf1cd49bc453b4591d66a5227dc8128",
+        "rows": 672822,
+        "parsed": 672822,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2021_United_States.csv",
+        "sha256": "4130c8ce327424bb9b1a54e09667f56fbe52d20649a09dcdd8f64d5e5689b9a9",
+        "rows": 664995,
+        "parsed": 664995,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2022_United_States.csv",
+        "sha256": "ec3dad0560ac49ae6111bc6981af65cf0debe9379b03737489f6b1e3775ccf6c",
+        "rows": 531089,
+        "parsed": 531089,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2023_United_States.csv",
+        "sha256": "d419abfb7d39d8040fd4487aee7e8003b1940ae5eb0cd95aa244cd7e303d4b4d",
+        "rows": 388672,
+        "parsed": 388672,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2024_United_States.csv",
+        "sha256": "b282c996b6929facc1d5726045e2ad14235a8ac10900daff08edaee9a8f2b200",
+        "rows": 484736,
+        "parsed": 484736,
+        "rejected": {}
+      },
+      {
+        "path": "archive/viirs-snpp_2025_United_States.csv",
+        "sha256": "e7df11c2739bf4dbec98d15dcc6cd7d5d19c1fc6edfc51750a5e3a1a6dd3102d",
+        "rows": 469809,
+        "parsed": 469809,
+        "rejected": {}
+      }
+    ]
+  },
+  "counts": {
+    "nrt_rows_skipped": 0,
+    "rows_outside_region_or_range": 11074861,
+    "filter": {
+      "seen": 3345630,
+      "kept": 2623317,
+      "droppedType": 477003,
+      "droppedMask": 126719,
+      "droppedConfidence": 118591,
+      "droppedFrpFloor": 0
+    },
+    "duplicates_removed": 1,
+    "detections": 2623316,
+    "cell_days": 1475684,
+    "static_mask_cells": 657,
+    "outage_days_detected": 323
+  },
+  "availability": {
+    "TERRA": {
+      "from": "2000-11-01",
+      "to": "2025-12-31",
+      "days": 9039
+    },
+    "AQUA": {
+      "from": "2002-07-04",
+      "to": "2025-12-31",
+      "days": 8452
+    },
+    "SNPP": {
+      "from": "2012-01-20",
+      "to": "2025-12-31",
+      "days": 5060
+    },
+    "NOAA20": {
+      "from": "2018-04-01",
+      "to": "2025-12-31",
+      "days": 2827
+    },
+    "NOAA21": null
+  },
+  "acceptance": {
+    "loyoMdapeWithin15pct": true,
+    "noStepAtTransition": true,
+    "unbiasedAcrossActivity": true
+  },
+  "outputs": {
+    "alpha_effective.csv": {
+      "sha256": "51d3abce3106b78f691698d6d81e45f57f37727dd774acaf5110f5d77344cb52",
+      "rows": 866
+    },
+    "alpha_model.json": {
+      "sha256": "0343d05d53df95a82c6a22a461a227ee8ac5ab28a09b1e3c48933bc721c433a7",
+      "rows": 632
+    },
+    "alpha_monthly.csv": {
+      "sha256": "0ca708ff5be3ded09f40476c395b328631d25a5abdcb52cf0674ad32f9a3614f",
+      "rows": 36
+    },
+    "calendar_monthly.csv": {
+      "sha256": "8d1efb2978df5d64c7941a61d9cf59121fd98358851a2a92d768ed5942a869b5",
+      "rows": 302
+    },
+    "cell_days/2000.csv": {
+      "sha256": "1753366ae24d4aad04745028539d87f1b24e3732f42a85c7b390e16302964b48",
+      "rows": 1204
+    },
+    "cell_days/2001.csv": {
+      "sha256": "90132d137f79f6e289eceef803c29c10e5c2f1d928b4d0609aa50492066b79cf",
+      "rows": 11478
+    },
+    "cell_days/2002.csv": {
+      "sha256": "e2c4e147ca721ff5036b647004efd3a9366e2bf38c58a0a99590af46eefcfebf",
+      "rows": 11867
+    },
+    "cell_days/2003.csv": {
+      "sha256": "969874598af5e8917f56179fde3875678f3aa77e14757fae279ae5cc62a29b81",
+      "rows": 19837
+    },
+    "cell_days/2004.csv": {
+      "sha256": "b5ecd513ea5ccae08c7a29e5f86d5fa11689818bdeee154a972d9ffb0dcbafd0",
+      "rows": 20795
+    },
+    "cell_days/2005.csv": {
+      "sha256": "4a907ef329447f171ece527bbcf60e9dbab5b43581e70635820e3a279693a36d",
+      "rows": 24997
+    },
+    "cell_days/2006.csv": {
+      "sha256": "6f2440f5371f7b9a7375feacd330dae132f0714af85990c0bb18254e6109572f",
+      "rows": 27512
+    },
+    "cell_days/2007.csv": {
+      "sha256": "519aeb8c841645d8f067034e908055722cc73a1a73bc1cc1d33a796b50a4fbf6",
+      "rows": 27916
+    },
+    "cell_days/2008.csv": {
+      "sha256": "c0a252833d89d3bd836219c0f6332ab6ee875f7483f9e5f980e96a39b712993e",
+      "rows": 25870
+    },
+    "cell_days/2009.csv": {
+      "sha256": "131555d9932a59ff60cac9896a170ca5997de6380b572e8a3724e988cd5851f7",
+      "rows": 18395
+    },
+    "cell_days/2010.csv": {
+      "sha256": "44e3b97b53c7696c661a0018572f1a21a11fbe8ef43c9da8a33f909fd315007c",
+      "rows": 25817
+    },
+    "cell_days/2011.csv": {
+      "sha256": "caba563f5cb86e200f3a31ea3be79f7095ad6a3e141ec53772d3714cdb261f25",
+      "rows": 28394
+    },
+    "cell_days/2012.csv": {
+      "sha256": "48b8b89a8ec250681639fcfd6f8cb3d96db0b24affd67d4ea8a1b5441eb18e85",
+      "rows": 58589
+    },
+    "cell_days/2013.csv": {
+      "sha256": "85cd2e05578050be6a52e317c53cbee727e2957eacb8798ce1584eaabcec0802",
+      "rows": 59574
+    },
+    "cell_days/2014.csv": {
+      "sha256": "9b864d4db93053fbc93aa6b6f34207ad811d743bbb763a2b12e3b4d3a73e3212",
+      "rows": 63355
+    },
+    "cell_days/2015.csv": {
+      "sha256": "cdcef23ca2a49a1955de276f601ff21be4e0e0a1b0e6655fd8a6d0346311cbf2",
+      "rows": 56169
+    },
+    "cell_days/2016.csv": {
+      "sha256": "486cebb67976b6ab87869ac88bd61e147388aa662f5f97dcfcc4d6f0e64b53a9",
+      "rows": 67077
+    },
+    "cell_days/2017.csv": {
+      "sha256": "ef231a0cc7dddcd7a97bbe56ee6201e0ef998ca58976b158b197871006e7a892",
+      "rows": 71009
+    },
+    "cell_days/2018.csv": {
+      "sha256": "3a66f79910571324b4bce98a8d26758e089f6db106350a4b55154c2f86c111f3",
+      "rows": 74067
+    },
+    "cell_days/2019.csv": {
+      "sha256": "148d42e5fa7f0855b145c1d63b83db35e6c323dfba5a20b5843c3581c36858e3",
+      "rows": 94208
+    },
+    "cell_days/2020.csv": {
+      "sha256": "cc886dc25c667d8a22a1de8651c571a5d099fd17e8e3743cd2b2718e47145282",
+      "rows": 94299
+    },
+    "cell_days/2021.csv": {
+      "sha256": "2b9cc7fa0161aeb986f70283d1faa69c3b1c72ab4a57d81cc543e1a9fe614c9f",
+      "rows": 102577
+    },
+    "cell_days/2022.csv": {
+      "sha256": "b4999ad54696864ba246d1acdcb60108eac030476d8eff79526ac9c31aa3dbdb",
+      "rows": 123131
+    },
+    "cell_days/2023.csv": {
+      "sha256": "b16489bc1ef6e606069049b4cc68baa740714115a80e217f343da3347658a514",
+      "rows": 115593
+    },
+    "cell_days/2024.csv": {
+      "sha256": "8b7932e066404a1de88ad9d285d6db8bb3ead6754c2832275400e2ad6f2afc1a",
+      "rows": 118705
+    },
+    "cell_days/2025.csv": {
+      "sha256": "1a94b63e5b2c66df8322e709df14c5003f3d473ab75dc5789d6154db7464b0b9",
+      "rows": 133249
+    },
+    "daily_harmonized.csv": {
+      "sha256": "224f22438f4a715ef90783f1113944ac574e503f63728ae505901b14fd5ba20a",
+      "rows": 9192
+    },
+    "detections/2000.csv.gz": {
+      "sha256": "afcc6b6ac5b61ced9fa76f42d95f2d520820238dea3fcbc04965df26723a7fb3",
+      "rows": -1
+    },
+    "detections/2001.csv.gz": {
+      "sha256": "a5cae8cb8527bf0c611055a511b7d42c7391a154bb3b334a5e360bf92a9cc052",
+      "rows": -1
+    },
+    "detections/2002.csv.gz": {
+      "sha256": "e6be0e35bdc0ca6025cccb4552fdcd003e9df9059df5ef901f653b4eb939de13",
+      "rows": -1
+    },
+    "detections/2003.csv.gz": {
+      "sha256": "59e3a0cad171c726fdac612d4c4453de9f69ae34001625e547d590075c792ca7",
+      "rows": -1
+    },
+    "detections/2004.csv.gz": {
+      "sha256": "6c57ff3259a47c192ac46151e0669ad5cce770a6ce25f8311cb8b32994120616",
+      "rows": -1
+    },
+    "detections/2005.csv.gz": {
+      "sha256": "89d84cc5d80d064040e63207ba89fb9e229b59667fe60bbcb25114f28b00c7b1",
+      "rows": -1
+    },
+    "detections/2006.csv.gz": {
+      "sha256": "af30f50336d7573c03c3ebf6abdc9246f93a86c915358e8d43c390a7dab99d2a",
+      "rows": -1
+    },
+    "detections/2007.csv.gz": {
+      "sha256": "92cde723b3b30bb095724ab7cf17d921d23d895309408043a6c3bfe8a6cd46c4",
+      "rows": -1
+    },
+    "detections/2008.csv.gz": {
+      "sha256": "95e82d1a203c22466eb0f211557c315c3565edebff08b972de6619a79e774c67",
+      "rows": -1
+    },
+    "detections/2009.csv.gz": {
+      "sha256": "730d8fa6374434eb9c464aa1a31e2b9ba5bcc56dc723522a51c0687aff28beab",
+      "rows": -1
+    },
+    "detections/2010.csv.gz": {
+      "sha256": "feadcca67c877a72c30ea29cce25ccfee57d254941cac050d5e5418024a1087d",
+      "rows": -1
+    },
+    "detections/2011.csv.gz": {
+      "sha256": "60dd3beee48cef87cad7a4473bad20a60f29be2e53d5d04214bcb31a33982a50",
+      "rows": -1
+    },
+    "detections/2012.csv.gz": {
+      "sha256": "fee13e19090d339cc78b90819a8dbdb8704e7dc4508534e6de729ff66eaae9a0",
+      "rows": -1
+    },
+    "detections/2013.csv.gz": {
+      "sha256": "7a09c9ed2bbf240133211e023dbde6bc30a9130105e819cb05f7e4a2f0be0a47",
+      "rows": -1
+    },
+    "detections/2014.csv.gz": {
+      "sha256": "5a645dba5596958664fac421bf0291ab206f51cad998c6cf662ee399731e5ba8",
+      "rows": -1
+    },
+    "detections/2015.csv.gz": {
+      "sha256": "d0510247955c27b403892865fc38adeac58ce204a3886d2b52bbc9b25545fd3c",
+      "rows": -1
+    },
+    "detections/2016.csv.gz": {
+      "sha256": "9a38c4e0891ddbd630e846956c80ee03e97db03d6c672a3865e816c40bda2e96",
+      "rows": -1
+    },
+    "detections/2017.csv.gz": {
+      "sha256": "e808b951d0b66423d22a6a706ae80e8bcc35cb96ad1113f3bdc4ab433b0c713a",
+      "rows": -1
+    },
+    "detections/2018.csv.gz": {
+      "sha256": "6e865d72609aedc4cb9dceaf6283b8a9fb178df3da4f691bed1137702bc97af5",
+      "rows": -1
+    },
+    "detections/2019.csv.gz": {
+      "sha256": "0c039b3922a4740e651e8bec8475c4f8a1fa97455fb38acfb3b074c6aada02f4",
+      "rows": -1
+    },
+    "detections/2020.csv.gz": {
+      "sha256": "de6e299d98bab709cc758c601a9e452c801c9b1af1ea66e23cb6dbb6700b1530",
+      "rows": -1
+    },
+    "detections/2021.csv.gz": {
+      "sha256": "a464076daf2e0d0c983642dcbb2f2df39302256f0c759b77e9ebd84449fb7791",
+      "rows": -1
+    },
+    "detections/2022.csv.gz": {
+      "sha256": "2fd64f396884a91aee5a7eb6adcfccf0f7d59897569f11e4ff038f61a1351343",
+      "rows": -1
+    },
+    "detections/2023.csv.gz": {
+      "sha256": "df2c36e97d1cae55ec91229cd132913c73e5789327bebe8c5941db24e394d338",
+      "rows": -1
+    },
+    "detections/2024.csv.gz": {
+      "sha256": "7e91625f53142757e994a91202b76d24908d76a072c86e7ef290b6a7112eea96",
+      "rows": -1
+    },
+    "detections/2025.csv.gz": {
+      "sha256": "67a851658dfe5a38078cfd3767150019657f62942f2007a0f130205c0ca8aafd",
+      "rows": -1
+    },
+    "outages_detected.csv": {
+      "sha256": "bbe94317672fba395a32aac0e01e80a7b6352d40b289832a1c46e2703643fabd",
+      "rows": 323
+    },
+    "source_availability.csv": {
+      "sha256": "512d52847832cf14fb6695acac422c54bd6d2fa0db84735baee10a55611a6bf8",
+      "rows": 25378
+    },
+    "static_mask.csv": {
+      "sha256": "984de65372840c1cdfd9be2e4e3fd0a6ef28d47de8c6b4dc194492698b1238c3",
+      "rows": 657
+    },
+    "validation.json": {
+      "sha256": "a1175eefd74ceadb58f7158c9166b28fb139405af46bf13615e160dda2b28706",
+      "rows": 397
+    }
+  }
+}

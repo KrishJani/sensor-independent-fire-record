@@ -1,4 +1,11 @@
-// Activity-dependent calibration: Poisson GLM with log link (docs/HARMONIZATION.md §3).
+// Activity-dependent, two-component calibration (docs/HARMONIZATION.md §3).
+//
+// v1.2: E[V] = n·b_m + n·exp(a_m)·r^β,  r = M/n.  b_m is a VIIRS-only "background" of small/cool
+// fires (cells per day) that MODIS cannot see and that does not scale with large-fire activity;
+// the second term is the MODIS-visible part, scaled with an activity exponent β. b = 0 gives the
+// v1.1 model; b = 0 and β = 1 gives the constant ratio ΣV/ΣM.
+//
+// (v1.1 notes follow.)
 //
 // Unit = one (year, calendar month) of overlap days for a MODIS configuration c:
 //     n = overlap days,  M = Σ M_c(d),  V = Σ V(d)
@@ -40,6 +47,7 @@ export function monthPairs(samples: CalibrationSample[]): MonthPair[] {
 
 export interface GlmFit {
   a: number[]; // index 0..11, log scale; NaN where the month has no usable pairs
+  b: number[]; // index 0..11, background VIIRS cells per day (0 for the one-component model)
   beta: number;
   deviance: number;
   pearson: number;
@@ -49,41 +57,37 @@ export interface GlmFit {
 /** Poisson deviance contribution, safe at y = 0. */
 const devTerm = (y: number, mu: number) => 2 * ((y > 0 ? y * Math.log(y / mu) : 0) - (y - mu));
 
-/**
- * Maximum-likelihood fit. Block coordinate ascent: the a_m have a closed form given β, then a
- * Newton step on β. Pairs with M = 0 carry no information about β and are skipped.
- */
-export function fitAlphaGLM(pairs: MonthPair[], opts: { fixBeta?: number | null } = {}): GlmFit {
-  const use = pairs.filter((p) => p.m > 0 && p.n > 0);
-  const byMonth: MonthPair[][] = Array.from({ length: 12 }, () => []);
-  for (const p of use) byMonth[p.month - 1].push(p);
-  let beta = opts.fixBeta ?? 1;
-  const a = Array(12).fill(NaN);
+/** One-component fit: log μ = log n + a_m + β log r (closed-form a_m, profile-Newton β). Weights w ≤ v allowed. */
+function fitPowerPart(use: { p: MonthPair; w: number }[], fixBeta: number | null, start: { a: number[]; beta: number }) {
+  const byMonth: { p: MonthPair; w: number }[][] = Array.from({ length: 12 }, () => []);
+  for (const e of use) byMonth[e.p.month - 1].push(e);
+  let beta = fixBeta ?? start.beta;
+  const a = [...start.a];
   for (let it = 0; it < 200; it++) {
     for (let i = 0; i < 12; i++) {
       const s = byMonth[i];
       if (!s.length) continue;
-      const sv = s.reduce((x, p) => x + p.v, 0);
-      const den = s.reduce((x, p) => x + p.n * Math.exp(beta * Math.log(p.m / p.n)), 0);
-      a[i] = Math.log(Math.max(sv, 1e-9) / den);
+      const sw = s.reduce((x, e) => x + e.w, 0);
+      const den = s.reduce((x, e) => x + e.p.n * Math.exp(beta * Math.log(e.p.m / e.p.n)), 0);
+      a[i] = Math.log(Math.max(sw, 1e-9) / den);
     }
-    if (opts.fixBeta != null) break;
+    if (fixBeta != null) break;
     // Newton step on the PROFILE likelihood (a_m optimised out): centre x on its μ-weighted mean
-    // within each month. This converges quadratically, unlike alternating a_m / β updates.
-    const sw = Array(12).fill(0);
+    // within each month. Converges quadratically, unlike alternating a_m / β updates.
+    const swm = Array(12).fill(0);
     const swx = Array(12).fill(0);
-    const mus = use.map((p) => {
-      const x = Math.log(p.m / p.n);
-      const mu = p.n * Math.exp(a[p.month - 1] + beta * x);
-      sw[p.month - 1] += mu;
-      swx[p.month - 1] += mu * x;
-      return { p, x, mu };
+    const mus = use.map((e) => {
+      const x = Math.log(e.p.m / e.p.n);
+      const mu = e.p.n * Math.exp(a[e.p.month - 1] + beta * x);
+      swm[e.p.month - 1] += mu;
+      swx[e.p.month - 1] += mu * x;
+      return { e, x, mu };
     });
     let g = 0;
     let h = 0;
-    for (const { p, x, mu } of mus) {
-      const xc = x - swx[p.month - 1] / sw[p.month - 1];
-      g += (p.v - mu) * xc;
+    for (const { e, x, mu } of mus) {
+      const xc = x - swx[e.p.month - 1] / swm[e.p.month - 1];
+      g += (e.w - mu) * xc;
       h += mu * xc * xc;
     }
     if (h <= 0) break;
@@ -91,32 +95,214 @@ export function fitAlphaGLM(pairs: MonthPair[], opts: { fixBeta?: number | null 
     beta += step;
     if (Math.abs(step) < 1e-12) break;
   }
+  return { a, beta };
+}
+
+/** Expected VIIRS for a pair under (a, b, β). */
+export function pairMean(p: MonthPair, a: number[], b: number[], beta: number): number {
+  const i = p.month - 1;
+  return p.n * (b[i] ?? 0) + (p.m > 0 ? p.n * Math.exp(a[i] + beta * Math.log(p.m / p.n)) : 0);
+}
+
+/**
+ * Maximum-likelihood fit. Without background: closed-form a_m + profile-Newton β (exact, fast).
+ * With background: EM — split each month's V into background and MODIS-scaled parts by their
+ * expected shares (E-step), then b_m = Σ background / Σ n and refit (a, β) on the scaled parts
+ * (M-step). EM increases the Poisson likelihood monotonically.
+ */
+export function fitAlphaGLM(pairs: MonthPair[], opts: { fixBeta?: number | null; background?: boolean } = {}): GlmFit {
+  const all = pairs.filter((p) => p.n > 0);
+  const use = all.filter((p) => p.m > 0);
+  const fixBeta = opts.fixBeta ?? null;
+  let { a, beta } = fitPowerPart(use.map((p) => ({ p, w: p.v })), fixBeta, { a: Array(12).fill(0), beta: fixBeta ?? 1 });
+  let b = Array(12).fill(0);
+  if (opts.background) {
+    // Start the background at a quarter of the quietest observed rate per month.
+    b = Array.from({ length: 12 }, (_, i) => {
+      const s = all.filter((p) => p.month === i + 1);
+      return s.length ? (0.25 * Math.min(...s.map((p) => p.v / p.n))) + 1e-6 : 0;
+    });
+    let prevLL = -Infinity;
+    for (let it = 0; it < 300; it++) {
+      const bgSum = Array(12).fill(0);
+      const nSum = Array(12).fill(0);
+      const fire: { p: MonthPair; w: number }[] = [];
+      let ll = 0;
+      for (const p of all) {
+        const i = p.month - 1;
+        const lb = p.n * b[i];
+        const lf = p.m > 0 ? p.n * Math.exp(a[i] + beta * Math.log(p.m / p.n)) : 0;
+        const tot = lb + lf;
+        if (tot > 0) ll += p.v * Math.log(tot) - tot;
+        bgSum[i] += tot > 0 ? (p.v * lb) / tot : p.v;
+        nSum[i] += p.n;
+        if (p.m > 0) fire.push({ p, w: tot > 0 ? (p.v * lf) / tot : 0 });
+      }
+      for (let i = 0; i < 12; i++) b[i] = nSum[i] > 0 ? bgSum[i] / nSum[i] : 0;
+      ({ a, beta } = fitPowerPart(fire, fixBeta, { a, beta }));
+      if (Math.abs(ll - prevLL) < 1e-9 * Math.max(1, Math.abs(ll))) break;
+      prevLL = ll;
+    }
+  }
+  if (opts.background) ({ a, b, beta } = newtonRefine(all, a, b, beta, fixBeta));
+  if (opts.background) {
+    // Boundary check: EM approaches b = 0 only slowly, so also evaluate the exact b = 0 fit and
+    // keep whichever has the higher Poisson log-likelihood (over all pairs, incl. M = 0 months).
+    const one = fitPowerPart(use.map((p) => ({ p, w: p.v })), fixBeta, { a: Array(12).fill(0), beta: fixBeta ?? 1 });
+    const zero = Array(12).fill(0);
+    const loglik = (aa: number[], bb: number[], be: number) =>
+      all.reduce((s, p) => {
+        const mu = pairMean(p, aa, bb, be);
+        return s + (mu > 0 ? p.v * Math.log(mu) - mu : p.v > 0 ? -1e12 : 0);
+      }, 0);
+    if (loglik(one.a, zero, one.beta) >= loglik(a, b, beta)) {
+      a = one.a;
+      beta = one.beta;
+      b = zero;
+    }
+  }
+  for (let i = 0; i < 12; i++) if (!use.some((p) => p.month === i + 1)) a[i] = NaN;
   let deviance = 0;
   let pearson = 0;
   for (const p of use) {
-    const mu = p.n * Math.exp(a[p.month - 1] + beta * Math.log(p.m / p.n));
+    const mu = pairMean(p, a, b, beta);
     deviance += devTerm(p.v, mu);
     pearson += (p.v - mu) ** 2 / mu;
   }
-  return { a, beta, deviance, pearson, nUsed: use.length };
+  return { a, b, beta, deviance, pearson, nUsed: use.length };
 }
 
-/** Complementary error function (Numerical Recipes erfcc, |rel err| < 1.2e-7). */
-function erfc(x: number): number {
-  const z = Math.abs(x);
-  const t = 1 / (1 + 0.5 * z);
-  const r =
-    t *
-    Math.exp(
-      -z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
-    );
-  return x >= 0 ? r : 2 - r;
+/** Solve A x = y (Gaussian elimination with partial pivoting); A is n×n. */
+function solve(A: number[][], y: number[]): number[] | null {
+  const n = y.length;
+  const M = A.map((r, i) => [...r, y[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (Math.abs(M[piv][c]) < 1e-300) return null;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      if (f) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((r, i) => r[n] / r[i]);
 }
+
+/**
+ * Newton refinement of the two-component likelihood on θ = (a_m, log b_m, β), with step-halving
+ * so the log-likelihood never decreases. Started from EM, it converges quadratically to the MLE.
+ * Months with a negligible background (b < 1e-8·mean) keep b fixed (that edge is the boundary check's job).
+ */
+function newtonRefine(all: MonthPair[], a0: number[], b0: number[], beta0: number, fixBeta: number | null) {
+  const months = [...new Set(all.map((p) => p.month))].sort((x, y) => x - y);
+  const hasM = new Set(all.filter((p) => p.m > 0).map((p) => p.month));
+  const bMean = b0.reduce((x, y) => x + y, 0) / 12;
+  const idx: { kind: 'a' | 'b' | 'beta'; i: number }[] = [];
+  for (const m of months) if (hasM.has(m)) idx.push({ kind: 'a', i: m - 1 });
+  for (const m of months) if (b0[m - 1] > 1e-8 * Math.max(bMean, 1e-12)) idx.push({ kind: 'b', i: m - 1 });
+  if (fixBeta == null) idx.push({ kind: 'beta', i: -1 });
+  const P = idx.length;
+  let a = [...a0], lb = b0.map((x) => (x > 0 ? Math.log(x) : -Infinity)), beta = beta0;
+  const pos = new Map(idx.map((e, k) => [`${e.kind}${e.i}`, k]));
+  const ll = (aa: number[], lbb: number[], be: number) => {
+    let s = 0;
+    for (const p of all) {
+      const B = Number.isFinite(lbb[p.month - 1]) ? p.n * Math.exp(lbb[p.month - 1]) : 0;
+      const F = p.m > 0 ? p.n * Math.exp(aa[p.month - 1] + be * Math.log(p.m / p.n)) : 0;
+      const mu = B + F;
+      if (mu > 0) s += p.v * Math.log(mu) - mu;
+      else if (p.v > 0) return -Infinity;
+    }
+    return s;
+  };
+  let cur = ll(a, lb, beta);
+  for (let it = 0; it < 100; it++) {
+    const g = Array(P).fill(0);
+    const Hm = Array.from({ length: P }, () => Array(P).fill(0));
+    for (const p of all) {
+      const i = p.month - 1;
+      const x = p.m > 0 ? Math.log(p.m / p.n) : 0;
+      const B = Number.isFinite(lb[i]) ? p.n * Math.exp(lb[i]) : 0;
+      const F = p.m > 0 ? p.n * Math.exp(a[i] + beta * x) : 0;
+      const mu = B + F;
+      if (mu <= 0) continue;
+      const r = p.v / mu - 1;
+      const w = p.v / (mu * mu);
+      // first derivatives of μ, and second derivatives (diagonal blocks)
+      const d: [number, number][] = [];
+      const ka = pos.get(`a${i}`), kb = pos.get(`b${i}`), kbe = pos.get('beta-1');
+      if (ka !== undefined) d.push([ka, F]);
+      if (kb !== undefined) d.push([kb, B]);
+      if (kbe !== undefined) d.push([kbe, F * x]);
+      for (const [k, dk] of d) g[k] += r * dk;
+      for (const [k1, d1] of d) for (const [k2, d2] of d) Hm[k1][k2] -= w * d1 * d2;
+      if (ka !== undefined) Hm[ka][ka] += r * F;
+      if (kb !== undefined) Hm[kb][kb] += r * B;
+      if (kbe !== undefined) Hm[kbe][kbe] += r * F * x * x;
+      if (ka !== undefined && kbe !== undefined) { Hm[ka][kbe] += r * F * x; Hm[kbe][ka] += r * F * x; }
+    }
+    // Newton direction on −H (positive definite near the optimum); damp if needed.
+    let step: number[] | null = null;
+    for (let lam = 0; lam < 1e6 && !step; lam = lam ? lam * 10 : 1e-8) {
+      const A = Hm.map((row, k) => row.map((v, j) => -v + (k === j ? lam * Math.max(1, Math.abs(Hm[k][k])) : 0)));
+      step = solve(A, g);
+    }
+    if (!step) break;
+    let t = 1, improved = false;
+    for (let h = 0; h < 40; h++, t /= 2) {
+      const na = [...a], nlb = [...lb];
+      let nb = beta;
+      idx.forEach((e, k) => { if (e.kind === 'a') na[e.i] += t * step![k]; else if (e.kind === 'b') nlb[e.i] += t * step![k]; else nb += t * step![k]; });
+      const v = ll(na, nlb, nb);
+      if (v >= cur) { a = na; lb = nlb; beta = nb; improved = v - cur > 1e-12 * Math.max(1, Math.abs(cur)); cur = v; break; }
+    }
+    if (!improved) break;
+  }
+  return { a, b: lb.map((x) => (Number.isFinite(x) ? Math.exp(x) : 0)), beta };
+}
+
+/** Regularised upper incomplete gamma Q(s, x) (Numerical Recipes gammq), for χ² tail probabilities. */
+function gammaQ(s: number, x: number): number {
+  if (x <= 0) return 1;
+  const lg = (z: number) => {
+    const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+    let y = z, t = z + 5.5;
+    t -= (z + 0.5) * Math.log(t);
+    let ser = 1.000000000190015;
+    for (const k of c) ser += k / ++y;
+    return -t + Math.log((2.5066282746310005 * ser) / z);
+  };
+  if (x < s + 1) {
+    let sum = 1 / s, del = sum, ap = s;
+    for (let n = 0; n < 500; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-14) break; }
+    return 1 - sum * Math.exp(-x + s * Math.log(x) - lg(s));
+  }
+  let bb = x + 1 - s, c = 1 / 1e-300, d = 1 / bb, h = d;
+  for (let i = 1; i < 500; i++) {
+    const an = -i * (i - s);
+    bb += 2;
+    d = an * d + bb; if (Math.abs(d) < 1e-300) d = 1e-300;
+    c = bb + an / c; if (Math.abs(c) < 1e-300) c = 1e-300;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < 1e-14) break;
+  }
+  return Math.exp(-x + s * Math.log(x) - lg(s)) * h;
+}
+/** P(χ²_df > x). */
+export const chi2Sf = (x: number, df: number) => gammaQ(df / 2, x / 2);
 
 export interface AlphaModelConfig {
   config: ModisConfig;
-  /** 'glm' = β estimated; 'ratio' = β fixed at 1 because there was too little data (≡ ΣV/ΣM). */
+  /** 'glm' = estimated model (background + activity exponent); 'ratio' = constant ratio (too little data, or baseline). */
   kind: 'glm' | 'ratio';
+  /** VIIRS-only background, cells per day, per calendar month (all 0 for the constant ratio). */
+  background: number[];
+  /** Share of calibration-period VIIRS cell-days attributed to the background. */
+  backgroundShare: number;
   reason: string | null;
   beta: number;
   betaCi: [number, number] | null;
@@ -130,8 +316,8 @@ export interface AlphaModelConfig {
   sumViirs: number[];
   nPairs: number[];
   nYears: number[];
-  /** Quasi-likelihood test of β = 1 (constant ratio) against free β. */
-  test: { deltaDeviance: number; dispersion: number; f: number; p: number } | null;
+  /** Quasi-likelihood test of the constant ratio (b = 0, β = 1) against the fitted model. */
+  test: { deltaDeviance: number; df: number; dispersion: number; f: number; p: number } | null;
 }
 
 export type AlphaModel = Record<ModisConfig, AlphaModelConfig>;
@@ -142,15 +328,20 @@ export interface AlphaModelOptions {
   clamp?: [number, number];
   minYearsForBeta?: number; // default 3
   bootstrap?: { reps: number; seed: number } | null;
-  /** Fix β = 1 (the constant-ratio model), e.g. as the comparison baseline. */
+  /** Fix β = 1 and b = 0 (the constant-ratio model), e.g. as the comparison baseline. */
   forceRatio?: boolean;
+  /** Fit the VIIRS-only background term (default true; false = the v1.1 one-component model). */
+  background?: boolean;
+  /** Use the constant ratio when its test against the fitted model has p above this (default 0.05). */
+  selectionP?: number;
 }
 
 /** α at activity rate r (MODIS cells/day) for a calendar month, with no extrapolation. */
 export function alphaAt(mc: AlphaModelConfig, month: number, rate: number, clamp: [number, number] = ALPHA_CLAMP): number {
   const i = month - 1;
   const r = Math.min(Math.max(rate > 0 ? rate : mc.typicalRate[i], mc.rateMin[i]), mc.rateMax[i]);
-  const al = Math.exp(mc.a[i] + (mc.beta - 1) * Math.log(r));
+  // Expected VIIRS per MODIS cell at activity r: background spread over MODIS cells + scaled part.
+  const al = (mc.background?.[i] ?? 0) / r + Math.exp(mc.a[i] + (mc.beta - 1) * Math.log(r));
   return al < clamp[0] ? clamp[0] : al > clamp[1] ? clamp[1] : al;
 }
 
@@ -161,7 +352,8 @@ export function fitModelConfig(pairs: MonthPair[], config: ModisConfig, o: Alpha
   const reason = o.forceRatio
     ? 'β fixed at 1 (constant-ratio baseline)'
     : enough ? null : `only ${years.size} calibration year(s) with MODIS activity; β fixed at 1 (constant ratio)`;
-  const fit = fitAlphaGLM(pairs, { fixBeta: enough ? null : 1 });
+  const withBg = enough && (o.background ?? true);
+  const fit = fitAlphaGLM(pairs, { fixBeta: enough ? null : 1, background: withBg });
   const fit1 = enough ? fitAlphaGLM(pairs, { fixBeta: 1 }) : null;
 
   const byMonth: MonthPair[][] = Array.from({ length: 12 }, () => []);
@@ -185,20 +377,38 @@ export function fitModelConfig(pairs: MonthPair[], config: ModisConfig, o: Alpha
     const w = sumModis[i] / (sumModis[i] + k);
     return w * x + (1 - w) * aBar;
   });
+  // Background: same shrinkage toward the ΣM-weighted mean background.
+  const bBar = totW > 0 ? fit.b.reduce((s, x, i) => s + x * sumModis[i], 0) / totW : 0;
+  const background = fit.b.map((x, i) => {
+    const w = sumModis[i] / (sumModis[i] + k);
+    return w * x + (1 - w) * bBar;
+  });
+  const nDays = byMonth.map((s) => s.reduce((x, p) => x + p.n, 0));
+  const totV = sumViirs.reduce((x, y) => x + y, 0);
+  const backgroundShare = totV > 0 ? background.reduce((x, b, i) => x + b * nDays[i], 0) / totV : 0;
 
   let test: AlphaModelConfig['test'] = null;
   if (fit1) {
-    const p = 13; // 12 a_m + β
+    const df = withBg ? 13 : 1; // 12 background terms + β, or β alone
+    const p = 12 + df;
     const dispersion = Math.max(1, fit.pearson / Math.max(1, fit.nUsed - p));
-    const deltaDeviance = fit1.deviance - fit.deviance;
-    const f = deltaDeviance / dispersion;
-    test = { deltaDeviance, dispersion, f, p: erfc(Math.sqrt(Math.max(0, f) / 2)) }; // χ²₁ tail
+    const deltaDeviance = Math.max(0, fit1.deviance - fit.deviance);
+    const f = deltaDeviance / dispersion / df;
+    test = { deltaDeviance, df, dispersion, f, p: chi2Sf(deltaDeviance / dispersion, df) };
+  }
+
+  // Parsimony: if the overlap data do not reject the constant ratio (p > 0.05), use it.
+  if (test && test.p > (o.selectionP ?? 0.05)) {
+    const ratio = fitModelConfig(pairs, config, { ...o, forceRatio: true }, fallbackA);
+    return { ...ratio, reason: `data do not reject the constant ratio (F(${test.df}) = ${test.f.toFixed(1)}, p = ${test.p.toFixed(3)}); using it`, test };
   }
 
   const mc: AlphaModelConfig = {
     config,
     kind: enough ? 'glm' : 'ratio',
     reason,
+    background,
+    backgroundShare,
     beta: fit.beta,
     betaCi: null,
     a,
@@ -226,9 +436,9 @@ export function fitModelConfig(pairs: MonthPair[], config: ModisConfig, o: Alpha
     for (let r = 0; r < o.bootstrap.reps; r++) {
       const sample: MonthPair[] = [];
       for (let j = 0; j < ys.length; j++) sample.push(...(byYear.get(ys[Math.floor(rnd() * ys.length)]) ?? []));
-      const f = fitAlphaGLM(sample);
+      const f = fitAlphaGLM(sample, { background: withBg });
       betas.push(f.beta);
-      for (let i = 0; i < 12; i++) if (Number.isFinite(f.a[i])) al[i].push(Math.exp(f.a[i] + (f.beta - 1) * Math.log(typicalRate[i])));
+      for (let i = 0; i < 12; i++) if (Number.isFinite(f.a[i])) al[i].push(f.b[i] / typicalRate[i] + Math.exp(f.a[i] + (f.beta - 1) * Math.log(typicalRate[i])));
     }
     betas.sort((x, y) => x - y);
     mc.betaCi = [quantileSorted(betas, 0.05), quantileSorted(betas, 0.95)];

@@ -80,57 +80,83 @@ Alternatives were tested on the real overlap data with leave-one-year-out
 remove the bias (residual slope 0.80). Adding a fixed per-area background over-corrected
 (1.34). What worked was letting α depend on **how active the region is that month**.
 
-### 3.3 The model: Poisson GLM with log link [`fitAlphaModel`, `model.ts`]
+### 3.3 The model (v1.2): VIIRS-only background + activity-scaled MODIS [`fitAlphaModel`, `model.ts`]
 
 For each MODIS configuration c, the unit is one (year, calendar month) of overlap days:
-n days, M = Σ M_c(d), V = Σ V(d).
+n days, M = Σ M_c(d), V = Σ V(d), r = M/n (MODIS cells per day).
 
 ```
-E[V] = n · exp(a_m + β · log(M / n))           a_m: one intercept per calendar month; β: shared
+E[V] = n · b_m  +  n · exp(a_m) · r^β
+       └ background ┘  └ MODIS-visible fires, activity-scaled ┘
 ```
 
-- **β = 1 is exactly the constant ratio** (a_m = log ΣV/ΣM). The new model nests the old one,
-  so the data decide between them. A quasi-likelihood F-test of β = 1 against free β is
-  reported in `alpha_model.json`.
-- **California, 2013–2021:** **β = 0.862** (90% CI 0.785–0.894). The test gives F = 71.7,
-  p < 0.0001, so the constant ratio is rejected.
-- **Fitting:** maximum likelihood on the count scale, so there is no log-transform
-  retransformation bias. The a_m have a closed form given β, and β takes Newton steps on the
-  profile likelihood. Convergence is quadratic, and the parameters are recovered exactly on
-  synthetic data (tests).
+- **b_m, the background,** is VIIRS cells per day from small and cool fires that MODIS does not
+  detect. That activity does not grow with large-fire activity. One value per calendar month.
+- **exp(a_m) · r^β** is the part MODIS can see, scaled up with an exponent that lets busy and
+  quiet months differ.
+- **Nesting.** b = 0 gives the v1.1 model, and b = 0 with β = 1 gives the constant ratio
+  ΣV/ΣM. The data decide. A quasi-likelihood F-test of the constant ratio against the fitted
+  model (13 df) is in `alpha_model.json`.
+- **Fitting.** EM provides a starting point. Each month's V is split into background and scaled
+  parts by their expected shares, then b, a and β are refitted. Newton's method on all 25
+  parameters then finishes the fit (quadratic convergence, with step-halving so the likelihood
+  never decreases). A boundary check also evaluates b = 0 exactly, because EM approaches that
+  edge slowly. Months where MODIS saw nothing also inform b. The tests recover b, a and β
+  exactly from synthetic data.
+- **California 2013–2021:**
+  - The background is **11% of VIIRS cell-days**.
+  - **β = 0.96 (90% CI 0.88–1.06).** Once the background is modelled, the remaining activity
+    dependence is weak: most of what v1.1 read as "saturation" was the background.
+  - The constant ratio is rejected: F(13) = 9.6, p < 0.0001.
+
+**How we got here.** Each model was tested on the real overlap data with leave-one-year-out
+validation, and the better one was kept (`scripts/backfill/experiments/`):
+
+| Version | Model | Evidence |
+|---|---|---|
+| v1.0 | Constant ratio | Biased: busiest months +7%, quietest −9% |
+| v1.1 | Exponent only | Bias left in 6 of 9 US regions |
+| v1.2 | Background + exponent | Passes the noise-aware bias check in all 8 modelled US regions; Hawaii keeps the constant ratio (§8) |
+
+Explanations that were tested and **rejected**:
+
+- Counting noise. The regions have 280–2,700 cells/month, so noise alone gives about 2–7% error.
+- Gas flares. The static-source mask already removes them.
+- MODIS-visible fire size (FRP and isolation). It did not explain the year-to-year swings.
 
 ### 3.4 Applying it: α_eff per month, additive by construction [`effectiveAlphas`]
 
 ```
-rate(y, m)   = region's MODIS cells per day in that month (days where config c flew)
-α_eff(y, m)  = exp(a_m) · rate^(β − 1)          (β < 1 ⇒ busier month, smaller α)
-H(d)         = α_eff(y, m) · M(d)               for every day d of that month
+r(y, m)      = the region's MODIS cells per day in that month (days where config c flew)
+α_eff(y, m)  = b_m / r  +  exp(a_m) · r^(β − 1)        (expected VIIRS per MODIS cell)
+H(d)         = α_eff(y, m) · M(d)                      for every day d of that month
 ```
 
-- **Additive.** Every day of a month uses the same α_eff, so the days add up to the month.
-  α_eff comes from the **region's** activity, so a user-drawn AOI inside the region is
-  exactly the sum of its parts. (A power law applied to each AOI's own totals would not be
-  additive.)
+- **Additive.** Every day of a month uses the same α_eff, which comes from the region's own
+  activity. Days therefore add up to the month, and an AOI inside the region is exactly the sum
+  of its parts. The month total equals the model mean n·b + n·e^a·r^β.
+- **No imputation without MODIS.** In a month where MODIS saw nothing in the whole region,
+  H = 0. Small fires are not invented where no sensor saw fire.
 - **No extrapolation.** The rate is clamped to the range seen for that month in calibration,
   and α_eff to [0.5, 10].
-- **Quiet months borrow strength.** a_m is shrunk toward the ΣM-weighted mean of all months,
-  with weight w = ΣM/(ΣM + k), k = 50 MODIS cell-days.
-- **Too little data.** With fewer than 3 calibration years, β is fixed at 1 and the model is
-  the constant ratio. It is flagged `kind: "ratio"`. This applies to the 5-day test fixture.
-- **One model per MODIS configuration** (Terra ∪ Aqua, Terra only, Aqua only). \|T ∪ A\| ≥ \|T\|,
-  so using the TA factor on Terra-only days (2000-11 → 2002-07) would bias them low. On the
-  fixture that bias is 13%.
-- **Calibration window:** `calibrationYears: [2013, 2021]`. 2012 is partial (VIIRS SP starts
-  on 2012-01-20). After 2021, Terra and Aqua drift off their nominal overpass times.
-- **Uncertainty:** a year-block bootstrap (1000 reps, fixed seed) gives the CIs for β and
-  for α at each month's typical activity. Whole years are resampled because days within a
-  fire season are autocorrelated.
+- **Quiet months borrow strength.** a_m and b_m are shrunk toward their ΣM-weighted means with
+  weight w = ΣM/(ΣM + k), k = 50.
+- **Too little data.** With fewer than 3 calibration years, the model falls back to the
+  constant ratio and is flagged `kind: "ratio"`.
+- **One model per MODIS configuration** (Terra ∪ Aqua, Terra only, Aqua only). Using the TA
+  factor on Terra-only days (2000-11 → 2002-07) would bias them low by about 13%.
+- **Calibration window:** 2013–2021. 2012 is partial, and Terra and Aqua drift off their
+  nominal overpass times after 2021.
+- **Uncertainty of the parameters:** a year-block bootstrap (1000 reps).
+- **Uncertainty of the values:** §5.2.
 - **Outputs:**
   - `alpha_model.json`: the full model
-  - `alpha_effective.csv`: the α applied, per (year, month, config)
-  - `alpha_monthly.csv`: α at each month's typical activity, for display
+  - `alpha_effective.csv`: the α applied
+  - `alpha_monthly.csv`: α at typical activity, for display
 - **User-drawn AOIs (api-worker):** use the regional α_eff, times an optional local factor
-  ρ_m = ΣV_AOI / Σ(α_eff · M_AOI) over the AOI's overlap days, shrunk toward 1 with the same w.
+  ρ_m = ΣV_AOI / Σ(α_eff · M_AOI) over overlap days, shrunk toward 1.
+- **Groups of regions** (for example the US): the total is the sum of non-overlapping regions,
+  each with its own model (§8).
 
 ## 4. Harmonized daily series: OR-based availability [`harmonizeDaily`]
 
@@ -179,30 +205,64 @@ fall back to config `T`. Detected days are listed in `outages_detected.csv`. Dis
 
 ## 5. Validation [`validateModel` → `validation.json`]
 
-All of these are computed per MODIS configuration, on monthly totals over overlap days.
-Every score is also computed for the constant-ratio model (β = 1), so the two can be
-compared directly (`loyoConstantRatio`).
+All scores are on monthly totals over overlap days, per MODIS configuration. Every score is also
+computed for the constant ratio (`loyoConstantRatio`), so the gain stays visible.
 
-| Score | What it measures |
-|---|---|
-| **LOYO MdAPE** | Refit without year y, predict year y: the honest out-of-sample error. **Acceptance ≤ 15%** (SPEC §11) |
-| **Top-10% / bottom-25% bias** | Σpred/Σobs − 1 over the busiest and the quietest months |
-| **Residual β** | Within-month slope of log observed on log predicted (month fixed effects). 1 means unbiased across activity levels. **Acceptance \|β_res − 1\| ≤ max(0.1, 2·SE)** |
-| **Transition step** | Median over overlap years of Σ(α_eff·M) / ΣV. ≈ 0 means switching sensors (at 2012 or at any outage) creates no step. **Acceptance ≤ 5%** |
-
-**California, 2013–2021 overlap (Terra ∪ Aqua):**
-
-| | Constant ratio (β = 1) | Activity-dependent α (β = 0.862) |
+| Score | What it measures | Acceptance |
 |---|---|---|
-| LOYO MdAPE | 9.8% | **8.0%** |
-| Busiest 10% of months | +6.8% | **+0.7%** |
-| Quietest 25% of months | −9.0% | **−2.1%** |
-| Total bias | +1.0% | +0.9% |
-| Residual β | 0.80 ± 0.02 ✗ | **0.91 ± 0.03** ✓ |
-| Transition step (in-sample) | −1.0% | +3.2% (worst year 7%) |
+| **LOYO MdAPE** | Refit without year y, predict year y: the honest out-of-sample error | ≤ 15% (SPEC §11) |
+| **Busiest 10% / quietest 25% bias** | Σpred/Σobs − 1 over the busiest and the quietest months | reported |
+| **Residual β** | Within-month slope of log observed on log predicted; 1 = unbiased across activity | noise-aware (§5.1) |
+| **Transition step** | Median over overlap years of Σ(α_eff·M)/ΣV; ≈ 0 means switching sensors creates no step | ≤ 5% |
 
-All three acceptance checks pass. The fixture spans only 5 days, so its validation fields
-are `null` and its model is the flagged constant ratio.
+### 5.1 Noise-aware bias check (parametric bootstrap)
+
+Noise in the MODIS counts pulls the residual β below 1 even for a correct model (regression
+dilution), and by a different amount in every region. A fixed threshold therefore misjudges
+regions. Instead, each region's fitted model simulates its own overlap data 200 times:
+
+- VIIRS is drawn quasi-Poisson, with the overdispersion measured in that region.
+- MODIS is drawn Poisson.
+- Each simulation is refit and scored exactly like the real data.
+
+The region **fails only if its real residual β is below the 5th percentile** of these
+correct-model simulations. `validation.json → configs.TA.noise` records the simulated ranges
+and the real score's percentile. The overdispersion includes year-to-year variation that MODIS
+cannot explain. The check therefore asks whether there is bias beyond what MODIS-only
+information can resolve.
+
+### 5.2 Uncertainty bands
+
+The held-out errors give multiplicative 90% ranges (`configs.TA.uncertainty`), one for a month
+and one for a calendar year.
+
+- **They apply only to the MODIS-scaled part** of a month or year. VIIRS days are observed.
+  Calendar columns: `scaled_cell_days`, `harmonized_lo`, `harmonized_hi`.
+- **Group bands** (US) add the region bands. This is conservative, because it assumes the
+  regions' errors move together.
+
+### 5.3 Data sufficiency
+
+A region is flagged `confidence: low` when fewer than 60 of its 108 overlap months have ≥ 20
+VIIRS cell-days, or when the median month has fewer than 50. Its scores are indicative, and its
+bands come from few months. On the US run this flags Hawaii and Alaska.
+
+**California, 2013–2021 overlap (Terra ∪ Aqua), held out year by year:**
+
+| | Constant ratio | v1.1 | **v1.2** |
+|---|---|---|---|
+| LOYO MdAPE | 9.8% | 8.0% | 8.2% |
+| Busiest 10% / quietest 25% | +6.8% / −9.0% | +0.7% / −2.1% | +1.8% / +3.1% |
+| Residual β | 0.80 | 0.91 | 0.94 (76th percentile of correct-model noise ✓) |
+| A correct model would score | | | 7.6–11.1% error (overdispersion 6.6) |
+| 90% band, MODIS-only month / year | | | ×0.80–1.23 / ×0.94–1.07 |
+
+v1.2 is not better than v1.1 on raw error in California (8.2% vs 8.0%). Its gain is the
+physical decomposition, and the removal of activity bias across the US regions (§8).
+
+**Model selection.** If the overlap data do not reject the constant ratio (test p > 0.05), the
+constant ratio is used and flagged in `reason`. More parameters are not used without evidence.
+On the US run this applies only to Hawaii (p = 0.51).
 
 ## 6. Out of scope (v1)
 
@@ -252,5 +312,50 @@ re-backfill. Decide before the first Postgres load.
 
 All three pass the checks. 0.1° is only 0.7 percentage points better, and it halves the
 spatial resolution. Location accuracy is a stated goal, so the production grid stays at 0.05°
-for the map, the cells and the calendar counts. `grid_sensitivity.json` still records 0.1° as
-the rule's pick, for transparency.
+for the map, the cells and the calendar counts. The `grid_sensitivity.json` that recorded 0.1° as
+the rule's pick is in git history (commit `1a03417`). Re-run with `--grid-sensitivity` to regenerate it.
+
+## 8. Groups of regions (the US)
+
+`config/regions.json` defines 9 US regions in group `us`:
+
+- California (and W. Nevada), Pacific Northwest, Southwest, Interior West, Great Plains,
+  Southeast, Midwest/Northeast, Alaska and Hawaii.
+
+Regions are rectangles in priority order. Each one excludes the boxes listed before it, so they
+**never overlap**. Of 11.7 M US detections, 0 fall in two regions and 8 fall in none (the far
+Aleutians, across the date line).
+
+- Each region is backfilled and validated on its own:
+  `backfill run --region <id> --raw-dir data/raw/us`, using FIRMS Country Yearly Summary US
+  files for 2000–2025.
+- `backfill aggregate --group us` sums them into `data/harmonized/us/`. Harmonized counts are
+  additive, so the US total is exactly the sum of the regions.
+- **Cross-check:** where both sensors flew, the US-wide MODIS × α matches observed VIIRS within
+  ±1.4% every year 2012–2021. After that it drifts low (−4% to −12% by 2025) with Terra/Aqua
+  orbit drift. That is why calibration stops in 2021, and the calendar uses VIIRS for those
+  years.
+
+**US results, v1.2** (`data/harmonized/us/regions_summary.csv`). Errors are held-out; the
+constant ratio is in brackets. "Correct-model range" is what simulations of a correct model
+score at that region's own noise (§5.1).
+
+| Region | Error | Correct-model range | Bias check | Background | Year band (90%) | Status |
+|---|---|---|---|---|---|---|
+| Southeast | 5.2% (6.1%) | 4.5–6.8% | p57 ✓ | 16% | −5% / +5% | ✓ |
+| Great Plains | 7.3% (8.6%) | 6.2–8.7% | p69 ✓ | 20% | −4% / +11% | ✓ |
+| California | 8.2% (9.8%) | 7.6–11.1% | p76 ✓ | 11% | −6% / +7% | ✓ |
+| Pacific Northwest | 8.5% (10.1%) | 8.0–12.2% | p78 ✓ | 5% | −7% / +3% | ✓ |
+| Midwest/Northeast | 10.0% (11.2%) | 9.2–13.6% | p24 ✓ | 17% | −8% / +12% | ✓ |
+| Interior West | 15.2% (29.8%) | 13.3–18.9% | p7 ✓ | 36% | −20% / +21% | error 0.2 pt over 15%, at the noise floor |
+| Southwest | 23.3% (23.4%) | 17.8–25.9% | p15 ✓ | 18% | −32% / +26% | error and step fail, at the noise floor |
+| Alaska | 13.7% (14.4%) | — | p85 ✓ | 6% | −7% / +23% | low data |
+| Hawaii | 26.8% (constant ratio used) | — | — | — | — | low data; constant ratio not rejected |
+
+- In the Interior West and Southwest the remaining error is **inside what a correct model would
+  score**. Their VIIRS/MODIS ratio swings between years for reasons that MODIS cannot observe
+  (2.3–4.6 in the Interior West; none of activity, FRP or clustering explains it). No MODIS-based
+  formula can remove that, so their bands are wide by design.
+- The **US-wide year band is −7% / +9%** in the MODIS-only years (e.g. 2001: 93.5k–109.4k around
+  100.7k cell-days). It is the sum of the region bands, so it is conservative.
+

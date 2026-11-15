@@ -114,6 +114,11 @@ export interface CalendarCell {
   unscaledCellDays: number; // gridded, no α
   modisScaledCellDays: number; // Σ MODIS × α over days MODIS flew
   nModisDays: number; // days with MODIS data (denominator for modisScaledCellDays)
+  /** Part of harmonizedCellDays that came from MODIS-scaled days (the part with model uncertainty). */
+  scaledCellDays: number;
+  /** 90% range of harmonizedCellDays (null if the region has no uncertainty estimate). VIIRS days are exact. */
+  harmonizedLo: number | null;
+  harmonizedHi: number | null;
   modisCellDays: number;
   viirsCellDays: number;
   sourceMix: number; // fraction of days with basis = VIIRS

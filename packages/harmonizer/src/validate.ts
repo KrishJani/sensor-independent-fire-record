@@ -1,6 +1,6 @@
 // Validation of the calibration (docs/HARMONIZATION.md §5). Pure functions over overlap samples.
 
-import { calibrationSamples, computeAlpha, quantileSorted, type CalibrationSample } from './calibrate.ts';
+import { calibrationSamples, computeAlpha, mulberry32, quantileSorted, type CalibrationSample } from './calibrate.ts';
 import { alphaAt, fitModelConfig, monthPairs as modelMonthPairs, type AlphaModel, type AlphaModelConfig, type AlphaModelOptions, type MonthPair } from './model.ts';
 import { MODIS_CONFIGS, type Alpha, type AlphaTable, type DailyCounts, type ModisConfig, type SourceAvailability } from './types.ts';
 
@@ -315,6 +315,91 @@ function continuity(rows: PredRow[]) {
   };
 }
 
+/** Multiplicative 90% ranges for MODIS-scaled values, from held-out (LOYO) errors. */
+export interface Uncertainty {
+  /** A month's true VIIRS-equivalent value lies within [lo, hi] × the harmonized value (90%). */
+  monthly: [number, number];
+  /** The same for a calendar year's total. */
+  annual: [number, number];
+  nMonths: number;
+  nYears: number;
+}
+
+function uncertaintyFrom(rows: PredRow[], minCells: number): Uncertainty | null {
+  const m = rows.filter((r) => r.obs >= minCells && r.pred > 0).map((r) => Math.log(r.obs / r.pred)).sort((a, b) => a - b);
+  const byYear = new Map<number, [number, number]>();
+  for (const r of rows) { const e = byYear.get(r.year) ?? [0, 0]; e[0] += r.obs; e[1] += r.pred; byYear.set(r.year, e); }
+  const y = [...byYear.values()].filter(([o, p]) => o > 0 && p > 0).map(([o, p]) => Math.log(o / p)).sort((a, b) => a - b);
+  if (m.length < 5 || y.length < 3) return null;
+  const q = (xs: number[], p: number) => Math.exp(quantileSorted(xs, p));
+  return { monthly: [q(m, 0.05), q(m, 0.95)], annual: [q(y, 0.05), q(y, 0.95)], nMonths: m.length, nYears: y.length };
+}
+
+// ---- samplers for the parametric bootstrap ----
+function gammaSample(shape: number, rnd: () => number): number {
+  if (shape < 1) return gammaSample(shape + 1, rnd) * Math.pow(rnd() || 1e-12, 1 / shape);
+  const d = shape - 1 / 3, c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x: number, v: number;
+    do {
+      const u1 = rnd() || 1e-12, u2 = rnd();
+      x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = rnd() || 1e-12;
+    if (Math.log(u) < 0.5 * x * x + d - d * v + d * Math.log(v)) return d * v;
+  }
+}
+function poissonSample(l: number, rnd: () => number): number {
+  if (l <= 0) return 0;
+  if (l < 30) { const L = Math.exp(-l); let k = 0, p = 1; do { k++; p *= rnd(); } while (p > L); return k - 1; }
+  const u = rnd() || 1e-12, v = rnd();
+  return Math.max(0, Math.round(l + Math.sqrt(l) * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)));
+}
+/** Quasi-Poisson draw: mean μ, variance φμ (negative binomial as a gamma-Poisson mixture). */
+function quasiPoisson(mu: number, phi: number, rnd: () => number): number {
+  if (phi <= 1.0001) return poissonSample(mu, rnd);
+  const k = mu / (phi - 1);
+  return poissonSample((gammaSample(k, rnd) / k) * mu, rnd);
+}
+
+export interface NoiseTest {
+  sims: number;
+  dispersion: number;
+  /** What a CORRECT model scores in this region, given its counts and overdispersion (5th / 50th / 95th percentile). */
+  residualBeta: [number, number, number];
+  mdape: [number, number, number];
+  /** Percentile of the real score among the simulations. */
+  realResidualBetaPct: number;
+  realMdapePct: number;
+}
+
+/**
+ * Parametric bootstrap: simulate overlap data FROM the fitted model (V quasi-Poisson with the
+ * region's own overdispersion, M Poisson), refit and score each exactly like the real data.
+ */
+function noiseTest(pairs: MonthPair[], mc: AlphaModelConfig, config: AlphaModelConfig['config'], o: AlphaModelOptions, minCells: number, sims: number, seed: number, real: ModelScore): NoiseTest {
+  const rnd = mulberry32(seed);
+  const mus = pairs.map((p) => predict(mc, p));
+  const used = pairs.map((p, i) => ({ p, mu: mus[i] })).filter((e) => e.mu > 0);
+  const params = 25;
+  const phi = Math.max(1, used.reduce((s, e) => s + (e.p.v - e.mu) ** 2 / e.mu, 0) / Math.max(1, used.length - params));
+  const rbs: number[] = [];
+  const mds: number[] = [];
+  for (let k = 0; k < sims; k++) {
+    const sp = pairs.map((p, i) => ({ ...p, m: poissonSample(p.m, rnd), v: quasiPoisson(mus[i], phi, rnd) }));
+    const sc = scoreRows(loyoRows(sp, config, o), minCells);
+    if (sc.residualBeta !== null) rbs.push(sc.residualBeta);
+    if (sc.mdape !== null) mds.push(sc.mdape);
+  }
+  rbs.sort((a, b) => a - b);
+  mds.sort((a, b) => a - b);
+  const q3 = (xs: number[]): [number, number, number] => [quantileSorted(xs, 0.05), quantileSorted(xs, 0.5), quantileSorted(xs, 0.95)];
+  const pct = (xs: number[], x: number | null) => (x === null || !xs.length ? NaN : (100 * xs.filter((v) => v <= x).length) / xs.length);
+  return { sims, dispersion: phi, residualBeta: q3(rbs), mdape: q3(mds), realResidualBetaPct: pct(rbs, real.residualBeta), realMdapePct: pct(mds, real.mdape) };
+}
+
 export interface ModelValidationReport {
   calibrationYears: [number, number];
   configs: Record<string, {
@@ -325,40 +410,66 @@ export interface ModelValidationReport {
     /** The constant-ratio (β = 1) model scored the same way, for comparison. */
     loyoConstantRatio: ModelScore;
     continuity: ReturnType<typeof continuity>;
+    uncertainty: Uncertainty | null;
+    noise: NoiseTest | null;
   }>;
   acceptance: { loyoMdapeWithin15pct: boolean | null; noStepAtTransition: boolean | null; unbiasedAcrossActivity: boolean | null };
+  /** How the bias check was judged: against simulated correct-model noise, or a fixed threshold. */
+  biasCheck: 'noise-aware' | 'fixed-threshold';
+  /** 'low' when too few months have enough fire to validate (scores are then indicative only). */
+  confidence: { level: 'ok' | 'low'; reason: string | null; monthsScored: number; medianMonthlyViirs: number };
 }
 
 export function validateModel(
   daily: DailyCounts[],
   av: SourceAvailability,
   model: AlphaModel,
-  opts: AlphaModelOptions & { minMonthlyCells?: number },
+  opts: AlphaModelOptions & { minMonthlyCells?: number; noiseSims?: number; seed?: number },
 ): ModelValidationReport {
   const minCells = opts.minMonthlyCells ?? 20;
   const configs: ModelValidationReport['configs'] = {};
+  let taPairs: MonthPair[] = [];
   for (const config of MODIS_CONFIGS) {
     const pairs = modelMonthPairs(calibrationSamples(daily, av, { years: opts.years, config }));
+    if (config === 'TA') taPairs = pairs;
     const mc = model[config];
     const inRows = pairs.map((p) => ({ year: p.year, month: p.month, obs: p.v, pred: predict(mc, p) }));
+    const lo = loyoRows(pairs, config, opts);
+    const loyo = scoreRows(lo, minCells);
+    const sims = config === 'TA' && mc.kind === 'glm' ? opts.noiseSims ?? 0 : 0;
     configs[config] = {
       nPairs: pairs.length,
       model: { kind: mc.kind, beta: mc.beta, betaCi: mc.betaCi, test: mc.test },
       inSample: scoreRows(inRows, minCells),
-      loyo: scoreRows(loyoRows(pairs, config, opts), minCells),
+      loyo,
       loyoConstantRatio: scoreRows(loyoRows(pairs, config, { ...opts, forceRatio: true }), minCells),
       continuity: continuity(inRows),
+      uncertainty: uncertaintyFrom(lo, minCells),
+      noise: sims > 0 ? noiseTest(pairs, mc, config, { ...opts, bootstrap: null }, minCells, sims, opts.seed ?? 20260101, loyo) : null,
     };
   }
   const ta = configs.TA;
   const rb = ta.loyo.residualBeta;
+  const vs = taPairs.map((p) => p.v).sort((a, b) => a - b);
+  const medV = vs.length ? quantileSorted(vs, 0.5) : 0;
+  const scored = ta.loyo.nMonthsScored;
+  const low = scored < 60 || medV < 50;
+  const noise = ta.noise;
   return {
     calibrationYears: opts.years,
     configs,
     acceptance: {
       loyoMdapeWithin15pct: ta.loyo.mdape === null ? null : ta.loyo.mdape <= 0.15,
       noStepAtTransition: ta.continuity.medianStepPct === null ? null : Math.abs(ta.continuity.medianStepPct) <= 0.05,
-      unbiasedAcrossActivity: rb === null ? null : Math.abs(rb - 1) <= Math.max(0.1, 2 * (ta.loyo.residualBetaSe ?? 0)),
+      // Noise-aware: biased only if the real residual β is below what 95% of correct-model simulations give.
+      unbiasedAcrossActivity: rb === null ? null : noise ? rb >= noise.residualBeta[0] : Math.abs(rb - 1) <= Math.max(0.1, 2 * (ta.loyo.residualBetaSe ?? 0)),
+    },
+    biasCheck: noise ? 'noise-aware' : 'fixed-threshold',
+    confidence: {
+      level: low ? 'low' : 'ok',
+      reason: low ? `only ${scored} of ${ta.nPairs} overlap months have ≥ ${minCells} VIIRS cell-days (median ${medV} per month); scores are indicative` : null,
+      monthsScored: scored,
+      medianMonthlyViirs: medV,
     },
   };
 }

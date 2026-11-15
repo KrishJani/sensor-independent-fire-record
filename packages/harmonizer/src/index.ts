@@ -59,13 +59,15 @@ export {
   type CalibrationSample,
   type ComputeAlphaOptions,
 } from './calibrate.ts';
-export { buildCalendar } from './calendar.ts';
+export { buildCalendar, applyBands } from './calendar.ts';
 export { computeAnomalies, cumulativeToDay, scoreAgainst, baselineStats, type Anomaly, type AnomalyClass } from './anomalies.ts';
 export { countClasses, anomalyColor } from './colors.ts';
 export {
   validateCalibration,
   validateModel,
   type ModelValidationReport,
+  type Uncertainty,
+  type NoiseTest,
   type ModelScore,
   inSampleAgreement,
   leaveOneYearOut,
@@ -78,6 +80,8 @@ export { detectOutages, withoutDates, type DetectedOutage } from './outages.ts';
 export {
   fitAlphaModel,
   fitAlphaGLM,
+  chi2Sf,
+  pairMean,
   fitModelConfig,
   alphaAt,
   effectiveAlphas,
@@ -109,4 +113,5 @@ export * from './serialize.ts';
 export { addDays, dateRange, daysInMonth } from './dates.ts';
 
 // 1.1.0: activity-dependent α (Poisson GLM, model.ts) replaces the constant monthly ratio.
-export const HARMONIZER_VERSION = '1.1.0';
+// 1.2.0: two-component α (VIIRS-only background + scaled MODIS), noise-aware acceptance, uncertainty bands.
+export const HARMONIZER_VERSION = '1.2.0';

@@ -19,6 +19,9 @@ export function buildCalendar(days: Iterable<HarmonizedDay>): CalendarCell[] {
         unscaledCellDays: 0,
         modisScaledCellDays: 0,
         nModisDays: 0,
+        scaledCellDays: 0,
+        harmonizedLo: null,
+        harmonizedHi: null,
         modisCellDays: 0,
         viirsCellDays: 0,
         sourceMix: 0,
@@ -43,7 +46,10 @@ export function buildCalendar(days: Iterable<HarmonizedDay>): CalendarCell[] {
     c.viirsCellDays += d.viirsCellDays;
     c.nDays++;
     if (d.basis === 'VIIRS') c.nViirsDays++;
-    else if (d.basis === 'MODIS_SCALED') c.nModisScaledDays++;
+    else if (d.basis === 'MODIS_SCALED') {
+      c.nModisScaledDays++;
+      c.scaledCellDays += d.harmonizedCellDays;
+    }
     else c.nNoneDays++;
     if (d.peakFrpMw !== null && (c.peakFrpMw === null || d.peakFrpMw > c.peakFrpMw)) {
       c.peakFrpMw = d.peakFrpMw;
@@ -56,4 +62,17 @@ export function buildCalendar(days: Iterable<HarmonizedDay>): CalendarCell[] {
     c.complete = c.nDays === daysInMonth(c.year, c.month) && c.nNoneDays === 0;
   }
   return out.sort((a, b) => a.year - b.year || a.month - b.month);
+}
+
+/**
+ * 90% bands from the held-out error factors (validate.ts `Uncertainty.monthly`): only the
+ * MODIS-scaled part of a month is uncertain; VIIRS days are observed.
+ */
+export function applyBands(calendar: CalendarCell[], factors: [number, number] | null): CalendarCell[] {
+  for (const c of calendar) {
+    if (!factors) { c.harmonizedLo = c.harmonizedHi = null; continue; }
+    c.harmonizedLo = c.harmonizedCellDays - c.scaledCellDays * (1 - factors[0]);
+    c.harmonizedHi = c.harmonizedCellDays + c.scaledCellDays * (factors[1] - 1);
+  }
+  return calendar;
 }

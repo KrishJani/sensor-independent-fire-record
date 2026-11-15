@@ -1,4 +1,4 @@
-<title>California Fire Calendar</title>
+<title>__TITLE__</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -69,15 +69,21 @@ svg text { font-family: var(--f-mono); font-size: 11px; fill: var(--ink-3); }
 table.alpha { border-collapse: collapse; font: 400 12px/1.3 var(--f-mono); font-variant-numeric: tabular-nums; }
 table.alpha th, table.alpha td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--rule); }
 table.alpha th { color: var(--ink-3); font-weight: 500; }
+table.regions td, table.regions th { padding: 6px 10px; }
+.dim { color: var(--ink-3); }
+.chk { display: inline-block; font: 500 11px/1 var(--f-mono); padding: 3px 6px; border-radius: 4px; border: 1px solid var(--rule); }
+.chk.ok { color: var(--ink); }
+.chk.no { color: var(--ink); border-color: var(--s2); background: color-mix(in srgb, var(--s2) 14%, transparent); }
+.chk.na { color: var(--ink-3); }
 .tablebox { overflow-x: auto; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">NASA FIRMS · MODIS + VIIRS · California · 2000-11 → 2026-08</div>
+    <div class="eyebrow">__EYEBROW__</div>
     <h1>Before and after harmonization</h1>
-    <p>The same California fire record, three ways. Each day uses one sensor family: MODIS before VIIRS existed, VIIRS from 20 January 2012. The panels differ only in what we do to those numbers. Hover any month for the values.</p>
+    <p>__INTRO__</p>
   </header>
 
   <section class="facts" id="facts" aria-label="Key numbers"></section>
@@ -86,7 +92,7 @@ table.alpha th { color: var(--ink-3); font-weight: 500; }
 
   <section class="chart-card" aria-labelledby="ann-h">
     <h2 id="ann-h">Annual totals, indexed to their 2013–2021 average = 100</h2>
-    <p style="font-size:13px">Indexing puts the three series on one scale. A sensor artifact shows up as a cliff at 2012; real fire years show up in all three.</p>
+    <p style="font-size:13px">Indexing puts the three series on one scale. A sensor artifact shows up as a cliff at 2012; real fire years show up in all three. The shaded band is the 90% range of the harmonized series in MODIS-only years, from held-out validation.</p>
     <div class="keyrow" id="annkey"></div>
     <div class="svgbox"><svg id="ann" role="img" aria-label="Annual totals for raw detections, gridded cell-days and harmonized cell-days, indexed to 2013 to 2021"></svg></div>
   </section>
@@ -98,13 +104,19 @@ table.alpha th { color: var(--ink-3); font-weight: 500; }
     <div class="svgbox"><svg id="ov" role="img" aria-label="Annual VIIRS cell-days and MODIS harmonized cell-days, 2012 to 2025"></svg></div>
   </section>
 
+  <section class="chart-card" id="regions-card" aria-labelledby="rg-h" hidden>
+    <h2 id="rg-h">Region by region</h2>
+    <p style="font-size:13px">Each region has its own α model, fitted on its own 2013–2021 overlap. The total is the sum of the regions. Errors are out of sample (each year predicted from a model fitted without it), shown for the model and, in grey, for a single constant ratio per month. The bias check compares each region with simulations of a correct model at that region's own noise level (pN = percentile of the real score; below 5 fails). "Low data" marks regions with too few fire months to validate tightly.</p>
+    <div class="tablebox"><table class="alpha regions" id="regions"></table></div>
+  </section>
+
   <section class="notes">
     <h2>How to read it</h2>
     <p><b>Raw detections</b> count every filtered hotspot. VIIRS pixels are about 1/7 the area of MODIS pixels, so one fire produces many more VIIRS dots, and the record jumps when VIIRS takes over.</p>
     <p><b>Gridded</b> counts each 0.05° cell (about 5.5 km) once per day. This removes the pixel-size effect. A smaller jump remains, because VIIRS also sees smaller and cooler fires.</p>
     <p><b>Harmonized</b> uses VIIRS as observed whenever it flew, and MODIS × α otherwise. α is learned from 2013–2021, when both sensors flew. It depends on the calendar month and on how active the region is that month, because VIIRS adds relatively fewer cells in a big fire month: both sensors already flag nearly every cell inside large fires. The result is in VIIRS-equivalent cell-days.</p>
     <p id="caveat"></p>
-    <h2 style="margin-top:8px">α by month (Terra + Aqua): a typical month, and the quietest and busiest months seen in calibration</h2>
+    <h2 style="margin-top:8px" id="alpha-h">α by month (Terra + Aqua): a typical month, and the quietest and busiest months seen in calibration</h2>
     <div class="tablebox"><table class="alpha" id="alpha"></table></div>
   </section>
 </div>
@@ -120,7 +132,7 @@ const SERIES = [
   { key: 4, name: 'Harmonized', unit: 'VIIRS-eq. cell-days', color: '--s1', sub: 'Cell-days × α on MODIS-only days. Comparable across 2012.' },
 ];
 const fmt = (x, d = 0) => x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
-const rows = DATA.rows.map(r => ({ y: r[0], m: r[1], raw: r[2], grid: r[3], unscaled: r[3], harm: r[4], mix: r[5], complete: !!r[6], mscaled: r[7], nModis: r[8], viirs: r[9], nDays: r[10], vals: r }));
+const rows = DATA.rows.map(r => ({ y: r[0], m: r[1], raw: r[2], grid: r[3], unscaled: r[3], harm: r[4], mix: r[5], complete: !!r[6], mscaled: r[7], nModis: r[8], viirs: r[9], nDays: r[10], lo: r[11], hi: r[12], vals: r }));
 const byKey = new Map(rows.map(r => [r.y + '-' + r.m, r]));
 const years = [...new Set(rows.map(r => r.y))].sort((a, b) => a - b);
 const tip = document.getElementById('tip');
@@ -139,7 +151,7 @@ function monthTip(r) {
   const basis = r.mix >= 0.999 ? 'VIIRS (as observed)' : r.mix <= 0.001 ? (r.unscaled > 0 ? `MODIS × α (${(r.harm / r.grid).toFixed(2)})` : 'MODIS × α') : `mixed: ${Math.round(r.mix * 100)}% VIIRS days`;
   return `<b>${MONTH_NAMES[r.m - 1]} ${r.y}</b>${r.complete ? '' : ' <span style="color:var(--ink-3)">· partial</span>'}
   ${SERIES.map(s => `<div class="row"><em><i style="background:var(${s.color})"></i>${s.name}</em><span>${fmt(r.vals[s.key], s.key === 4 ? 0 : 0)}</span></div>`).join('')}
-  <div class="row" style="margin-top:4px"><em>Basis</em><span>${basis}</span></div>`;
+  <div class="row" style="margin-top:4px"><em>Basis</em><span>${basis}</span></div>${r.lo !== null && r.hi !== null && r.hi - r.lo > 0.5 ? `<div class="row"><em>Harmonized, 90% range</em><span>${fmt(r.lo)}–${fmt(r.hi)}</span></div>` : ''}`;
 }
 
 // ---------- key numbers ----------
@@ -150,13 +162,22 @@ const jump = i => avg(2012, 2014, i) / avg(2009, 2011, i);
 // Overlap cross-check: months where VIIRS and MODIS both flew every day.
 const ov = {};
 for (const r of rows) { if (r.y < 2012 || r.y > 2025 || !r.complete || r.mix < 0.999 || r.nModis !== r.nDays) continue; (ov[r.y] ??= { vi: 0, mod: 0 }); ov[r.y].vi += r.viirs; ov[r.y].mod += r.mscaled; }
-const overlapYears = Object.entries(ov).map(([y, v]) => ({ y: +y, ...v })).sort((a, b) => a.y - b.y);
+const overlapYears = DATA.overlap ?? Object.entries(ov).map(([y, v]) => ({ y: +y, ...v })).sort((a, b) => a.y - b.y);
+const pct1 = x => (x === null || x === undefined ? '—' : `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
+const regionFacts = () => {
+  const R = DATA.regions, pass = R.filter(r => r.acc.every(a => a !== false)).length;
+  const better = R.filter(r => r.loyo !== null && r.loyo1 !== null && r.loyo <= r.loyo1).length;
+  return [
+    [`${pass} of ${R.length}`, 'Regions passing every check (held-out error ≤ 15%, no step, no activity bias)'],
+    [`${better} of ${R.length}`, 'Regions where activity-dependent α beats a constant ratio out of sample'],
+  ];
+};
 document.getElementById('facts').innerHTML = [
   [`${jump(0).toFixed(1)}×`, 'Jump in raw detections, 2012–14 vs 2009–11'],
   [`${jump(1).toFixed(1)}×`, 'Same jump after gridding to 5.5 km cells'],
   [`${jump(2).toFixed(1)}×`, 'Same jump after harmonization (2010 was a quiet year)'],
   [`±${(Math.max(...overlapYears.map(d => Math.abs(d.mod / d.vi - 1))) * 100).toFixed(0)}%`, 'Largest yearly gap between MODIS × α and observed VIIRS, 2012–2025'],
-  [`${(DATA.val.loyo * 100).toFixed(1)}%`, `Median error predicting a held-out year from MODIS (constant ratio: ${(DATA.val.loyo1 * 100).toFixed(1)}%)`],
+  ...(DATA.val ? [[`${(DATA.val.loyo * 100).toFixed(1)}%`, `Median error predicting a held-out year from MODIS (constant ratio: ${(DATA.val.loyo1 * 100).toFixed(1)}%)`]] : regionFacts()),
 ].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join('');
 
 // ---------- heatmaps ----------
@@ -215,6 +236,13 @@ function drawAnnual() {
   s += `<line x1="${x(2012) - (x(2012) - x(2011)) / 2}" x2="${x(2012) - (x(2012) - x(2011)) / 2}" y1="${m.t}" y2="${H - m.b}" stroke="${cssVar('--viirs-line')}" stroke-dasharray="4 3" stroke-width="1.2"/>`;
   s += `<text x="${x(2012) - (x(2012) - x(2011)) / 2 + 6}" y="${m.t + 10}">VIIRS starts</text>`;
   s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(100)}" y2="${yy(100)}" stroke="${ink3}" stroke-width="1" stroke-dasharray="1 3"/>`;
+  if (DATA.annualBand) {
+    const bb = DATA.annualBand.filter(b => idx.some(d => d.y === b.y) && b.hi - b.lo > 0.01 * b.h);
+    if (bb.length > 1) {
+      const top = bb.map(b => `${x(b.y)},${yy((b.hi / base[2]) * 100)}`), bot = bb.slice().reverse().map(b => `${x(b.y)},${yy((b.lo / base[2]) * 100)}`);
+      s += `<polygon points="${[...top, ...bot].join(' ')}" fill="${cssVar('--s1')}" opacity="0.18"/>`;
+    }
+  }
   for (const l of LINES) {
     const col = cssVar(l.s.color);
     s += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${idx.map(d => `${x(d.y)},${yy(d.v[l.i])}`).join(' ')}"/>`;
@@ -233,7 +261,8 @@ function drawAnnual() {
     const p = pt.matrixTransform(svg.getScreenCTM().inverse());
     const d = idx.reduce((a, b) => Math.abs(x(b.y) - p.x) < Math.abs(x(a.y) - p.x) ? b : a);
     xh.setAttribute('x1', x(d.y)); xh.setAttribute('x2', x(d.y)); xh.setAttribute('visibility', 'visible');
-    showTip(`<b>${d.y}</b>${LINES.map(l => `<div class="row"><em><i style="background:var(${l.s.color})"></i>${l.s.name}</em><span>${fmt(d.v[l.i])} · ${fmt(ann[d.y][l.i])}</span></div>`).join('')}<div class="row" style="margin-top:4px"><em>index · annual total</em><span></span></div>`, e);
+    const band = DATA.annualBand?.find(b => b.y === d.y);
+    showTip(`<b>${d.y}</b>${LINES.map(l => `<div class="row"><em><i style="background:var(${l.s.color})"></i>${l.s.name}</em><span>${fmt(d.v[l.i])} · ${fmt(ann[d.y][l.i])}</span></div>`).join('')}${band && band.hi - band.lo > 0.01 * band.h ? `<div class="row"><em>Harmonized, 90% range</em><span>${fmt(band.lo)}–${fmt(band.hi)}</span></div>` : ''}<div class="row" style="margin-top:4px"><em>index · annual total</em><span></span></div>`, e);
   });
   svg.querySelector('#hit').addEventListener('pointerleave', () => { xh.setAttribute('visibility', 'hidden'); hideTip(); });
 }
@@ -275,12 +304,32 @@ addEventListener('resize', drawAll);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
 new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-// ---------- α table + caveat ----------
-document.getElementById('alpha').innerHTML =
+// ---------- per-region panel (groups) ----------
+if (DATA.regions) {
+  document.getElementById('regions-card').hidden = false;
+  const chk = (ok, label) => `<span class="chk ${ok === null ? 'na' : ok ? 'ok' : 'no'}" title="${label}">${ok === null ? '–' : ok ? '✓' : '✗'} ${label}</span>`;
+  document.getElementById('regions').innerHTML =
+    `<tr><th style="text-align:left">Region</th><th>Detections</th><th>VIIRS-only background</th><th>β (90% CI)</th><th>Held-out error</th><th>Busiest 10%</th><th>Quietest 25%</th><th>Step</th><th>Year band (90%)</th><th style="text-align:left">Checks</th></tr>` +
+    DATA.regions.map(r => `<tr>
+      <td style="text-align:left">${r.name}</td>
+      <td>${(r.share * 100).toFixed(1)}%</td>
+      <td>${r.bg === null ? '—' : (r.bg * 100).toFixed(0) + '%'}</td>
+      <td>${r.kind === 'glm' ? `${r.beta.toFixed(2)} <span class="dim">(${r.ci ? r.ci[0].toFixed(2) + '–' + r.ci[1].toFixed(2) : '—'})</span>` : '<span class="dim">1 (ratio)</span>'}</td>
+      <td>${r.loyo === null ? '—' : (r.loyo * 100).toFixed(1) + '%'} <span class="dim">${r.loyo1 === null ? '' : (r.loyo1 * 100).toFixed(1) + '%'}</span></td>
+      <td>${pct1(r.top)} <span class="dim">${pct1(r.top1)}</span></td>
+      <td>${pct1(r.bot)} <span class="dim">${pct1(r.bot1)}</span></td>
+      <td>${pct1(r.step)}</td>
+      <td>${r.band ? `${pct1(r.band[0] - 1)} / ${pct1(r.band[1] - 1)}` : '—'}</td>
+      <td style="text-align:left;white-space:nowrap">${chk(r.acc[0], 'error')} ${chk(r.acc[1], 'step')} ${chk(r.acc[2], 'bias' + (r.noisePct !== null ? ` (p${Math.round(r.noisePct)})` : ''))} ${r.confidence === 'low' ? `<span class="chk no" title="${r.confidenceReason}">low data</span>` : ''}</td></tr>`).join('');
+}
+
+// ---------- α table + caveat (single region) ----------
+if (DATA.alpha) document.getElementById('alpha').innerHTML =
   `<tr><th style="text-align:left">Month</th>${MONTH_NAMES.map(m => `<th>${m}</th>`).join('')}</tr>` +
   `<tr><td style="text-align:left">α typical</td>${DATA.alpha.map(a => `<td>${a[0].toFixed(2)}</td>`).join('')}</tr>` +
   `<tr><td style="text-align:left">90% CI</td>${DATA.alpha.map(a => `<td>${a[1] ? a[1].toFixed(2) + '–' + a[2].toFixed(2) : '—'}</td>`).join('')}</tr>` +
   `<tr><td style="text-align:left">α quiet month</td>${DATA.alpha.map(a => `<td>${a[3].toFixed(2)}</td>`).join('')}</tr>` +
   `<tr><td style="text-align:left">α busy month</td>${DATA.alpha.map(a => `<td>${a[4].toFixed(2)}</td>`).join('')}</tr>`;
-document.getElementById('caveat').innerHTML = `<b>Why α depends on activity.</b> A single ratio per month assumed VIIRS adds the same share of cells in quiet and record months. The overlap data reject that (exponent β = ${DATA.model.beta.toFixed(3)}, 90% CI ${DATA.model.betaCi[0].toFixed(2)}–${DATA.model.betaCi[1].toFixed(2)}; 1 would mean a constant ratio; F = ${DATA.model.f.toFixed(1)}, p < 0.0001). Held out year by year, the constant ratio overstated the busiest 10% of months by ${(DATA.val.top1 * 100).toFixed(1)}% and understated the quietest quarter by ${(-DATA.val.bot1 * 100).toFixed(1)}%. With α depending on activity, those errors are ${(DATA.val.top * 100).toFixed(1)}% and ${(DATA.val.bot * 100).toFixed(1)}%. Data: ${fmt(DATA.n.det)} filtered detections, ${fmt(DATA.n.cd)} cell-days.`;
+if (!DATA.alpha) { document.getElementById('alpha').closest('.tablebox').hidden = true; document.getElementById('alpha-h').hidden = true; }
+document.getElementById('caveat').innerHTML = DATA.caveat ?? `<b>How α is built.</b> α has two parts: a background of small, cool fires that only VIIRS detects (${(DATA.model.bg * 100).toFixed(0)}% of VIIRS cell-days here, which do not grow with large-fire activity), and the MODIS-visible fires scaled with an activity exponent β = ${DATA.model.beta.toFixed(2)} (90% CI ${DATA.model.betaCi[0].toFixed(2)}–${DATA.model.betaCi[1].toFixed(2)}). The overlap data reject a single constant ratio (F(${DATA.model.df}) = ${DATA.model.f.toFixed(1)}, p ${DATA.model.p < 1e-4 ? '< 0.0001' : '= ' + DATA.model.p.toFixed(4)}).${DATA.bandYear ? ` A MODIS-only year is within ${pct1(DATA.bandYear[0] - 1)} / ${pct1(DATA.bandYear[1] - 1)} of its harmonized value (90%, held-out years).` : ''} Held out year by year, the constant ratio overstated the busiest 10% of months by ${(DATA.val.top1 * 100).toFixed(1)}% and understated the quietest quarter by ${(-DATA.val.bot1 * 100).toFixed(1)}%. With α depending on activity, those errors are ${(DATA.val.top * 100).toFixed(1)}% and ${(DATA.val.bot * 100).toFixed(1)}%. Data: ${fmt(DATA.n.det)} filtered detections, ${fmt(DATA.n.cd)} cell-days.`;
 </script>
