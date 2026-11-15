@@ -12,7 +12,10 @@ import { db, type Ctx } from '../lib/db.ts';
 import { ApiError, parseBbox, parseDate } from '../lib/http.ts';
 import { REGIONS } from './meta.ts';
 
-const LIMITS = { coarse: 20000, cells: 2500, points: 2500 } as const; // deg² per level; points/cells are capped
+// deg² per level. coarse covers the whole globe (world zoom); every level caps its feature count
+// (strongest first, meta.truncated) so the payload stays bounded whatever the area.
+const LIMITS = { coarse: 64800, cells: 2500, points: 2500 } as const;
+const COARSE_CAP = 25000; // 0.5° bins
 const CELL_CAP = 20000;
 const POINT_CAP = 5000;
 
@@ -118,6 +121,12 @@ export async function spots(env: Env, ctx: Ctx, q: URLSearchParams) {
       globalFallback = true;
       features.push({ type: 'Feature', geometry: square(g.bin_lat - 0.25, g.bin_lon - 0.25, 0.5), properties: { [harmonized ? 'harmonized_cell_days' : 'cell_days']: g.cd, peak_frp_mw: g.pk, source: 'global', harmonized: false } });
     }
+  }
+  if (level === 'coarse' && features.length > COARSE_CAP) {
+    const v = (f: any) => f.properties.harmonized_cell_days ?? f.properties.cell_days ?? 0;
+    features.sort((a, b) => v(b) - v(a));
+    features.length = COARSE_CAP;
+    truncated = true;
   }
   return { type: 'FeatureCollection', features, meta: { level, heat, sensor: sensor.toLowerCase(), measure: harmonized ? 'harmonized' : 'raw', bbox, from, to, truncated, globalFallback, harmonized,
     note: harmonized ? 'VIIRS-equivalent cell-days (sensor-independent) inside harmonized regions; outside them the global layer is raw sensor activity' : 'raw sensor activity' } };
