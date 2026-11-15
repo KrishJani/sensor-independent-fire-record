@@ -2,7 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import { haversineKm } from "../grid";
 import type { IncidentSummary } from "../incidentModel";
 import type { Brief } from "../protocol";
-import { buildBriefPrompt, cleanBrief } from "./brief";
+import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS, reasoningParams } from "./brief";
 
 export interface EnrichParams {
   incidentId: string;
@@ -158,17 +158,22 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
 
     const brief = await safe<Brief>("brief", { retries: { limit: 1, delay: "5 seconds" }, timeout: "3 minutes" }, async () => {
       const prompt = buildBriefPrompt({ summary: p.summary, stream: p.stream, weather, places, history });
-      const models = [this.env.CHAT_MODEL, this.env.CHAT_FALLBACK_MODEL].filter((m, i, a) => m && a.indexOf(m) === i);
+      const models = briefModels(this.env);
+      const maxTokens = Number(this.env.BRIEF_MAX_TOKENS) || DEFAULT_BRIEF_MAX_TOKENS;
       let lastErr = "";
       for (const model of models) {
+        const started = Date.now();
         try {
           const out = await this.env.AI.run(
             model as keyof AiModels,
-            { messages: prompt, max_tokens: 4096, temperature: 0.2 } as never,
+            { messages: prompt, max_tokens: maxTokens, temperature: 0.2, ...reasoningParams(this.env, model) } as never,
             { gateway: { id: this.env.AI_GATEWAY_ID } }
           );
+          const latencyMs = Date.now() - started;
           const text = cleanBrief(extractText(out));
-          if (text) return { status: "ok", data: { text, model, generatedAt: Date.now(), streamT: p.streamT } };
+          console.log(JSON.stringify({ msg: "brief_model_done", incident: p.incidentId, model, latencyMs, ok: !!text, usage: (out as { usage?: unknown })?.usage ?? null }));
+          if (text)
+            return { status: "ok", data: { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs } };
           lastErr = `${model}: empty response (${JSON.stringify(out).slice(0, 200)})`;
         } catch (err) {
           lastErr = `${model}: ${err instanceof Error ? err.message : String(err)}`;

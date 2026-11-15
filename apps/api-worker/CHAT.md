@@ -62,11 +62,13 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 |---|---|---|---|
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
 | `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
-| `CHAT_FALLBACK_MODEL` | var | `@cf/zai-org/glm-4.7-flash` | Tried when `CHAT_MODEL` fails before producing output. |
+| `CHAT_FALLBACK_MODEL` | var | `@cf/zai-org/glm-4.7-flash` | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
 | `ALLOWED_ORIGINS` | var | `http://localhost:5173` | Comma-separated. Also enforced on the agent WebSocket (other origins get 403). |
+
+**Demo setting: `CHAT_FALLBACK_MODEL=""`.** With the fallback disabled, a failing `CHAT_MODEL` call shows the user an error ("could not answer right now, please try again") instead of an answer from `glm-4.7-flash`, the only model that drifted into Chinese after the language rule was added (see the comparison below). For a public demo, an error on retry is better than a Chinese answer. Set it in `wrangler.jsonc` (`"CHAT_FALLBACK_MODEL": ""`) or with `wrangler dev --var CHAT_FALLBACK_MODEL:`. Leaving the variable out keeps the default fallback. Each turn logs `copilot_turn_done` with the model that answered, so a drifted reply can be traced to a model in the worker logs (`wrangler tail`) or in AI Gateway.
 
 **Switch the model:** set `CHAT_MODEL` in `wrangler.jsonc` (or `wrangler dev --var CHAT_MODEL:anthropic/claude-opus-4.8`). Catalog models bill via Unified Billing or a key stored on the gateway; no code change is needed.
 

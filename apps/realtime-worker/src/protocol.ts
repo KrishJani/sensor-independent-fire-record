@@ -10,7 +10,11 @@ export interface Brief {
   text: string;
   model: string;
   generatedAt: number; // wall clock, epoch ms
-  streamT: number; // stream time the brief describes
+  streamT: number; // stream time the brief describes, epoch ms
+  /** Same moment as streamT, ISO 8601 UTC, for the UI's "as of <time>" label. */
+  asOf: string;
+  /** Wall-clock time the model call took, ms. */
+  latencyMs?: number;
 }
 
 export type ServerMessage =

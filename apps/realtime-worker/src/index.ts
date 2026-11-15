@@ -8,6 +8,7 @@ import { KNOWN_SCENARIOS } from "./replay/scenarios";
 import { isStream, streamOfIncident } from "./streams";
 
 export { Clusterer } from "./do/clusterer";
+export { Control } from "./do/control";
 export { Incident } from "./do/incident";
 export { LiveHub } from "./do/liveHub";
 export { Replay } from "./do/replay";
@@ -27,7 +28,7 @@ app.use("*", (c, next) =>
   cors({
     origin: (origin) => (allowedOrigins(c.env).includes(origin) ? origin : null),
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-replay-token"],
     maxAge: 600
   })(c, next)
 );
@@ -35,6 +36,23 @@ app.use("*", (c, next) =>
 const clusterer = (env: Env, stream: string) => env.CLUSTERER.get(env.CLUSTERER.idFromName(stream));
 const hub = (env: Env, stream: string) => env.LIVE_HUB.get(env.LIVE_HUB.idFromName(stream));
 const replay = (env: Env, id: string) => env.REPLAY.get(env.REPLAY.idFromName(id));
+const control = (env: Env) => env.CONTROL.get(env.CONTROL.idFromName("global"));
+
+/** Constant-time string comparison (both sides hashed so lengths match). */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(a)), crypto.subtle.digest("SHA-256", enc.encode(b))]);
+  return (crypto.subtle as SubtleCrypto & { timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean }).timingSafeEqual(ha, hb);
+}
+
+/** When the REPLAY_TOKEN secret is set, replay start/pause/resume/stop need a matching x-replay-token header. */
+app.use("/realtime/replay*", async (c, next) => {
+  const token = (c.env as Env & { REPLAY_TOKEN?: string }).REPLAY_TOKEN;
+  if (c.req.method !== "POST" || !token) return next();
+  const given = c.req.header("x-replay-token") ?? "";
+  if (!given || !(await sameSecret(given, token))) return c.json(err("unauthorized", "missing or invalid x-replay-token"), 401);
+  return next();
+});
 
 app.get("/realtime/health", async (c) => {
   const live = await clusterer(c.env, "live").stats();
@@ -42,7 +60,9 @@ app.get("/realtime/health", async (c) => {
   for (const bbox of watchBboxes(c.env))
     for (const source of NRT_SOURCES)
       poll[`${source}:${bbox.join(",")}`] = await c.env.INGEST_STATE.get<PollState>(`realtime:poll:${source}:${bbox.join(",")}`, "json");
-  return c.json({ ok: true, live, poll, scenarios: KNOWN_SCENARIOS });
+  const ctl = control(c.env);
+  const [briefBudget, activeReplay] = await Promise.all([ctl.briefBudget(Number(c.env.BRIEF_DAILY_MAX ?? 60)), ctl.activeReplay()]);
+  return c.json({ ok: true, live, poll, scenarios: KNOWN_SCENARIOS, briefBudget, activeReplay });
 });
 
 app.get("/realtime/incidents", async (c) => {
@@ -77,10 +97,20 @@ app.post("/realtime/replay", async (c) => {
   const speed = Number(body.speed ?? c.env.REPLAY_DEFAULT_SPEED ?? 12000);
   if (!Number.isFinite(speed) || speed < 1 || speed > 1_000_000) return c.json(err("bad_speed", "speed must be 1..1000000 (stream seconds per real second)"), 400);
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+  // One active replay overall: reuse a running replay of the same scenario, refuse a different one.
+  const claim = await control(c.env).claimReplay({ id, scenario });
+  if (claim.action === "existing") {
+    const info = claim.info ?? (await replay(c.env, claim.id).status());
+    if (!info) return c.json(err("replay_starting", "a replay of this scenario is starting; retry in a few seconds"), 409);
+    return c.json({ ...info, reused: true }, 200);
+  }
+  if (claim.action === "busy")
+    return c.json(err("replay_busy", `replay ${claim.id} (${claim.scenario}) is running; only one replay can run at a time`), 409);
   try {
     const info = await replay(c.env, id).start({ id, scenario, speed });
-    return c.json(info, 201);
+    return c.json({ ...info, reused: false }, 201);
   } catch (e) {
+    await control(c.env).releaseReplay(id);
     return c.json(err("replay_failed", e instanceof Error ? e.message : String(e)), 500);
   }
 });

@@ -18,7 +18,7 @@ export interface RealtimeFetcher {
 const ORIGIN = "https://realtime-worker";
 
 const INCIDENT_RULES =
-  "areaKm2 is the area of active grid cells, not a burned-area perimeter. Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents."; // host is ignored by service bindings
+  'affectedAreaKm2 is the area of 0.05° grid cells that contain detections. It overstates the burned area: call it "area with detections", never "burned area" or "the fire covers". Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents.'; // host is ignored by service bindings
 
 interface IncidentSummary {
   id: string;
@@ -27,7 +27,7 @@ interface IncidentSummary {
   mergedInto: string | null;
   detections: number;
   cells: number;
-  areaKm2: number;
+  affectedAreaKm2: number;
   frpMaxMw: number;
   frpMaxSensor?: string | null;
   firstSeen: number;
@@ -75,7 +75,7 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
   const incidents = r.data.incidents.map((s) => ({
     id: s.id,
     status: s.status,
-    areaKm2: s.areaKm2,
+    affectedAreaKm2: s.affectedAreaKm2,
     growthKm2PerDayLast24h: s.growthKm2PerDay,
     detections: s.detections,
     activeCells: s.cells,
@@ -125,7 +125,7 @@ export function createRealtimeTools(rt: RealtimeFetcher | undefined, getContext:
   return {
     get_live_incidents: tool({
       description:
-        "Current fire INCIDENTS (clusters of real NASA FIRMS detections) from the realtime pipeline: size in km² of active 0.05° cells, growth over the last 24 h, detections, peak FRP, first/last seen, and an AI brief and nearest towns when available. Use for 'what is burning now', 'active fires/incidents here', 'how fast is it growing'. Defaults to the map's area and the live stream; pass stream 'replay:<id>' (or rely on the map context) for a historical replay.",
+        "Current fire INCIDENTS (clusters of real NASA FIRMS detections) from the realtime pipeline: affected area in km² (0.05° cells with detections, larger than the burned area), growth over the last 24 h, detections, peak FRP, first/last seen, and an AI brief and nearest towns when available. Use for 'what is burning now', 'active fires/incidents here', 'how fast is it growing'. Defaults to the map's area and the live stream; pass stream 'replay:<id>' (or rely on the map context) for a historical replay.",
       inputSchema: z.object({
         stream: z.string().regex(STREAM_RE).optional().describe('"live" (default) or "replay:<id>" for an active replay. Omit to use the map context.'),
         bbox: BboxSchema.optional().describe("[west, south, east, north]. Omit to use the area selected on the map (no area = whole stream)."),

@@ -21,7 +21,7 @@ Base URL in dev: `http://localhost:8789`. Every route is under `/realtime/*`.
 - Low-confidence detections (VIIRS `l`, MODIS below 30) are counted and drawn on the heat layer, but they never create or grow an incident.
 - An incident is **significant** at 5 or more detections across 2 or more cells. Only significant incidents are pushed to clients, listed by REST and enriched.
 - `status` is `active`, `inactive` (no detections for 48 h of stream time) or `merged`.
-- `areaKm2` is the summed area of active grid cells (each cell shrinks with cos(lat)). It is **not** a burned-area perimeter. Say "area of active cells" in the UI.
+- `affectedAreaKm2` is the summed area of the 0.05° grid cells that contain at least one detection (each cell is about 30 km² at the equator and shrinks with cos(lat)). A single hotspot marks a whole cell, so this **overstates the burned area**, often by a lot. It is not a perimeter. Label it "area with detections" in the UI, never "burned area".
 
 ### `IncidentSummary`
 
@@ -33,8 +33,8 @@ Base URL in dev: `http://localhost:8789`. Every route is under `/realtime/*`.
   significant: boolean;
   mergedInto: string | null;
   detections: number;         // non-low-confidence detections
-  cells: number;              // active 0.05° cells
-  areaKm2: number;
+  cells: number;              // 0.05° cells with detections
+  affectedAreaKm2: number;    // area of those cells; overstates burned area (see above)
   frpTotalMw: number;
   frpMaxMw: number;
   frpMaxSensor: "VIIRS" | "MODIS" | null;   // FRP is not harmonized: always show the sensor
@@ -42,7 +42,7 @@ Base URL in dev: `http://localhost:8789`. Every route is under `/realtime/*`.
   lastSeen: number;
   centroid: [lon, lat];
   bbox: [w, s, e, n];
-  growthKm2PerDay: number;    // area of cells first seen in the last 24 h of stream time
+  growthKm2PerDay: number;    // affected area of cells first seen in the last 24 h of stream time
   sensors: { VIIRS: number; MODIS: number };
   asOf: number;               // stream time this summary was computed at
 }
@@ -70,11 +70,24 @@ Always unwrap batches first. The server coalesces updates and sends at most one 
 |---|---|---|
 | `hello` | `{ stream, streamT: number \| null, incidents: number }` | First message after connecting (inside the snapshot batch) |
 | `incident.upsert` | `{ incident: IncidentSummary }` | A significant incident changed. Replace by `incident.id`. |
-| `incident.brief` | `{ id, brief: { text, model, generatedAt, streamT } }` | An AI brief is ready, or was refreshed after the area doubled |
+| `incident.brief` | `{ id, brief: Brief }` (below) | An AI brief is ready, or was refreshed after the area doubled |
 | `detections` | `{ points: [lon, lat, frpMw, tMs, conf][], replace?: true }` | New detections inside your viewport. `conf` is 0 (low), 1 (nominal) or 2 (high). With `replace: true`, the points replace your heat layer (on connect and after a viewport change); otherwise append them. |
 | `clock` | `{ t: number }` | Replay only: stream time advanced (each tick, about 2/s) |
 | `replay.status` | `{ status: "running" \| "paused" \| "stopped" \| "done", progress: 0..1 }` | Replay only |
 | `error` | `{ message }` | A bad client message |
+
+`Brief`:
+
+```ts
+{
+  text: string;        // 2 or 3 sentences; says "area with detections", never "burned area"
+  model: string;
+  generatedAt: number; // wall clock, epoch ms
+  streamT: number;     // stream time the brief describes, epoch ms
+  asOf: string;        // the same moment as ISO 8601 UTC: show "as of <asOf>" next to the text
+  latencyMs?: number;  // model call duration
+}
+```
 
 On connect you get one snapshot batch containing `hello`, the current `clock` (replay), every known significant incident (`incident.upsert`), their briefs, and recent detections (last 48 h of stream time, up to 5000, filtered by `bbox` when you passed one).
 
@@ -136,7 +149,7 @@ function connectRealtime(stream: string, map: mapboxgl.Map, handlers: {
 
 Map layers:
 - **Heat layer:** keep a `Map` or array of points. Convert them to a GeoJSON source of `Point` features with properties `{ frp, t, conf }`. Use a Mapbox `heatmap` layer weighted by `frp`, and optionally fade by `streamT - t`. Drop points older than 48 h of stream time.
-- **Incidents:** keep a `Map<id, IncidentSummary>`. Draw `centroid` as a circle sized by `areaKm2`, or draw `bbox` as an outline. Hide `status: "merged"` and dim `inactive`.
+- **Incidents:** keep a `Map<id, IncidentSummary>`. Draw `centroid` as a circle sized by `affectedAreaKm2`, or draw `bbox` as an outline. Hide `status: "merged"` and dim `inactive`.
 - **Clock (replay):** show `new Date(t).toISOString()` as "Replay time". For live, use `max(lastSeen)`, or `streamT` from `/realtime/incidents`.
 
 ---
@@ -147,13 +160,15 @@ All responses are JSON. Errors are `{ error: { code, message } }` with status 40
 
 | Method and path | Purpose |
 |---|---|
-| `GET /realtime/health` | `{ ok, live: { streamT, counters, incidents, merges }, poll: { "<SOURCE>:<bbox>": PollState }, scenarios }` |
-| `GET /realtime/incidents?stream=live&bbox=w,s,e,n&status=active\|inactive\|merged\|all&limit=200` | `{ stream, streamT, dataSource: "live"\|"replay", count, incidents: IncidentSummary[] }`, sorted by area (largest first). Only significant incidents (`&minor=1` includes all). `bbox` intersects the incident bbox. Default status is `all`. |
-| `GET /realtime/incidents/:id` | `{ summary, timeline, enrichments, enrichment, brief, stream, streamT, dataSource }`. `timeline` is hourly: `[{ hour, detections, newCells, frp, areaKm2 }]` (cumulative area). `enrichment` is described below. |
-| `POST /realtime/replay` body `{ scenario?: "quebec-2023-06", speed?: number }` | Starts a replay and returns `ReplayInfo` (201). `speed` is stream seconds per real second; the default `REPLAY_DEFAULT_SPEED` is 12000, so 10 days take about 75 s. Use `stream` from the response for the WebSocket. |
+| `GET /realtime/health` | `{ ok, live: { streamT, counters, incidents, merges, enrich }, poll: { "<SOURCE>:<bbox>": PollState }, scenarios, briefBudget: { used, max, windowHours }, activeReplay: { id, scenario } \| null }` |
+| `GET /realtime/incidents?stream=live&bbox=w,s,e,n&status=active\|inactive\|merged\|all&limit=200` | `{ stream, streamT, dataSource: "live"\|"replay", count, incidents: IncidentSummary[] }`, sorted by `affectedAreaKm2` (largest first). Only significant incidents (`&minor=1` includes all). `bbox` intersects the incident bbox. Default status is `all`. |
+| `GET /realtime/incidents/:id` | `{ summary, timeline, enrichments, enrichment, brief, stream, streamT, dataSource }`. `timeline` is hourly: `[{ hour, detections, newCells, frp, affectedAreaKm2 }]` (cumulative). `enrichment` is described below. |
+| `POST /realtime/replay` body `{ scenario?: "quebec-2023-06", speed?: number }` | Starts a replay and returns `ReplayInfo` with `reused: false` (201). Only **one replay runs at a time** across the whole worker: if one is already running (or paused) for the same scenario, you get that one back with `reused: true` (200) and `speed` is ignored; if a different scenario is running you get 409 `replay_busy`. `speed` is stream seconds per real second; the default `REPLAY_DEFAULT_SPEED` is 12000, so 10 days take about 75 s. Use `stream` from the response for the WebSocket. |
 | `GET /realtime/replay/:id` | `ReplayInfo` plus `clusterer` stats |
-| `POST /realtime/replay/:id/pause` · `/resume` · `/stop` | Replay control. Returns `ReplayInfo`. |
+| `POST /realtime/replay/:id/pause` · `/resume` · `/stop` | Replay control. Returns `ReplayInfo`. A replay paused for more than 30 min (since it started) gives up its slot to the next start. |
 | `GET /realtime/ws?stream=` | WebSocket (§2) |
+
+When the `REPLAY_TOKEN` secret is set (production), the four replay `POST` routes need the header `x-replay-token: <token>`, otherwise 401 `unauthorized`. `GET` routes and the WebSocket stay open. Locally the secret is unset and no header is needed.
 
 `ReplayInfo`:
 
@@ -181,7 +196,19 @@ map.fitBounds([[-80, 45], [-60, 53]]);
 
 ### Enrichment (`GET /realtime/incidents/:id` → `enrichment`)
 
-The `INCIDENT_ENRICH` Workflow runs when an incident first becomes significant, and again when its area has doubled (at most once per 6 h of stream time). There are at most `ENRICH_MAX_PER_STREAM` runs per stream. A failed step is recorded and does not fail the run.
+The `INCIDENT_ENRICH` Workflow (weather, places, history, AI brief) runs for an incident once, and again when its affected area has doubled (at most once per 6 h of stream time). Due incidents go into a per-stream queue, and each ingest batch starts at most 2 of them, **largest affected area first** (first briefs before re-briefs), so a busy stream briefs its biggest fires first rather than the first ones to cross a threshold.
+
+When an incident is due for its first brief:
+- `live`: as soon as it is significant.
+- replays: once it is significant **and** `affectedAreaKm2 ≥ BRIEF_MIN_AREA_KM2` (default 200). In the Quebec scenario, 21 incidents end at or above 200 km² (30 cross it at some point; 9 of those later merge into a neighbour and are dropped from the queue). The largest (about 4,500 km²) gets its brief during a default-speed replay.
+
+Budgets (every run makes one AI call; re-briefs count):
+- `ENRICH_MAX_PER_STREAM` (30): per replay stream, and per rolling 24 h (wall clock) for `live`.
+- `BRIEF_DAILY_MAX` (60): across **all** streams per rolling 24 h, tracked in the `Control` Durable Object.
+
+What does not fit stays queued and is retried on later batches. `GET /realtime/replay/:id` → `clusterer.enrich` and `/realtime/health` → `briefBudget` show the usage.
+
+A failed step is recorded and does not fail the run.
 
 ```ts
 {
@@ -195,7 +222,24 @@ The `INCIDENT_ENRICH` Workflow runs when an incident first becomes significant, 
 ```
 
 - Replays get the weather **at stream time** from the Open-Meteo historical archive.
-- The brief is 2 or 3 plain sentences written only from these numbers, with no advice. `brief.streamT` says which moment it describes, so show "as of <time>" next to it, because the incident may have grown since.
+- The brief is 2 or 3 plain sentences written only from these numbers, with no advice. The prompt calls the size "area with detections" and forbids "burned area" (the output is also scrubbed for it). `brief.asOf` (ISO) / `brief.streamT` say which moment it describes, so show "as of <time>" next to it, because the incident may have grown since.
+
+#### Brief model settings
+
+Measured on 2026-11-15 against `@cf/moonshotai/kimi-k2.6` with a Quebec-sized prompt (Workers AI REST, no gateway cache):
+
+| `reasoning_effort` | `max_tokens` | Latency per brief | Completion tokens | Neurons | Result |
+|---|---|---|---|---|---|
+| default (high) | 4096 | 29–55 s | 1,250–2,250 | 460–840 | OK (before) |
+| `low` | 4096 | 54–63 s | 2,240–2,800 | 820–1,030 | OK; `low` is mapped to `high` for this model |
+| `low` | 1024 | 23 s | 1,024 | 380 | **empty** (all tokens spent reasoning) |
+| `none` | 4096 | 2.1–2.2 s | 75–77 | 35 | OK |
+| `none` | 160 | 2.0–2.5 s | 73–75 | 34 | OK |
+| `none` | 100 | 2.5 s | 74–76 | 35 | OK |
+| `none` | 80 | 2.2–2.7 s | 71–74 | 34 | OK, but only a few tokens to spare |
+| `none` | 64 | 2.5–2.8 s | 64 | 30 | cut off mid-sentence |
+
+So the defaults are `BRIEF_REASONING_EFFORT=none` and `BRIEF_MAX_TOKENS=120`: about 20× faster and 20× fewer neurons than before. With reasoning off, a lower `max_tokens` saves nothing until it truncates the brief, so 120 keeps headroom over the ~75 tokens a brief uses. If a reply is cut off anyway, the trailing half-sentence is dropped. The reasoning setting is only sent to kimi models; the fallback model gets its own defaults.
 
 ---
 
@@ -219,11 +263,16 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
 | `AI_GATEWAY_ID` | var | `default` | Same as api-worker |
-| `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker |
-| `ENRICH_MAX_PER_STREAM` | var | `30` | Caps Workflow runs (and AI calls) per stream |
+| `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
+| `ENRICH_MAX_PER_STREAM` | var | `30` | Workflow runs (and AI calls) per replay stream, and per rolling 24 h for `live` |
+| `BRIEF_DAILY_MAX` | var | `60` | AI briefs per rolling 24 h across all streams (re-briefs count) |
+| `BRIEF_MIN_AREA_KM2` | var | `200` | Replays only brief incidents with at least this `affectedAreaKm2` |
+| `BRIEF_REASONING_EFFORT` | var | `none` | Sent to kimi models only. `""` = model default. kimi-k2.6 accepts `high` or `none` (`low`/`medium` map to `high`). |
+| `BRIEF_MAX_TOKENS` | var | `120` | Brief output budget |
+| `REPLAY_TOKEN` | secret | unset | When set, replay `POST` routes need `x-replay-token`. `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
-Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB` and `REPLAY` (all SQLite-backed); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`); KV `INGEST_STATE`; Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
+Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`); KV `INGEST_STATE`; Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
 
 ---
 
@@ -241,5 +290,5 @@ pnpm typegen                            # after editing wrangler.jsonc
 ```
 
 - If Quebec is not in local R2 (you skipped `fetch-replay-fixture`), replays play the bundled California sample.
-- `AI` runs remotely even in dev, so briefs use your account's Workers AI quota (about 1 call per significant incident, capped by `ENRICH_MAX_PER_STREAM`).
+- `AI` runs remotely even in dev, so briefs use your account's Workers AI quota (about 35 neurons per brief with the defaults, capped by `ENRICH_MAX_PER_STREAM` and `BRIEF_DAILY_MAX`).
 - To use the history step, run api-worker (`pnpm dev:api`) at the same time. The service binding connects through the local dev registry.

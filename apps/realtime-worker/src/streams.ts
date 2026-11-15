@@ -31,3 +31,11 @@ export function streamOfIncident(id: string): string | null {
 export function dataSourceOf(stream: string): "live" | "replay" {
   return stream === "live" ? "live" : "replay";
 }
+
+
+/** Replays only enrich incidents at or above BRIEF_MIN_AREA_KM2 (live enriches on significance). */
+export function briefMinAreaKm2(env: Pick<Env, "BRIEF_MIN_AREA_KM2">, stream: string): number {
+  if (stream === "live") return 0;
+  const v = Number(env.BRIEF_MIN_AREA_KM2 ?? 200);
+  return Number.isFinite(v) && v >= 0 ? v : 200;
+}

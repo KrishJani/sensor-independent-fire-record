@@ -16,8 +16,16 @@
     "AI_GATEWAY_ID": "default",
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
     "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
-    // Max enrichment workflows (and so AI briefs) per stream; protects the Workers AI quota during replays.
-    "ENRICH_MAX_PER_STREAM": "30"
+    // "" disables the fallback (see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
+    // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
+    "ENRICH_MAX_PER_STREAM": "30",
+    // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count).
+    "BRIEF_DAILY_MAX": "60",
+    // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).
+    "BRIEF_MIN_AREA_KM2": "200",
+    // kimi-k2.6 supports "high" | "none" ("low" is mapped to "high"). "none": ~2 s per brief instead of ~55 s.
+    "BRIEF_REASONING_EFFORT": "none",
+    "BRIEF_MAX_TOKENS": "120"
   },
   "ai": {
     "binding": "AI",
@@ -67,13 +75,19 @@
       { "name": "CLUSTERER", "class_name": "Clusterer" },
       { "name": "INCIDENT", "class_name": "Incident" },
       { "name": "LIVE_HUB", "class_name": "LiveHub" },
-      { "name": "REPLAY", "class_name": "Replay" }
+      { "name": "REPLAY", "class_name": "Replay" },
+      // Global singleton: one-active-replay slot and the daily brief budget.
+      { "name": "CONTROL", "class_name": "Control" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["Clusterer", "Incident", "LiveHub", "Replay"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Control"]
     }
   ],
   "observability": { "enabled": true }

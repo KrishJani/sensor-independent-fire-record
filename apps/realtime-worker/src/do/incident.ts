@@ -14,7 +14,10 @@ import type { Brief } from "../protocol";
 
 export interface IncidentIngestResult {
   summary: IncidentSummary;
-  /** Set when enrichment is due (first significant, or area doubled ≥ 6 h of stream time later). */
+  /**
+   * Set when enrichment is due (significant and at least minAreaKm2, or area doubled ≥ 6 h of
+   * stream time later). The Clusterer queues it; the mark is recorded at once so it is not re-queued.
+   */
   enrich: { reason: "significant" | "area_doubled"; streamT: number } | null;
 }
 
@@ -46,11 +49,11 @@ export class Incident extends DurableObject<Env> {
     this.sql.exec("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, JSON.stringify(v));
   }
 
-  async ingest(args: { id: string; stream: string; detections: Detection[]; streamT: number }): Promise<IncidentIngestResult> {
+  async ingest(args: { id: string; stream: string; detections: Detection[]; streamT: number; minAreaKm2?: number }): Promise<IncidentIngestResult> {
     const s = (this.state ??= emptyState(args.id, args.stream));
     applyDetections(s, args.detections, args.streamT);
-    // The Clusterer starts the INCIDENT_ENRICH workflow (it owns the per-stream budget).
-    const due = enrichmentDue(s, s.streamT);
+    // The Clusterer queues and starts INCIDENT_ENRICH (it owns the priority order and the budgets).
+    const due = enrichmentDue(s, s.streamT, args.minAreaKm2 ?? 0);
     if (due) s.enrichments.push(due);
     this.put("state", s);
     return { summary: summarize(s), enrich: due ? { reason: due.reason, streamT: due.t } : null };

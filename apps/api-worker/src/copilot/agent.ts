@@ -13,6 +13,7 @@ import { parseContext, type MapContext } from "./context";
 import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
 import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
+import { chatFallbacks, DEFAULT_MODEL } from "./models";
 import { buildSystemPrompt } from "./prompt";
 import { createRealtimeTools } from "./realtime";
 import { createFireTools } from "./tools";
@@ -29,8 +30,6 @@ const MODEL_WINDOW = 30;
 const MAX_STEPS = 8;
 /** Explicit budget: reasoning models (gpt-oss) otherwise truncate answers mid-sentence. */
 const MAX_OUTPUT_TOKENS = 4096;
-const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
-const DEFAULT_FALLBACK_MODEL = "@cf/zai-org/glm-4.7-flash";
 
 /**
  * One instance per chat session (sessionId = DO name). Transcript persistence,
@@ -70,8 +69,8 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
 
     const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
     const primary = (this.env.CHAT_MODEL || DEFAULT_MODEL) as CloudflareLanguageModelId;
-    const fallback = (this.env.CHAT_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL) as CloudflareLanguageModelId;
-    const model = ai(primary, { fallback: fallback === primary ? [] : [fallback] });
+    const fallbacks = chatFallbacks(this.env.CHAT_FALLBACK_MODEL, primary) as CloudflareLanguageModelId[];
+    const model = ai(primary, { fallback: fallbacks });
 
     const result = streamText({
       model,
@@ -93,7 +92,11 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
       prepareStep: ({ stepNumber }) =>
         stepNumber >= MAX_STEPS - 1 ? { toolChoice: "none" as const } : undefined,
       abortSignal: options?.abortSignal,
-      onFinish,
+      onFinish: (event) => {
+        // Which model actually answered (primary or fallback): needed to trace language drift.
+        console.log(JSON.stringify({ msg: "copilot_turn_done", model: event.response?.modelId ?? null, primary, fallbacks, finishReason: event.finishReason }));
+        return onFinish(event);
+      },
       onError: ({ error }) => console.error("[copilot] stream error:", error)
     });
 
