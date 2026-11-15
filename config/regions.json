@@ -153,5 +153,10 @@
     "$comment": "Persistent VIIRS-only heat (gas flares). Mask a cell if in any year VIIRS flags it on >= minViirsDays days while MODIS flags it on <= maxModisFraction of them. Thresholds fixed before evaluation; sensitivity in docs/HARMONIZATION.md §4.3.",
     "minViirsDays": 30,
     "maxModisFraction": 0.1
+  },
+  "flareInventory": {
+    "$comment": "Known flare cells from the EOG/Payne Institute VIIRS Nightfire upstream flaring inventory (MYC25Q4, doi:10.5281/zenodo.23091822, CC BY-NC 4.0). Masked outright for both sensors. Rule fixed before evaluation (docs/HARMONIZATION.md §4.4).",
+    "cells": "config/flares/eog_myc25q4_cells.csv",
+    "bufferDeg": 0.01
   }
 }

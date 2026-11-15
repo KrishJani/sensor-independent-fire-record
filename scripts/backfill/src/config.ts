@@ -35,6 +35,7 @@ export interface RegionsConfig {
   staticMaskMinDetections: number;
   minMonthlyCellsForValidation: number;
   flareMask?: { minViirsDays: number; maxModisFraction: number };
+  flareInventory?: { cells: string; bufferDeg: number };
 }
 
 export interface SensorsConfig {

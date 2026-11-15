@@ -66,7 +66,7 @@ export interface StaticMaskEntry {
   /** type 1/2 detections, or (reason = persistent_viirs_only) VIIRS days in the worst year. */
   nStaticDetections: number;
   /** Why the cell is masked. Absent = 'static_type'. */
-  reason?: 'static_type' | 'persistent_viirs_only';
+  reason?: 'static_type' | 'persistent_viirs_only' | 'eog_flare_site';
 }
 
 /**

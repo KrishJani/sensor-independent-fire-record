@@ -11,6 +11,7 @@ import { runBackfill, verifyOutputs } from './pipeline.ts';
 import { runGlobal } from './global.ts';
 import { aggregateGroup } from './aggregate.ts';
 import { buildReport } from './report.ts';
+import { buildFlareCells, loadFlareCells } from './flares.ts';
 import { DEFAULT_SENSITIVITY_GRIDS, alphaAt, fmt } from '../../../packages/harmonizer/src/index.ts';
 
 const { positionals, values } = parseArgs({
@@ -31,6 +32,8 @@ const { positionals, values } = parseArgs({
     'max-transactions': { type: 'string' },
     'no-auto-outages': { type: 'boolean', default: false },
     'no-flare-mask': { type: 'boolean', default: false },
+    'no-flare-inventory': { type: 'boolean', default: false },
+    inventory: { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     group: { type: 'string', default: 'us' },
@@ -96,6 +99,7 @@ async function main() {
         bootstrapReps: +values['bootstrap-reps']!,
         noiseSims: +values['noise-sims']!,
         flareMask: values['no-flare-mask'] ? null : cfg.flareMask ?? null,
+        inventoryFlareCells: values['no-flare-inventory'] || !cfg.flareInventory ? null : await loadFlareCells(join(REPO_ROOT, cfg.flareInventory.cells)),
         gridSensitivity: values['grid-sensitivity'] ? values['grid-sizes']!.split(',').map(Number) : [],
         dryRun: values['dry-run']!,
         log,
@@ -165,6 +169,12 @@ async function main() {
       for (const [y, o] of g.overlap) console.log(`  ${y}  VIIRS ${String(o.vi).padStart(7)}  MODIS×α ${fmt(o.ms, 0).padStart(7)}  ${o.vi ? ((o.ms / o.vi - 1) * 100 >= 0 ? '+' : '') + fmt((o.ms / o.vi - 1) * 100, 1) + '%' : ''}`);
       return;
     }
+    case 'flare-cells': {
+      // node scripts/backfill/src/cli.ts flare-cells --inventory data/raw/flares/eog-myc25q4/annual_flare_site_records.csv
+      const inv = values.inventory ? abs(values.inventory) : join(REPO_ROOT, 'data/raw/flares/eog-myc25q4/annual_flare_site_records.csv');
+      await buildFlareCells({ inventory: inv, out: join(REPO_ROOT, cfg.flareInventory!.cells), bufferDeg: cfg.flareInventory!.bufferDeg, log });
+      return;
+    }
     case 'report': {
       // --group us  or  --region california  → docs/viz/<id>-before-after.html
       const asGroup = process.argv.includes('--group');
@@ -181,7 +191,7 @@ async function main() {
       return;
     }
     default:
-      throw new Error(`unknown command "${cmd}" (availability | download | run | global | aggregate | report | verify)`);
+      throw new Error(`unknown command "${cmd}" (availability | download | run | global | aggregate | report | flare-cells | verify)`);
   }
 }
 

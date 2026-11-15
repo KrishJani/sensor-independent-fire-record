@@ -255,6 +255,35 @@ MODIS sees just as often, so only 4 cells are masked there.
   on the outcome.
 - Disable with `--no-flare-mask`.
 
+### 4.4 Known flare sites from an independent inventory (pre-registered)
+
+**Source.** EOG / Payne Institute (Colorado School of Mines), *VIIRS Nightfire upstream
+gas-flaring volumes, 2012–2025* (MYC25Q4 v1.0), doi:10.5281/zenodo.23091822, CC BY-NC 4.0.
+
+- It contains 27,229 upstream oil and gas flare sites, with yearly volumes.
+- It is built from VIIRS **Nightfire** (night-time M-band), a product independent of the FIRMS
+  I-band detections we calibrate and validate on.
+- It covers upstream sites only, with no refineries or LNG terminals. The generic rule (§4.3)
+  stays in place for those.
+- Raw file: `data/raw/flares/eog-myc25q4/`. Checksums are verified against the published
+  `CHECKSUMS.sha256`.
+
+**Rule (fixed and committed before evaluation):**
+
+1. A 0.05° cell is a *known flare cell* if a site that was active (bcm > 0) in any year
+   2012–2025 lies within ±0.01° (≈ 1 km, to allow for location error) of the cell.
+2. Known flare cells are masked outright, for both sensors and all years. There is no
+   threshold to choose.
+3. The generic persistent-VIIRS rule (§4.3, 30 days / 10%) still applies everywhere, for
+   sources not in the inventory.
+4. The cost is reported: MODIS detections removed in these cells. MODIS rarely sees flares,
+   so this approximates the real fire lost.
+
+`backfill flare-cells` builds `config/flares/eog_myc25q4_cells.csv`: 26,818 active sites
+→ 25,814 cells worldwide, 6,150 in the US. Disable with `--no-flare-inventory`.
+
+*Results: §4.4.1 (added after the evaluation run).*
+
 ## 5. Validation [`validateModel` → `validation.json`]
 
 All scores are on monthly totals over overlap days, per MODIS configuration. Every score is also

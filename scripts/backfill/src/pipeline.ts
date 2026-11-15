@@ -19,6 +19,7 @@ import {
   HARMONIZER_VERSION,
   STATIC_MASK_HEADER,
   addDays,
+  cellCenter,
   toCellId,
   fmt,
   alphaRow,
@@ -89,6 +90,8 @@ export interface RunOptions {
   noiseSims?: number;
   /** Persistent VIIRS-only heat mask (gas flares); null = off. */
   flareMask?: { minViirsDays: number; maxModisFraction: number } | null;
+  /** Known flare cells from an independent inventory (EOG MYC25Q4); masked outright. */
+  inventoryFlareCells?: Set<number> | null;
   /** Grid sizes (degrees) for the sensitivity diagnostic; empty = off. */
   gridSensitivity: number[];
   dryRun: boolean;
@@ -206,6 +209,11 @@ export async function runBackfill(o: RunOptions) {
   // ---------------- pass 2 ----------------
   const filterStats = newFilterStats();
   const persist = createPersistenceAccumulator();
+  // Known flare cells (independent inventory): dropped before everything else, counted by sensor so the
+  // cost in real (MODIS-seen) fire is visible.
+  const invCells = o.inventoryFlareCells ?? null;
+  const invDropped = { MODIS: 0, VIIRS: 0 };
+  const invHit = new Set<number>();
   const app = createAppenders();
   rmSync(o.tmpDir, { recursive: true, force: true });
   for (const f of used) {
@@ -213,6 +221,14 @@ export async function runBackfill(o: RunOptions) {
     await forEachLine(f.path, (line) => {
       const d = p.line(line);
       if (!d || isNrtRow(d) || !inside(d)) return;
+      if (invCells && d.type !== 1 && d.type !== 2 && d.type !== 3) {
+        const c = toCellId(d.lat, d.lon);
+        if (invCells.has(c)) {
+          invDropped[d.sensor]++;
+          invHit.add(c);
+          return;
+        }
+      }
       if (keepDetection(d, { staticMask: maskCells, stats: filterStats })) {
         app.write(join(o.tmpDir, `det_${d.acqDate.slice(0, 4)}.tsv`), toTsv(d));
         persist.add(d);
@@ -222,6 +238,7 @@ export async function runBackfill(o: RunOptions) {
   await app.closeAll();
   log(`pass 2: kept ${filterStats.kept}/${filterStats.seen} (type ${filterStats.droppedType}, mask ${filterStats.droppedMask}, confidence ${filterStats.droppedConfidence})`);
   // Persistent VIIRS-only heat (gas flares): cells VIIRS flags on many days a year and MODIS almost never.
+  if (invCells) log(`flare inventory: ${invHit.size} known flare cells with detections; removed ${invDropped.VIIRS} VIIRS and ${invDropped.MODIS} MODIS detections`);
   const flares = o.flareMask ? persist.flagged(o.flareMask).filter((e) => !maskCells.has(e.cellId)) : [];
   const flareCells = new Set(flares.map((e) => e.cellId));
   let flareRemoved = 0;
@@ -348,7 +365,11 @@ export async function runBackfill(o: RunOptions) {
     'alpha_effective.csv',
     'year,month,modis_config,modis_cells_per_day,alpha_eff\n' + effective.map((e) => `${e.year},${e.month},${e.config},${fmt(e.rate, 3)},${fmt(e.alpha, 4)}\n`).join(''),
   );
-  outputs.set('static_mask.csv', STATIC_MASK_HEADER + '\n' + [...mask, ...flares].sort((a, b) => a.cellId - b.cellId).map(staticMaskRow).join(''));
+  const invEntries = [...invHit].filter((c) => !maskCells.has(c)).map((cellId) => {
+    const { lat, lon } = cellCenter(cellId);
+    return { cellId, gridLat: lat, gridLon: lon, nStaticDetections: 0, reason: 'eog_flare_site' as const };
+  });
+  outputs.set('static_mask.csv', STATIC_MASK_HEADER + '\n' + [...mask, ...flares, ...invEntries].sort((a, b) => a.cellId - b.cellId).map(staticMaskRow).join(''));
   let avCsv = AVAILABILITY_HEADER + '\n';
   for (const sat of ALL_SATELLITES) for (const d of [...(availability.get(sat) ?? [])].sort()) avCsv += `${sat},${d}\n`;
   outputs.set('source_availability.csv', avCsv);
@@ -386,6 +407,7 @@ export async function runBackfill(o: RunOptions) {
     alpha_shrinkage_k: o.k,
     static_mask_min_detections: o.minStaticDetections,
     flare_mask: o.flareMask ?? null,
+    flare_inventory: o.inventoryFlareCells ? 'EOG MYC25Q4 (doi:10.5281/zenodo.23091822)' : null,
     auto_outages: o.autoOutages,
     grid_sensitivity: o.gridSensitivity.length ? o.gridSensitivity : null,
     inputs: {
@@ -403,6 +425,8 @@ export async function runBackfill(o: RunOptions) {
       cell_days: nCellDays,
       static_mask_cells: mask.length,
       flare_mask_cells: flares.length,
+      inventory_flare_cells_hit: invHit.size,
+      inventory_flare_detections_removed: invDropped,
       flare_detections_removed: flareRemoved,
       outage_days_detected: detected.length,
     },
