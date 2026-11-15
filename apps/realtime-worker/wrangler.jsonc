@@ -1,0 +1,36 @@
+{
+  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nasa-fire-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // Comma-separated list of origins allowed by CORS (same approach as api-worker).
+    "ALLOWED_ORIGINS": "http://localhost:5173",
+    // Default replay speed: stream seconds per real second (see REALTIME.md).
+    "REPLAY_DEFAULT_SPEED": "12000"
+  },
+  "r2_buckets": [
+    {
+      // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
+      "binding": "REPLAY_DATA",
+      "bucket_name": "nasa-fire-realtime"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CLUSTERER", "class_name": "Clusterer" },
+      { "name": "INCIDENT", "class_name": "Incident" },
+      { "name": "LIVE_HUB", "class_name": "LiveHub" },
+      { "name": "REPLAY", "class_name": "Replay" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Clusterer", "Incident", "LiveHub", "Replay"]
+    }
+  ],
+  "observability": { "enabled": true }
+}

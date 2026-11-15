@@ -1,0 +1,3 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# NASA FIRMS MAP_KEY (https://firms.modaps.eosdis.nasa.gov/api/map_key/). Used by the live poller and scripts/fetch-replay-fixture.mjs.
+FIRMS_MAP_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
