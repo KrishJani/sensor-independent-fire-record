@@ -10,6 +10,10 @@ export interface EnrichParams {
   reason: "significant" | "area_doubled";
   streamT: number;
   summary: IncidentSummary;
+  /** Replays: a brief from the cache (no model call, no budget). */
+  cachedBrief?: Brief;
+  /** Replays: on a cache miss, store the new brief under this REPLAY_KV key. */
+  briefCacheKey?: string;
 }
 
 type StepResult<T> = { status: "ok"; data: T } | { status: "failed"; error: string } | { status: "skipped"; reason: string };
@@ -157,6 +161,10 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
     });
 
     const brief = await safe<Brief>("brief", { retries: { limit: 1, delay: "5 seconds" }, timeout: "3 minutes" }, async () => {
+      if (p.cachedBrief) {
+        console.log(JSON.stringify({ msg: "brief_cache_hit", incident: p.incidentId }));
+        return { status: "ok", data: { ...p.cachedBrief, cached: true } };
+      }
       const prompt = buildBriefPrompt({ summary: p.summary, stream: p.stream, weather, places, history });
       const models = briefModels(this.env);
       const maxTokens = Number(this.env.BRIEF_MAX_TOKENS) || DEFAULT_BRIEF_MAX_TOKENS;
@@ -172,8 +180,17 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
           const latencyMs = Date.now() - started;
           const text = cleanBrief(extractText(out));
           console.log(JSON.stringify({ msg: "brief_model_done", incident: p.incidentId, model, latencyMs, ok: !!text, usage: (out as { usage?: unknown })?.usage ?? null }));
-          if (text)
-            return { status: "ok", data: { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs } };
+          if (text) {
+            const data: Brief = { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs };
+            if (p.briefCacheKey) {
+              try {
+                await this.env.REPLAY_KV.put(p.briefCacheKey, JSON.stringify(data));
+              } catch (err) {
+                console.warn(JSON.stringify({ msg: "brief_cache_put_failed", key: p.briefCacheKey, error: String(err) }));
+              }
+            }
+            return { status: "ok", data };
+          }
           lastErr = `${model}: empty response (${JSON.stringify(out).slice(0, 200)})`;
         } catch (err) {
           lastErr = `${model}: ${err instanceof Error ? err.message : String(err)}`;

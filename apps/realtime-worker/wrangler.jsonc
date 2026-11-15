@@ -1,26 +1,27 @@
 {
-  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
+  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-realtime",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    // Comma-separated list of origins allowed by CORS (same approach as api-worker).
-    "ALLOWED_ORIGINS": "http://localhost:5173",
+    // CORS + WebSocket origins (same as api-worker). Exact origins, plus "https://*.<suffix>" for
+    // exactly one subdomain label (Pages preview URLs). See src/origins.ts.
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev",
     // Default replay speed: stream seconds per real second (see REALTIME.md).
     "REPLAY_DEFAULT_SPEED": "12000",
     // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
     "WATCH_BBOXES": "-170,15,-50,72",
     // Enrichment briefs: same gateway and models as api-worker (see apps/api-worker/CHAT.md).
-    "AI_GATEWAY_ID": "default",
+    "AI_GATEWAY_ID": "nasa-fire-copilot",
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
-    "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
-    // "" disables the fallback (see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
+    "CHAT_FALLBACK_MODEL": "",
+    // "" disables the fallback (demo setting, see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
     // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
     "ENRICH_MAX_PER_STREAM": "30",
-    // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count).
-    "BRIEF_DAILY_MAX": "60",
+    // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count; cached replay briefs don't).
+    "BRIEF_DAILY_MAX": "400",
     // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).
     "BRIEF_MIN_AREA_KM2": "200",
     // kimi-k2.6 supports "high" | "none" ("low" is mapped to "high"). "none": ~2 s per brief instead of ~55 s.
@@ -49,13 +50,13 @@
     {
       // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared INGEST_STATE namespace.
       "binding": "INGEST_STATE",
-      "id": "2bda5214db6446c498a62dddf873663b"
+      "id": "20402ea73f6d4da0b3599c04df01c887"
     },
     {
-      // Replay scenarios while R2 is unavailable: scenarios/<id>.json.gz (gzipped JSON).
-      // Uploaded by `pnpm fetch-replay-fixture`.
+      // Replay scenarios when R2 is not bound (scenarios/<id>.json.gz, gzipped JSON; uploaded by
+      // `pnpm fetch-replay-fixture --store=kv`) and the replay brief cache (brief-cache/...).
       "binding": "REPLAY_KV",
-      "id": "c3f602b4de0c44ddac9eedfb544cf7c5"
+      "id": "859bd85369ef4c1da04c734d8238671f"
     }
   ],
   "queues": {
@@ -69,16 +70,15 @@
       }
     ]
   },
-  // re-enable once bucket nasa-fire-realtime exists on the deploy account (our role has no R2
-  // permission there). REPLAY_DATA is optional: without it, scenarios load from REPLAY_KV and the
-  // raw NRT CSV archive is skipped. With it, R2 is read first.
-  // "r2_buckets": [
-  //   {
-  //     // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
-  //     "binding": "REPLAY_DATA",
-  //     "bucket_name": "nasa-fire-realtime"
-  //   }
-  // ],
+  // REPLAY_DATA is optional: comment this out on an account without the bucket and scenarios load
+  // from REPLAY_KV, while the raw NRT CSV archive is skipped. When bound, R2 is read first.
+  "r2_buckets": [
+    {
+      // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
+      "binding": "REPLAY_DATA",
+      "bucket_name": "nasa-fire-realtime"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "CLUSTERER", "class_name": "Clusterer" },

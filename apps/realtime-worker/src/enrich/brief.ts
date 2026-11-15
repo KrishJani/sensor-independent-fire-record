@@ -71,6 +71,16 @@ export function cleanBrief(raw: string): string {
   return kept.slice(0, 3).join(" ").trim();
 }
 
+/**
+ * Replay brief cache key (REPLAY_KV). Replays are deterministic, so the same scenario + incident
+ * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
+ * prompt changes.
+ */
+export const BRIEF_CACHE_VERSION = "v1";
+export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
+  return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
+}
+
 const DEFAULT_BRIEF_MODEL = "@cf/moonshotai/kimi-k2.6";
 /** Measured: 71–76 completion tokens per brief with reasoning off; 64 truncates. 120 leaves headroom. */
 export const DEFAULT_BRIEF_MAX_TOKENS = 120;

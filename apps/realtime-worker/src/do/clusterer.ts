@@ -3,7 +3,8 @@ import { assignDetections, type ClusterStore, type IncidentRef } from "../cluste
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
 import { INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
-import type { MapPoint } from "../protocol";
+import { briefCacheKey } from "../enrich/brief";
+import type { Brief, MapPoint } from "../protocol";
 import { briefMinAreaKm2, incidentId } from "../streams";
 import type { IncidentIngestResult } from "./incident";
 
@@ -55,7 +56,9 @@ export class Clusterer extends DurableObject<Env> {
       );
       CREATE TABLE IF NOT EXISTS merges (from_id TEXT NOT NULL, into_id TEXT NOT NULL, t INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, n INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS enrich_queue (incident_id TEXT PRIMARY KEY, reason TEXT NOT NULL, queued_t INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS enrich_queue2 (
+        incident_id TEXT PRIMARY KEY, reason TEXT NOT NULL, queued_t INTEGER NOT NULL, stable_key TEXT, level INTEGER NOT NULL DEFAULT 0
+      );
       CREATE TABLE IF NOT EXISTS enrich_log (t INTEGER NOT NULL, incident_id TEXT NOT NULL);
     `);
   }
@@ -206,11 +209,15 @@ export class Clusterer extends DurableObject<Env> {
       if (!r.enrich) continue;
       // A first brief outranks a re-brief; keep "significant" if one is already waiting.
       this.sql.exec(
-        `INSERT INTO enrich_queue (incident_id, reason, queued_t) VALUES (?, ?, ?)
-         ON CONFLICT(incident_id) DO UPDATE SET reason = CASE WHEN enrich_queue.reason = 'significant' THEN 'significant' ELSE excluded.reason END`,
+        `INSERT INTO enrich_queue2 (incident_id, reason, queued_t, stable_key, level) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(incident_id) DO UPDATE SET
+           reason = CASE WHEN enrich_queue2.reason = 'significant' THEN 'significant' ELSE excluded.reason END,
+           level = CASE WHEN enrich_queue2.reason = 'significant' THEN enrich_queue2.level ELSE excluded.level END`,
         r.summary.id,
         r.enrich.reason,
-        r.enrich.streamT
+        r.enrich.streamT,
+        r.enrich.stableKey,
+        r.enrich.level
       );
       this.bump("enrichments_queued", 1);
     }
@@ -229,15 +236,15 @@ export class Clusterer extends DurableObject<Env> {
    */
   private async dispatchEnrichments(stream: string, streamT: number | null) {
     const queued = this.sql
-      .exec<{ incident_id: string; reason: string; summary: string | null; merged_into: string | null }>(
-        `SELECT q.incident_id, q.reason, i.summary, i.merged_into FROM enrich_queue q JOIN incidents i ON i.id = q.incident_id`
+      .exec<{ incident_id: string; reason: string; stable_key: string | null; level: number; summary: string | null; merged_into: string | null }>(
+        `SELECT q.incident_id, q.reason, q.stable_key, q.level, i.summary, i.merged_into FROM enrich_queue2 q JOIN incidents i ON i.id = q.incident_id`
       )
       .toArray();
     if (!queued.length) return;
     const ranked = queued
       .filter((q) => {
         if (q.merged_into || !q.summary) {
-          this.sql.exec("DELETE FROM enrich_queue WHERE incident_id = ?", q.incident_id);
+          this.sql.exec("DELETE FROM enrich_queue2 WHERE incident_id = ?", q.incident_id);
           return false;
         }
         return true;
@@ -252,12 +259,28 @@ export class Clusterer extends DurableObject<Env> {
         this.bump("enrich_deferred_stream_cap", 1);
         return;
       }
-      const grant = await this.control().tryConsumeBrief(dailyMax);
-      if (!grant.ok) {
-        this.bump("enrich_deferred_daily_budget", 1);
-        return;
+      // Replays: reuse a brief from an earlier replay of the same scenario (no model call, no budget).
+      const scenario = this.meta("scenario");
+      const cacheKey = stream !== "live" && scenario && q.stable_key ? briefCacheKey(scenario, q.stable_key, q.level) : null;
+      let cachedBrief: Brief | null = null;
+      if (cacheKey) {
+        try {
+          cachedBrief = await this.env.REPLAY_KV.get<Brief>(cacheKey, "json");
+        } catch (err) {
+          console.warn(JSON.stringify({ msg: "brief_cache_get_failed", key: cacheKey, error: String(err) }));
+        }
+        this.bump(cachedBrief ? "brief_cache_hits" : "brief_cache_misses", 1);
       }
-      this.sql.exec("DELETE FROM enrich_queue WHERE incident_id = ?", q.incident_id);
+      let grant: { used: number } = { used: -1 };
+      if (!cachedBrief) {
+        const g = await this.control().tryConsumeBrief(dailyMax);
+        if (!g.ok) {
+          this.bump("enrich_deferred_daily_budget", 1);
+          return;
+        }
+        grant = g;
+      }
+      this.sql.exec("DELETE FROM enrich_queue2 WHERE incident_id = ?", q.incident_id);
       this.sql.exec("INSERT INTO enrich_log (t, incident_id) VALUES (?, ?)", Date.now(), q.incident_id);
       this.bump("enrichments", 1);
       const n = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM enrich_log WHERE incident_id = ?", q.incident_id).one().n;
@@ -266,9 +289,16 @@ export class Clusterer extends DurableObject<Env> {
       try {
         await this.env.INCIDENT_ENRICH.create({
           id: instanceId,
-          params: { incidentId: q.incident_id, stream, reason: q.reason as "significant" | "area_doubled", streamT: at, summary: { ...q.s, asOf: at } }
+          params: {
+            incidentId: q.incident_id,
+            stream,
+            reason: q.reason as "significant" | "area_doubled",
+            streamT: at,
+            summary: { ...q.s, asOf: at },
+            ...(cachedBrief ? { cachedBrief } : cacheKey ? { briefCacheKey: cacheKey } : {})
+          }
         });
-        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, affectedAreaKm2: q.s.affectedAreaKm2, briefsUsed24h: grant.used, queued: ranked.length }));
+        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, briefsUsed24h: grant.used, queued: ranked.length }));
       } catch (err) {
         console.error(JSON.stringify({ msg: "enrich_start_failed", incident: q.incident_id, error: String(err) }));
       }
@@ -322,12 +352,17 @@ export class Clusterer extends DurableObject<Env> {
     const merges = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM merges").one().n;
     const stream = this.meta("stream");
     const enrich = {
-      queued: this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM enrich_queue").one().n,
+      queued: this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM enrich_queue2").one().n,
       used: stream ? this.enrichmentsUsed(stream) : 0,
       max: Number(this.env.ENRICH_MAX_PER_STREAM ?? 30),
       window: stream === "live" ? "24h" : "stream"
     };
     return { stream, streamT: this.streamT(), counters, incidents: inc, merges, enrich };
+  }
+
+  /** Replay DO: records the scenario id (brief cache key). */
+  async setScenario(scenario: string): Promise<void> {
+    this.setMeta("scenario", scenario);
   }
 
   async getStreamT(): Promise<number | null> {

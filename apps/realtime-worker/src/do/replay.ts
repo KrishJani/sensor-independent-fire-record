@@ -93,6 +93,7 @@ export class Replay extends DurableObject<Env> {
     };
     this.save(info);
     this.setMeta("lastTick", Date.now());
+    await this.env.CLUSTERER.get(this.env.CLUSTERER.idFromName(info.stream)).setScenario(info.scenario);
     await this.ctx.storage.setAlarm(Date.now() + 50);
     return info;
   }

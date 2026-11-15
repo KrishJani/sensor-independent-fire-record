@@ -467,3 +467,30 @@ describe("chat model fallback", async () => {
     expect(chatFallbacks("@cf/b", "@cf/a")).toEqual(["@cf/b"]);
   });
 });
+
+describe("tool JSON schemas", async () => {
+  const { z } = await import("zod");
+  const { createFireTools } = await import("../src/copilot/tools");
+  const { createRealtimeTools } = await import("../src/copilot/realtime");
+  const db = new DatabaseSync(":memory:");
+  const sqlTag: SqlTag = (strings, ...values) => db.prepare(strings.join("?")).all(...(values as never[])) as never;
+  const memory = new MemoryStore(sqlTag);
+  memory.init();
+  const tools = {
+    ...createFireTools({ data: new MockFireData(), memory, getContext: () => null }),
+    ...createRealtimeTools({ fetch: async () => new Response("{}") }, () => null)
+  };
+
+  // Workers AI validates tool parameters against JSON Schema 2020-12: array-form `items` (zod tuples) is rejected.
+  it.each(Object.keys(tools))("%s has no tuple-style items", (name) => {
+    const schema = z.toJSONSchema((tools as Record<string, { inputSchema: z.ZodType }>)[name].inputSchema, { io: "input" });
+    const walk = (n: unknown): void => {
+      if (!n || typeof n !== "object") return;
+      const o = n as Record<string, unknown>;
+      expect(Array.isArray(o.items), `${name}: array-form items`).toBe(false);
+      expect("prefixItems" in o, `${name}: prefixItems`).toBe(false);
+      Object.values(o).forEach(walk);
+    };
+    walk(schema);
+  });
+});

@@ -24,7 +24,7 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 
 ## Setup (once)
 
-> **Temporary:** `wrangler.jsonc` currently points at Hemanth's account (`account_id` `7d56e968…`) and uses that account's `default` AI Gateway (`AI_GATEWAY_ID: "default"`). Switch both back to the team account and the `nasa-fire-copilot` gateway once it exists there.
+> **Deploy account:** `wrangler.jsonc` targets account `6584e46c…` (Workers Paid) and its `nasa-fire-copilot` AI Gateway. `account_id` in `wrangler.jsonc` wins over `CLOUDFLARE_ACCOUNT_ID`, so change it there to deploy elsewhere. The `HYPERDRIVE` binding is commented out (TODO) until LiveFireData exists; the data source is mock.
 
 1. `pnpm install` at the repo root.
 2. `npx wrangler login`. The `AI` binding has no local implementation, so even under `wrangler dev` it runs against (and bills) the account you are logged in to.
@@ -35,8 +35,6 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 
 ```sh
 cd apps/api-worker
-# Hyperdrive has a placeholder id; the copilot does not use it, but wrangler needs a local string.
-export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://dev:dev@localhost:5432/dev"
 pnpm dev                 # http://localhost:8787
 pnpm smoke               # in another terminal: two-turn chat over WebSocket + quality checks
 pnpm compare-models      # starts its own wrangler dev per model on :8790 (no pnpm dev needed)
@@ -62,11 +60,11 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 |---|---|---|---|
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
 | `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
-| `CHAT_FALLBACK_MODEL` | var | `@cf/zai-org/glm-4.7-flash` | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
+| `CHAT_FALLBACK_MODEL` | var | `""` in `wrangler.jsonc` (code default when unset: `@cf/zai-org/glm-4.7-flash`) | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
-| `ALLOWED_ORIGINS` | var | `http://localhost:5173` | Comma-separated. Also enforced on the agent WebSocket (other origins get 403). |
+| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev`. Also enforced on the agent WebSocket (other origins get 403). |
 
 **Demo setting: `CHAT_FALLBACK_MODEL=""`.** With the fallback disabled, a failing `CHAT_MODEL` call shows the user an error ("could not answer right now, please try again") instead of an answer from `glm-4.7-flash`, the only model that drifted into Chinese after the language rule was added (see the comparison below). For a public demo, an error on retry is better than a Chinese answer. Set it in `wrangler.jsonc` (`"CHAT_FALLBACK_MODEL": ""`) or with `wrangler dev --var CHAT_FALLBACK_MODEL:`. Leaving the variable out keeps the default fallback. Each turn logs `copilot_turn_done` with the model that answered, so a drifted reply can be traced to a model in the worker logs (`wrangler tail`) or in AI Gateway.
 

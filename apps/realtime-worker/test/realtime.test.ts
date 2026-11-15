@@ -258,6 +258,16 @@ describe("incident aggregate", () => {
     expect(enrichmentDue(s, T0 + 6 * H)?.reason).toBe("area_doubled");
   });
 
+  it("remembers the first detection id as a stable key across replays", () => {
+    const a = emptyState("replay-aaaaaa.3", "replay:aaaaaa");
+    const b = emptyState("replay-bbbbbb.3", "replay:bbbbbb");
+    applyDetections(a, cellsIn(3, T0), T0);
+    applyDetections(b, cellsIn(3, T0).map((d) => withStream(d, "replay:bbbbbb")), T0);
+    applyDetections(a, cellsIn(5, T0 + H).slice(3), T0 + H);
+    expect(a.firstDetectionId).toBeTruthy();
+    expect(a.firstDetectionId).toBe(b.firstDetectionId);
+  });
+
   it("with a minimum area, the first enrichment waits until the affected area reaches it", () => {
     const s = emptyState("x.1", "replay:test01");
     applyDetections(s, cellsIn(5, T0), T0);
@@ -276,6 +286,11 @@ describe("enrichment config", async () => {
     expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "200" }, "live")).toBe(0);
     expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "200" }, "replay:abcdef12")).toBe(200);
     expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "x" } as never, "replay:abcdef12")).toBe(200);
+  });
+
+  it("brief cache key: scenario + stable incident key + doubling level", async () => {
+    const { briefCacheKey } = await import("../src/enrich/brief");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v1/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
@@ -338,4 +353,30 @@ describe("brief", async () => {
     expect(msgs[0].content).toContain('"area with detections"');
   });
   void extractText;
+});
+
+describe("allowed origins", async () => {
+  const { isAllowedOrigin, parseAllowedOrigins } = await import("../src/origins");
+  const allowed = parseAllowedOrigins("http://localhost:5173, https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev");
+  it("allows exact origins and one-label Pages preview subdomains only", () => {
+    expect(isAllowedOrigin("http://localhost:5173", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://nasa-fire-web.pages.dev", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://a1b2c3d4.nasa-fire-web.pages.dev", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://feat-realtime.nasa-fire-web.pages.dev", allowed)).toBe(true);
+  });
+  it("rejects everything else", () => {
+    for (const o of [
+      "http://a1b2.nasa-fire-web.pages.dev",
+      "https://a.b.nasa-fire-web.pages.dev",
+      "https://evilnasa-fire-web.pages.dev",
+      "https://nasa-fire-web.pages.dev.evil.com",
+      "https://x.nasa-fire-web.pages.dev:8443",
+      "https://-x.nasa-fire-web.pages.dev",
+      "http://localhost:5174",
+      "null",
+      ""
+    ])
+      expect(isAllowedOrigin(o, allowed), o).toBe(false);
+    expect(isAllowedOrigin("https://anything.com", parseAllowedOrigins("*"))).toBe(false);
+  });
 });

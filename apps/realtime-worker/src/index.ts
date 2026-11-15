@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseBbox } from "./grid";
+import { isAllowedOrigin, parseAllowedOrigins } from "./origins";
 import { consumeDetections, NRT_SOURCES, pollOnce, watchBboxes, type DetectionsMessage, type PollState } from "./live/poll";
 import type { IncidentDetail } from "./do/incident";
 import type { IncidentStatus } from "./incidentModel";
@@ -14,11 +15,7 @@ export { LiveHub } from "./do/liveHub";
 export { Replay } from "./do/replay";
 export { IncidentEnrichWorkflow } from "./enrich/workflow";
 
-const allowedOrigins = (env: Env) =>
-  (env.ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((o) => o.trim())
-    .filter(Boolean);
+const allowed = (env: Env) => parseAllowedOrigins(env.ALLOWED_ORIGINS);
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
@@ -26,7 +23,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", (c, next) =>
   cors({
-    origin: (origin) => (allowedOrigins(c.env).includes(origin) ? origin : null),
+    origin: (origin) => (isAllowedOrigin(origin, allowed(c.env)) ? origin : null),
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "x-replay-token"],
     maxAge: 600
@@ -138,7 +135,7 @@ for (const action of ["pause", "resume", "stop"] as const) {
 
 app.get("/realtime/ws", async (c) => {
   const origin = c.req.header("Origin");
-  if (origin && !allowedOrigins(c.env).includes(origin)) return c.json(err("forbidden_origin", "Origin not allowed"), 403);
+  if (origin && !isAllowedOrigin(origin, allowed(c.env))) return c.json(err("forbidden_origin", "Origin not allowed"), 403);
   const stream = c.req.query("stream") ?? "live";
   if (!isStream(stream)) return c.json(err("bad_stream", 'stream must be "live" or "replay:<id>"'), 400);
   if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") return c.json(err("upgrade_required", "Use a WebSocket"), 426);

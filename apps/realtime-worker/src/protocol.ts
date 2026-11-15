@@ -13,8 +13,10 @@ export interface Brief {
   streamT: number; // stream time the brief describes, epoch ms
   /** Same moment as streamT, ISO 8601 UTC, for the UI's "as of <time>" label. */
   asOf: string;
-  /** Wall-clock time the model call took, ms. */
+  /** Wall-clock time the model call took, ms (of the original call, for a cached brief). */
   latencyMs?: number;
+  /** Replays only: reused from the brief cache of an earlier replay of the same scenario (no model call). */
+  cached?: boolean;
 }
 
 export type ServerMessage =

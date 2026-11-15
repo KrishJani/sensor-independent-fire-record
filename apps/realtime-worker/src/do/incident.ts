@@ -18,7 +18,14 @@ export interface IncidentIngestResult {
    * Set when enrichment is due (significant and at least minAreaKm2, or area doubled ≥ 6 h of
    * stream time later). The Clusterer queues it; the mark is recorded at once so it is not re-queued.
    */
-  enrich: { reason: "significant" | "area_doubled"; streamT: number } | null;
+  enrich: {
+    reason: "significant" | "area_doubled";
+    streamT: number;
+    /** firstDetectionId: identifies "the same incident" across replays of a scenario (brief cache). */
+    stableKey: string | null;
+    /** 0 = first brief, n = n-th area doubling. */
+    level: number;
+  } | null;
 }
 
 export interface IncidentDetail {
@@ -56,7 +63,10 @@ export class Incident extends DurableObject<Env> {
     const due = enrichmentDue(s, s.streamT, args.minAreaKm2 ?? 0);
     if (due) s.enrichments.push(due);
     this.put("state", s);
-    return { summary: summarize(s), enrich: due ? { reason: due.reason, streamT: due.t } : null };
+    return {
+      summary: summarize(s),
+      enrich: due ? { reason: due.reason, streamT: due.t, stableKey: s.firstDetectionId ?? null, level: s.enrichments.length - 1 } : null
+    };
   }
 
   async markMerged(into: string, _t: number): Promise<void> {

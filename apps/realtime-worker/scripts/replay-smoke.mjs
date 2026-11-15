@@ -4,7 +4,8 @@
 // Env: HOST (default localhost:8789), SCENARIO (default quebec-2023-06; falls back to the bundled
 // sample if not in R2), SPEED (stream s per real s; default = worker's REPLAY_DEFAULT_SPEED),
 // TIMEOUT_S (default 180), QUIET=1 (only the summary), REPLAY_TOKEN (sent as x-replay-token),
-// WAIT_BRIEFS_S (after the replay, wait up to this long for the largest incident's brief).
+// WAIT_BRIEFS_S (after the replay, wait up to this long for every started enrichment's brief,
+// at least the largest incident's; reports the replay brief cache hit rate).
 // Checks: incidents get created, detection counts grow, the clock advances, the replay finishes.
 
 const HOST = process.env.HOST ?? "localhost:8789";
@@ -90,7 +91,7 @@ function handle(msg) {
     case "incident.brief":
       briefs++;
       briefed.set(msg.id, msg.brief);
-      log(`* brief ${msg.id} (as of ${msg.brief.asOf}, ${msg.brief.latencyMs ?? "?"} ms, ${msg.brief.model}): ${msg.brief.text}`);
+      log(`* brief ${msg.id} (as of ${msg.brief.asOf}, ${msg.brief.cached ? "cached" : `${msg.brief.latencyMs ?? "?"} ms`}, ${msg.brief.model}): ${msg.brief.text}`);
       break;
     case "replay.status":
       if (msg.status === "done" || msg.status === "stopped") replayDone = true;
@@ -103,6 +104,7 @@ let lastPrint = 0;
 while (Date.now() - started < TIMEOUT_S * 1000) {
   await new Promise((r) => setTimeout(r, 1000));
   status = await (await fetch(`${base}/realtime/replay/${replay.id}`)).json();
+  if (status.error) throw new Error(JSON.stringify(status.error));
   if (Date.now() - lastPrint > 10_000) {
     lastPrint = Date.now();
     log(`… ${(status.progress * 100).toFixed(0)}%  clock ${fmt(status.streamT)}  emitted ${status.emitted}/${status.total}  incidents ${incidents.size}`);
@@ -116,12 +118,16 @@ const listNow = async () => (await fetch(`${base}/realtime/incidents?stream=repl
 const waitBriefs = Number(process.env.WAIT_BRIEFS_S ?? 0);
 let list = await listNow();
 let largest = [...list.incidents].sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2)[0];
-for (let i = 0; i < waitBriefs && !(largest && briefed.has(largest.id)); i++) await new Promise((r) => setTimeout(r, 1000));
+const started_ = async () => (await (await fetch(`${base}/realtime/replay/${replay.id}`)).json()).clusterer?.counters?.enrichments ?? 0;
+for (let i = 0; i < waitBriefs; i++) {
+  if (largest && briefed.has(largest.id) && briefs >= (await started_())) break;
+  await new Promise((r) => setTimeout(r, 1000));
+}
 ws.close();
 list = await listNow();
 largest = [...list.incidents].sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2)[0];
 const elapsed = (Date.now() - started) / 1000;
-const lat = [...briefed.values()].map((b) => b.latencyMs).filter((x) => typeof x === "number").sort((a, b) => a - b);
+const lat = [...briefed.values()].filter((b) => !b.cached).map((b) => b.latencyMs).filter((x) => typeof x === "number").sort((a, b) => a - b);
 const growing = [...incidents.values()].filter((s) => s.detections > (firstCounts.get(s.id) ?? s.detections)).length;
 const clockAdvanced = clocks.length >= 2 && clocks.at(-1) > clocks[0];
 
@@ -147,6 +153,13 @@ console.log(`  incidents        ${status.clusterer?.incidents?.total ?? "?"} tot
 if (largest)
   console.log(`  largest          ${largest.id}: ${largest.affectedAreaKm2} km² affected, ${largest.detections} detections, max FRP ${largest.frpMaxMw} MW, ${largest.status}`);
 console.log(`  frames           ${messages} total, max ${maxMsgsPerSec}/s, ${briefs} briefs`);
+const cachedN = [...briefed.values()].filter((b) => b.cached).length;
+const counters = (await (await fetch(`${base}/realtime/replay/${replay.id}`)).json()).clusterer?.counters ?? {};
+if (briefs)
+  console.log(
+    `  brief cache      ${cachedN}/${briefed.size} briefs received were cached (${((cachedN / briefed.size) * 100).toFixed(0)}%); ` +
+      `dispatch lookups: ${counters.brief_cache_hits ?? 0} hits, ${counters.brief_cache_misses ?? 0} misses`
+  );
 if (lat.length) console.log(`  brief latency    min ${lat[0]} ms, median ${lat[Math.floor(lat.length / 2)]} ms, max ${lat.at(-1)} ms (n=${lat.length})`);
 if (briefed.size) console.log(`  briefed          ${[...briefed.keys()].map((id) => `${id} ${list.incidents.find((x) => x.id === id)?.affectedAreaKm2 ?? "?"} km²`).join(", ")}`);
 let failed = 0;

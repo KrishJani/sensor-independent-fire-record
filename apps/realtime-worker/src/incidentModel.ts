@@ -55,6 +55,8 @@ export interface IncidentState {
   cells: Record<string, CellStat>;
   timeline: Record<string, { detections: number; newCells: number; frp: number; newAreaKm2: number }>;
   mergedInto: string | null;
+  /** Id of the detection that started the incident: stable across replays of the same scenario. */
+  firstDetectionId?: string | null;
   significantAt: number | null;
   enrichments: EnrichmentMark[];
   /** Latest stream time this incident has been told about. */
@@ -111,6 +113,7 @@ export function emptyState(id: string, stream: string): IncidentState {
 }
 
 export function applyDetections(s: IncidentState, ds: Detection[], streamT: number): void {
+  if (!s.firstDetectionId && ds.length) s.firstDetectionId = ds[0].id;
   for (const d of ds) {
     s.detections++;
     s.sumLat += d.lat;

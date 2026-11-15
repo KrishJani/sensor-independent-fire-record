@@ -86,6 +86,7 @@ Always unwrap batches first. The server coalesces updates and sends at most one 
   streamT: number;     // stream time the brief describes, epoch ms
   asOf: string;        // the same moment as ISO 8601 UTC: show "as of <asOf>" next to the text
   latencyMs?: number;  // model call duration
+  cached?: boolean;    // replays: reused from an earlier replay of the same scenario (see brief cache)
 }
 ```
 
@@ -204,7 +205,9 @@ When an incident is due for its first brief:
 
 Budgets (every run makes one AI call; re-briefs count):
 - `ENRICH_MAX_PER_STREAM` (30): per replay stream, and per rolling 24 h (wall clock) for `live`.
-- `BRIEF_DAILY_MAX` (60): across **all** streams per rolling 24 h, tracked in the `Control` Durable Object.
+- `BRIEF_DAILY_MAX` (400, about 14,000 neurons): across **all** streams per rolling 24 h, tracked in the `Control` Durable Object.
+
+**Replay brief cache.** Replays are deterministic, so a brief written during one replay is reused by later replays of the same scenario. The key in `REPLAY_KV` is `brief-cache/v1/<scenario>/<first detection id of the incident>/<level>` (level 0 = first brief, n = n-th area doubling). A hit skips the model call and does **not** count against `BRIEF_DAILY_MAX` (it still counts toward the per-stream cap, because the Workflow still fetches weather and places). Cached briefs carry `cached: true` and keep the `asOf` of the replay that wrote them; because tick timing varies a little between runs, their numbers can differ slightly from the incident's state at that moment. Bump `BRIEF_CACHE_VERSION` in `src/enrich/brief.ts` when the prompt changes. Clusterer counters `brief_cache_hits` / `brief_cache_misses` (in `GET /realtime/replay/:id`) give the hit rate.
 
 What does not fit stays queued and is retried on later batches. `GET /realtime/replay/:id` → `clusterer.enrich` and `/realtime/health` → `briefBudget` show the usage.
 
@@ -259,20 +262,20 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 
 | Name | Kind | Default | Notes |
 |---|---|---|---|
-| `ALLOWED_ORIGINS` | var | `http://localhost:5173` | Comma-separated. CORS and WebSocket origin check. |
+| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev`. CORS and WebSocket origin check. |
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
-| `AI_GATEWAY_ID` | var | `default` | Same as api-worker |
+| `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | Same as api-worker |
 | `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
 | `ENRICH_MAX_PER_STREAM` | var | `30` | Workflow runs (and AI calls) per replay stream, and per rolling 24 h for `live` |
-| `BRIEF_DAILY_MAX` | var | `60` | AI briefs per rolling 24 h across all streams (re-briefs count) |
+| `BRIEF_DAILY_MAX` | var | `400` | AI briefs per rolling 24 h across all streams (re-briefs count; cached replay briefs do not) |
 | `BRIEF_MIN_AREA_KM2` | var | `200` | Replays only brief incidents with at least this `affectedAreaKm2` |
 | `BRIEF_REASONING_EFFORT` | var | `none` | Sent to kimi models only. `""` = model default. kimi-k2.6 accepts `high` or `none` (`low`/`medium` map to `high`). |
 | `BRIEF_MAX_TOKENS` | var | `120` | Brief output budget |
 | `REPLAY_TOKEN` | secret | unset | When set, replay `POST` routes need `x-replay-token`. `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
-Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` (the team's shared namespace) and `REPLAY_KV` (replay scenarios); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`, **optional and currently commented out** in `wrangler.jsonc` because the deploy account has no bucket yet: without it scenarios come from `REPLAY_KV` and the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
+Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` and `REPLAY_KV` (replay scenarios when R2 is not bound, and the replay brief cache); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`; **optional**: comment out `r2_buckets` on an account without R2 and scenarios come from `REPLAY_KV` while the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
 
 ---
 
@@ -293,3 +296,27 @@ pnpm typegen                            # after editing wrangler.jsonc
 - If Quebec is not in local KV/R2 (you skipped `fetch-replay-fixture`), replays play the bundled California sample.
 - `AI` runs remotely even in dev, so briefs use your account's Workers AI quota (about 35 neurons per brief with the defaults, capped by `ENRICH_MAX_PER_STREAM` and `BRIEF_DAILY_MAX`).
 - To use the history step, run api-worker (`pnpm dev:api`) at the same time. The service binding connects through the local dev registry.
+
+---
+
+## 7. Deployment
+
+Deployed on account `6584e46c…` (Workers Paid), AI Gateway `nasa-fire-copilot`:
+
+| Worker | URL |
+|---|---|
+| realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.kj2743.workers.dev |
+| api-worker (`nasa-fire-api`) | https://nasa-fire-api.kj2743.workers.dev |
+
+Resources on that account: Queue `nasa-fire-detections`, KV `INGEST_STATE` and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario in both R2 and KV; R2 is read first), D1 `firms-nrt-cells` (api-worker, auto-created). Secrets: `FIRMS_MAP_KEY` and `REPLAY_TOKEN` (realtime), `TAVILY_API_KEY` (api).
+
+`account_id` in `wrangler.jsonc` overrides `CLOUDFLARE_ACCOUNT_ID`, so it decides where resources and deploys go.
+
+**First deploy on a new account:** the two workers bind each other (`API` ↔ `REALTIME`), and a service binding to a Worker that does not exist yet fails with code 10143. Deploy realtime-worker once without its `services` block (a temporary copy of `wrangler.jsonc`; the enrich Workflow skips the history step without `API`), then api-worker, then realtime-worker again with the normal config. Later deploys need nothing special.
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID=6584e46ce8c9d53c6074b3dac9cc1b9b
+pnpm fetch-replay-fixture --upload-only --store=r2   # and --store=kv
+npx wrangler deploy --dry-run && npx wrangler deploy
+HOST=nasa-fire-realtime.kj2743.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
+```
