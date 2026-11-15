@@ -13,7 +13,7 @@
 //               two text parts (model steps) glued without a space ("stillin")
 //               reply says "your area" (the user never said it is theirs)
 //               reply echoes prompt instructions ("You never…", "You do not…")
-//               reply calls fire activity "workload"
+//               banned filler ("workload", "intense activity")
 //               a bracketed source name without a link, e.g. "[Wikipedia; CAL FIRE]" or "[link]"
 //               a link to a URL that no web_search/web_fetch call returned in this conversation
 //   turn 1      get_spots_summary was not called
@@ -90,7 +90,7 @@ function checkTurn(turnIndex, t) {
   if (/\byour area\b/i.test(t.text)) fails.push('says "your area"');
   const echo = t.text.match(/\bYou (never|do not|don't|must|should never)\b[^.\n]*/);
   if (echo) fails.push(`echoes prompt instructions: "${echo[0]}"`);
-  if (/\bworkloads?\b/i.test(t.text)) fails.push('calls fire activity "workload"');
+  for (const f of t.text.match(/\bworkloads?\b|\bintense activity\b/gi) ?? []) fails.push(`banned filler "${f}"`);
   for (const m of t.text.matchAll(/\[([A-Za-z][^\]\n]{1,60})\](?!\()/g))
     fails.push(`source named without a link: "[${m[1]}]"`);
   for (const u of linkedUrls(t.text))

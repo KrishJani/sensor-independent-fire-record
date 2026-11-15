@@ -199,6 +199,8 @@ describe("system prompt", async () => {
     expect(p).not.toMatch(/^- You never/m);
     expect(p).toMatch(/No outside facts without a web tool result/);
     expect(p).toMatch(/workload/);
+    expect(p).toMatch(/intense activity/);
+    expect(p).toMatch(/Never tie demo or sample data .* to a named real-world event/);
   });
 });
 
@@ -356,6 +358,28 @@ describe("answer post-processor", async () => {
       "This area had 3 cell-days; in this area it is quiet."
     );
     expect(await run(part("t", "In your area."), { rewriteArea: false })).toBe("In your area.");
+  });
+
+  const body = "Answer: 316 cell-days.\n\n- 4,704 detections\n";
+  const sources = "\n## Sources\n- NASA FIRMS spots summary (archival)\n  bundled sample\n- get_calendar\n";
+
+  it("strips a Sources section when no web tool ran this turn, even split across deltas", async () => {
+    const chunks = (body + sources + "\nThat is all.").match(/[\s\S]{1,7}/g)!;
+    expect(await run([...tool("1", "get_calendar", {}), ...part("t", ...chunks)])).toBe(body + "\nThat is all.");
+  });
+
+  it("recognises other Sources heading styles, and leaves sentences about sources alone", async () => {
+    for (const h of ["**Sources:**", "Source facts:", "Sources: NASA FIRMS sample", "### Source", "__Sources__"])
+      expect(await run(part("t", `${body}${h}\n- a\n- b`))).toBe(body);
+    const prose = "Sources show 3 cell-days.\nSourcesmith is a name.\n";
+    expect(await run(part("t", prose))).toBe(prose);
+  });
+
+  it("keeps the Sources section when a web tool ran this turn", async () => {
+    const text = `${body}\n**Sources:**\n- [Wikipedia](https://en.wikipedia.org/wiki/X)\n`;
+    expect(
+      await run([...tool("1", "web_fetch", { url: "https://en.wikipedia.org/wiki/X", status: 200 }), ...part("t", text)])
+    ).toBe(text);
   });
 
   it("collects web URLs and area ownership from the transcript", () => {

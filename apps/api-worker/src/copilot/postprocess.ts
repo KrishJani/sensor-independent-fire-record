@@ -12,6 +12,9 @@ import type { UIMessage, UIMessageChunk } from "ai";
  *    by web_search or web_fetch in this conversation; otherwise it is unlinked
  *    (the label text stays).
  * 3. "your area" → "this area", unless the user called the area theirs.
+ * 4. A "Sources" / "Source facts" heading and the list under it are dropped
+ *    when no web tool ran this turn (data tools need no source list, and
+ *    without a web result there is nothing outside to cite).
  *
  * Text is held back only as far as needed to see a link or phrase whole (an
  * unfinished `[…](…)` / `<http…>`, plus the last two words); whitespace inside
@@ -109,6 +112,79 @@ export function filterLinks(text: string, known: Set<string>): string {
     .replace(/<(https?:\/\/[^>\s]+)>/g, (whole, url: string) => (known.has(normUrl(url)) ? whole : ""));
 }
 
+const HEADING_LEAD = /^\s*(#{1,6}\s*)?[*_]*\s*/;
+/** A whole line that is a "Sources" heading: "## Sources", "**Source facts:**", "Sources: NASA FIRMS…". */
+const SOURCES_HEADING = /^\s*(#{1,6}\s*)?[*_]*\s*(sources?|source facts)\s*[*_]*\s*(:.*)?\s*$/i;
+/** Lines that belong to the section under the heading: list items, indented continuations, blank lines. */
+const SECTION_LINE = /^\s*$|^\s*([-*+•]|\d+[.)])\s|^\s{2,}\S/;
+
+/** Could this unfinished line still turn out to be a Sources heading? */
+function couldBeHeading(frag: string): boolean {
+  const rest = frag.replace(HEADING_LEAD, "").toLowerCase();
+  if (rest === "") return true;
+  return "source facts".startsWith(rest) || "sources".startsWith(rest) || /^(sources?|source facts)\b/.test(rest);
+}
+
+/**
+ * Line-aware filter that removes a Sources section. Only holds back a line
+ * while it could still be such a heading (or while inside a dropped section);
+ * every other line streams through as it arrives.
+ */
+export class SourcesStripper {
+  #pending = "";
+  #lineOpen = false; // the current line has already been passed through
+  #stripping = false;
+
+  constructor(private readonly enabled: () => boolean) {}
+
+  push(text: string): string {
+    let out = "";
+    let buf = this.#pending + text;
+    this.#pending = "";
+    for (;;) {
+      const nl = buf.indexOf("\n");
+      if (nl === -1) break;
+      out += this.#line(buf.slice(0, nl + 1));
+      buf = buf.slice(nl + 1);
+    }
+    if (buf) {
+      if (this.#lineOpen) out += buf;
+      else if (this.#stripping || couldBeHeading(buf)) this.#pending = buf;
+      else {
+        out += buf;
+        this.#lineOpen = true;
+      }
+    }
+    return out;
+  }
+
+  /** End of the text part: decide on whatever is still held. */
+  end(): string {
+    const rest = this.#pending;
+    this.#pending = "";
+    const out = rest ? this.#line(rest) : "";
+    this.#lineOpen = false;
+    this.#stripping = false;
+    return out;
+  }
+
+  #line(line: string): string {
+    if (this.#lineOpen) {
+      this.#lineOpen = !line.endsWith("\n");
+      return line;
+    }
+    if (this.#stripping) {
+      if (SECTION_LINE.test(line)) return "";
+      this.#stripping = false;
+    }
+    if (SOURCES_HEADING.test(line.replace(/\n$/, "")) && this.enabled()) {
+      this.#stripping = true;
+      return "";
+    }
+    return line;
+  }
+}
+
 export interface PostProcessOptions {
   /** URLs returned by web tools earlier in the conversation. */
   knownUrls?: Iterable<string>;
@@ -126,6 +202,14 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
   let lastEndsInWord = false;
   /** Whether the current text part has sent anything yet. */
   const started = new Set<string>();
+  /** Whether web_search/web_fetch was called in this turn (Sources sections are kept then). */
+  let webThisTurn = false;
+  const strippers = new Map<string, SourcesStripper>();
+  const stripperFor = (id: string) => {
+    let s = strippers.get(id);
+    if (!s) strippers.set(id, (s = new SourcesStripper(() => !webThisTurn)));
+    return s;
+  };
 
   const process = (s: string) => {
     let out = filterLinks(s, known);
@@ -133,8 +217,10 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
     return out;
   };
 
-  const emit = (controller: TransformStreamDefaultController<UIMessageChunk>, id: string, raw: string) => {
-    let delta = process(raw);
+  const emit = (controller: TransformStreamDefaultController<UIMessageChunk>, id: string, raw: string, end = false) => {
+    const stripper = stripperFor(id);
+    let delta = process(stripper.push(raw) + (end ? stripper.end() : ""));
+    if (end) strippers.delete(id);
     if (!delta) return;
     if (!started.has(id)) {
       started.add(id);
@@ -149,6 +235,7 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
       switch (chunk.type) {
         case "tool-input-available":
           toolNames.set(chunk.toolCallId, chunk.toolName);
+          if (WEB_TOOLS.has(chunk.toolName)) webThisTurn = true;
           break;
         case "tool-output-available": {
           const name = toolNames.get(chunk.toolCallId) ?? "";
@@ -168,7 +255,7 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
         case "text-end": {
           const rest = buffers.get(chunk.id) ?? "";
           buffers.delete(chunk.id);
-          emit(controller, chunk.id, rest);
+          emit(controller, chunk.id, rest, true);
           break;
         }
       }
@@ -176,7 +263,7 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
     },
     flush(controller) {
       // A stream cut off mid-part (abort/error) still delivers what was buffered.
-      for (const [id, rest] of buffers) emit(controller, id, rest);
+      for (const [id, rest] of buffers) emit(controller, id, rest, true);
       buffers.clear();
     }
   });

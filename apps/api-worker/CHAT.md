@@ -49,7 +49,7 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 
 | Turn | Check (every one is a FAIL) |
 |---|---|
-| both | CJK characters (language drift); two text parts glued without a space ("stillin"); "your area"; echoed instructions ("You never…", "You do not…"); "workload"; a source named in brackets without a link (`[Wikipedia; CAL FIRE]`, `[link]`); a link to a URL that no `web_search`/`web_fetch` call returned in the conversation |
+| both | CJK characters (language drift); two text parts glued without a space ("stillin"); "your area"; echoed instructions ("You never…", "You do not…"); banned filler ("workload", "intense activity"); a source named in brackets without a link (`[Wikipedia; CAL FIRE]`, `[link]`); a link to a URL that no `web_search`/`web_fetch` call returned in the conversation |
 | 1 ("What happened in this area in August 2020?") | `get_spots_summary` not called; mock data used but the first sentence does not mention demo/synthetic data; no web tool called but the reply has links or a "Sources" section |
 | 2 ("…what does the news say about the August Complex fire?") | neither `web_search` nor `web_fetch` called; a page read with `web_fetch` is not linked in the reply |
 
@@ -116,8 +116,9 @@ The UI stream goes through `answerPostProcessor` after the demo notice. It holds
 - **Spacing between text parts:** each model step starts a new text part ("…is still" → tool call → "in…"). Clients that join parts glued words ("stillin", "complexby"), so a part that would glue onto the previous word gets one leading space.
 - **Link verification:** a markdown link (or `<autolink>`) is kept only if its URL was returned by `web_search` (result URLs) or `web_fetch` (fetched page, status < 400) earlier in the conversation or in this turn. Any other link is unlinked and its label text is kept. URLs are compared by host (without `www`) and path (without the trailing slash).
 - **"your area" → "this area"**, unless a user message called the area theirs ("my district", "our county").
+- **Sources sections without web results:** when no `web_search`/`web_fetch` ran this turn, a "Sources" / "Source facts" heading (any style: `## Sources`, `**Sources:**`, `Sources: …`) and the list under it are dropped. Only a line that could still become such a heading is held back until it ends.
 
-The prompt also forbids outside facts (causes, policies, news) without a web tool result in the conversation, gives the safety rule as a sentence the model can say ("I can't advise on evacuations…"), tells the model never to repeat its instructions, and bans filler such as "workload" in favour of data units.
+The prompt also forbids outside facts (causes, policies, news) without a web tool result in the conversation, gives the safety rule as a sentence the model can say ("I can't advise on evacuations…"), tells the model never to repeat its instructions, bans filler such as "workload" and "intense activity" in favour of data units, and forbids tying demo or sample data to a named real-world event unless a web result from this turn supports it.
 
 ## What is mocked
 
