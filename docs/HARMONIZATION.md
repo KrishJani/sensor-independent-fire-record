@@ -241,3 +241,16 @@ checks do not fail. Ties go to the production grid. The report only *recommends*
 stays on 0.05°. Adopting another size changes `GRID_DEG`, every `cell_id` and the DB size
 (about 4× the cells at 0.025°), so it requires a `HARMONIZER_VERSION` bump and a full
 re-backfill. Decide before the first Postgres load.
+
+**Decision (2026-11-15): keep 0.05°.** On the California 2013–2021 overlap the rule's numbers are:
+
+| Grid | LOYO MdAPE | Residual β |
+|---|---|---|
+| 0.025° | 10.1% | 0.91 |
+| 0.05° | 8.0% | 0.91 |
+| 0.1° | 7.3% | 0.92 |
+
+All three pass the checks. 0.1° is only 0.7 percentage points better, and it halves the
+spatial resolution. Location accuracy is a stated goal, so the production grid stays at 0.05°
+for the map, the cells and the calendar counts. `grid_sensitivity.json` still records 0.1° as
+the rule's pick, for transparency.
