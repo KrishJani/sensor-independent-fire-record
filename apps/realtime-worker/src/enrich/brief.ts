@@ -77,7 +77,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v4"; // v4: archival history sentence (single-account deploy); v2: places within 75 km
+export const BRIEF_CACHE_VERSION = "v5"; // v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
 }

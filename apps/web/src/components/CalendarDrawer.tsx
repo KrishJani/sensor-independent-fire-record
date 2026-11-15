@@ -2,7 +2,7 @@
 // with the before/after-harmonization toggle, 90% bands and anomalies on hover, and CSV export.
 import { useEffect, useMemo, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
-import { api, type Bbox, type CalendarMonth, type CalendarResponse } from '../lib/api';
+import { api, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth, type CalendarResponse } from '../lib/api';
 import { Segmented, type SegmentedOption } from './Segmented';
 
 type Series = 'harmonized' | 'gridded' | 'raw';
@@ -37,6 +37,7 @@ export function CalendarDrawer({ map, onPickMonth, open, onToggle, drawn }: Prop
   const [scope, setScope] = useState<Scope>('us');
   const [data, setData] = useState<CalendarResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outside, setOutside] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hover, setHover] = useState<CalendarMonth | null>(null);
   const [viewBox, setViewBox] = useState<Bbox | null>(null);
@@ -60,9 +61,15 @@ export function CalendarDrawer({ map, onPickMonth, open, onToggle, drawn }: Prop
     const ac = new AbortController();
     setLoading(true);
     setError(null);
+    setOutside(false);
     api.calendar(scope === 'us' ? { scope: 'us' } : scope === 'drawn' ? { geometry: drawn! } : { bbox: viewBox! }, ac.signal)
       .then((d) => { setData(d); setLoading(false); })
-      .catch((e) => { if (e.name !== 'AbortError') { setError(e.message); setLoading(false); } });
+      .catch((e) => {
+        if (e.name === 'AbortError') return;
+        // Outside harmonized coverage: a note, never a (zero) grid.
+        if (isOutsideCoverage(e)) { setData(null); setOutside(true); setError(OUTSIDE_COVERAGE_TEXT); } else setError(e.message);
+        setLoading(false);
+      });
     return () => ac.abort();
   }, [open, scope, viewBox, drawn]);
 
@@ -97,7 +104,10 @@ export function CalendarDrawer({ map, onPickMonth, open, onToggle, drawn }: Prop
       {open && (
         <div className="calendar-drawer__body">
           {loading && <p className="calendar-drawer__note">Loading…</p>}
-          {error && <p className="calendar-drawer__note calendar-drawer__note--error">{error}</p>}
+          {error && <p className={`calendar-drawer__note${outside ? ' calendar-drawer__note--outside' : ' calendar-drawer__note--error'}`}>{error}</p>}
+          {!error && data?.meta && data.meta.coverage < 0.995 && (
+            <p className="calendar-drawer__note">Partial coverage: {Math.round(data.meta.coverage * 100)}% of this area is in the harmonized US regions.</p>
+          )}
           {grid && data && !error && (
             <>
               <div className="calendar-grid" role="grid" onMouseLeave={() => setHover(null)}>

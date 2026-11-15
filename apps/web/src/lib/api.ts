@@ -9,6 +9,10 @@ export class ApiError extends Error {
   }
 }
 
+/** The calendar's 422 when under half of the area is harmonized (api-worker lib/coverage.ts). */
+export const isOutsideCoverage = (e: unknown) => e instanceof ApiError && e.code === 'outside_regions';
+export const OUTSIDE_COVERAGE_TEXT = 'Outside harmonized coverage (US regions only). The map shows raw detections here.';
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
@@ -52,6 +56,8 @@ export interface CalendarMonth {
   anomaly: { median: number; ratioToMedian: number | null; robustZ: number | null; percentile: number; class: string } | null;
 }
 export interface CalendarResponse {
+  /** Share (0..1) of the area's 0.05° cells inside harmonized coverage; always ≥ 0.5 (else 422 outside_regions). */
+  meta?: { coverage: number };
   aoi: unknown;
   range: { from: string; to: string };
   units: string;

@@ -4,7 +4,7 @@ import type { Brief } from "../protocol";
 import { compass, fetchPlaces, PLACES_RADIUS_KM, type Place, type PlacesSource } from "./places";
 export type { Place } from "./places";
 import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS, reasoningParams } from "./brief";
-import { historyBbox, summarizeCalendar, type CalendarResponse } from "./history";
+import { historyBbox, OUTSIDE_COVERAGE, summarizeCalendar, type CalendarResponse } from "./history";
 
 export interface EnrichParams {
   incidentId: string;
@@ -18,7 +18,7 @@ export interface EnrichParams {
   briefCacheKey?: string;
 }
 
-type StepResult<T> = { status: "ok"; data: T } | { status: "failed"; error: string } | { status: "skipped"; reason: string };
+type StepResult<T> = { status: "ok"; data: T } | { status: "failed"; error: string } | { status: "skipped"; reason: string; coverage?: number };
 
 /** places: "ok" with an empty list = nothing within radiusKm; "failed" = lookup unavailable (error says why). */
 export type PlacesResult =
@@ -132,14 +132,19 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
       } catch (err) {
         return { status: "skipped", reason: `api-worker unavailable: ${err instanceof Error ? err.message : String(err)}` };
       }
-      if (res.status === 404 || res.status === 503 || res.status === 413 || res.status === 422) {
-        // 422 outside_regions: the harmonized archive covers US regions only (config/regions.json).
-        const e = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
-        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? `HTTP ${res.status}`}${e?.error?.message ? ` (${e.error.message})` : ""}` };
+      if (res.status === 422) {
+        // outside_regions: under half of the area is in harmonized coverage (US regions only; error.coverage).
+        const e = (await res.json().catch(() => null)) as { error?: { code?: string; coverage?: number } } | null;
+        if (e?.error?.code === "outside_regions") return { status: "skipped", reason: OUTSIDE_COVERAGE, coverage: e.error.coverage ?? 0 };
+        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? "HTTP 422"}` };
+      }
+      if (res.status === 404 || res.status === 503 || res.status === 413) {
+        const e = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
+        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? `HTTP ${res.status}`}` };
       }
       if (!res.ok) throw new Error(`api-worker /api/calendar HTTP ${res.status}`);
       const summary = summarizeCalendar((await res.json()) as CalendarResponse, month);
-      if (!summary) return { status: "skipped", reason: "archival calendar: no harmonized fire activity recorded in this area" };
+      if (!summary) return { status: "skipped", reason: OUTSIDE_COVERAGE }; // all zeros: grazing US cells only
       return { status: "ok", data: { dataSource: "live", summary } };
     });
 

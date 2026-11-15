@@ -2,8 +2,9 @@
 // overlays, notable events, and background. Harmonized modes are sensor-independent; raw detections are
 // the only place sensors and FRP appear (provenance).
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type mapboxgl from 'mapbox-gl';
-import { api, type Bbox, type CalendarMonth } from '../lib/api';
+import { api, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth } from '../lib/api';
 import { BASEMAPS, BASEMAP_ORDER, type BasemapId } from '../lib/basemaps';
 import { flameRamp, INDUSTRIAL_COLOR, PRONE_COLORS, SENSOR_COLORS } from '../lib/fireLayers';
 import type { FireColoring, FireMode, MapSettings, RangePreset } from '../lib/mapSettings';
@@ -116,6 +117,7 @@ function Legend({ mode, coloring }: { mode: FireMode; coloring: FireColoring }) 
 /** Notable events (archival): record months in view and the most significant fire-prone areas. */
 function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string, center?: [number, number], zoom?: number): void }) {
   const [months, setMonths] = useState<CalendarMonth[] | null>(null);
+  const [outside, setOutside] = useState(false);
   const [prone, setProne] = useState<{ lat: number; lon: number; region_id: string; why: string }[] | null>(null);
   const [scopeLabel, setScopeLabel] = useState('the United States');
 
@@ -132,9 +134,14 @@ function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string
         const c = (ac.current = new AbortController());
         setScopeLabel(small ? 'this view' : 'the United States');
         api.calendar(small ? { bbox } : { scope: 'us' }, c.signal)
+          .then((d) => { setOutside(false); return d; })
           .then((d) => setMonths(d.calendar.filter((m) => m.complete && m.anomaly && (m.anomaly.class === 'record_high' || m.anomaly.class === 'much_above'))
             .sort((a, b) => (b.anomaly!.ratioToMedian ?? 0) - (a.anomaly!.ratioToMedian ?? 0)).slice(0, 5)))
-          .catch(() => setMonths([]));
+          .catch((e) => {
+            if (e.name === 'AbortError') return;
+            setOutside(isOutsideCoverage(e));
+            setMonths([]);
+          });
       }, 1000);
     };
     load();
@@ -145,8 +152,10 @@ function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string
 
   return (
     <Section title="Notable events" meta={scopeLabel}>
+      {outside && createPortal(<div className="map-raw-label material" role="status">Raw detections (not harmonized)</div>, map.getContainer())}
       {months === null && <p className="explorer__note">Loading…</p>}
-      {months?.length === 0 && <p className="explorer__note">No months far above normal here.</p>}
+      {outside && <p className="explorer__note">{OUTSIDE_COVERAGE_TEXT}</p>}
+      {months?.length === 0 && !outside && <p className="explorer__note">No months far above normal here.</p>}
       <ul className="explorer__events">
         {months?.map((m) => (
           <li key={`${m.year}-${m.month}`}>

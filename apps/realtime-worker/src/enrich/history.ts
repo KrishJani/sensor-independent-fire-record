@@ -1,5 +1,8 @@
 // Historical-context helpers for the enrich Workflow: api-worker POST /api/calendar → one line for the brief.
 
+/** History step reason (and UI text) when the area is outside the archive. */
+export const OUTSIDE_COVERAGE = "outside harmonized coverage (US regions only)";
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Subset of api-worker's POST /api/calendar response (apps/api-worker/src/routes/calendar.ts). */

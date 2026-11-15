@@ -10,6 +10,7 @@ import { computeAnomalies, daysInMonth, pointInPolygon, cellCenter, type Calenda
 import { db, type Sql, type Ctx } from '../lib/db.ts';
 import { ApiError, clampRange, parseDate, polygonBbox } from '../lib/http.ts';
 import { CONFIG, REGIONS } from './meta.ts';
+import { coverage, MIN_COVERAGE } from '../lib/coverage.ts';
 
 export interface CalendarRequest {
   scope?: string;
@@ -51,7 +52,7 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
       peakFrpMw: r.peak_frp_mw, peakFrpSensor: r.peak_frp_sensor, complete: r.complete, lo: r.harmonized_lo ?? r.harmonized_cell_days, hi: r.harmonized_hi ?? r.harmonized_cell_days,
     }));
     const annual = (await sql`select year, harmonized_cell_days as h, harmonized_lo as lo, harmonized_hi as hi from annual_harmonized where scope = ${req.scope} order by year`) as any[];
-    return respond(cells, annual.map((a) => ({ year: a.year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi })), { from, to, months: req.months ?? null, baseline, aoi: { scope: req.scope, regions: members }, alpha: alphaSummary(members, regionsDb) });
+    return respond(cells, annual.map((a) => ({ year: a.year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi })), { from, to, months: req.months ?? null, baseline, aoi: { scope: req.scope, regions: members }, alpha: alphaSummary(members, regionsDb), coverage: 1 });
   }
 
   // ---------- AOI ----------
@@ -76,8 +77,13 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
     if ((e - w) * (n - s) > MAX_BBOX_DEG2) throw new ApiError(413, 'aoi_too_large', `bbox exceeds ${MAX_BBOX_DEG2} deg²; use a region scope (e.g. "us")`);
   } else throw new ApiError(400, 'aoi_required', 'give scope, bbox or geometry');
 
+  // Coverage: share of the AOI's cells inside a harmonized region on US territory (lib/coverage.ts). Mostly
+  // outside → 422 instead of a calendar built from a few grazing US cells (or zeros for Canada/Mexico).
+  const cov = round(coverage(bbox, cells), 3);
+  const OUTSIDE = 'outside harmonized coverage (US regions only); the map shows raw detections here';
+  if (cov < MIN_COVERAGE) throw new ApiError(422, 'outside_regions', OUTSIDE, { coverage: cov });
   const regs = REGIONS.filter((r) => loaded.has(r.id) && overlaps(bbox, r.bbox)).map((r) => r.id);
-  if (!regs.length) throw new ApiError(422, 'outside_regions', 'the area is outside every harmonized region; the global map layer has raw (unharmonized) activity there');
+  if (!regs.length) throw new ApiError(422, 'outside_regions', OUTSIDE, { coverage: 0 });
   const max = regs.map((m) => loaded.get(m)!.t).sort()[0];
   const { from, to } = clampRange(parseDate(req.from, '2000-11-01', 'from'), parseDate(req.to, max, 'to'), '2000-11-01', max);
   const r0 = Math.floor((bbox[1] + 90) * 20), r1 = Math.ceil((bbox[3] + 90) * 20) - 1, c0 = Math.floor((bbox[0] + 180) * 20), c1 = Math.ceil((bbox[2] + 180) * 20) - 1;
@@ -138,7 +144,7 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
     for (const [reg, s] of annualScaled.get(String(y)) ?? []) { const b = bandOf.get(reg)?.annual; if (b) { a.lo -= s * (1 - b[0]); a.hi += s * (b[1] - 1); } }
   }
   const annual = [...annualMap.entries()].sort((a, b) => a[0] - b[0]).map(([year, a]) => ({ year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi }));
-  return respond(out, annual, { from, to, months: req.months ?? null, baseline, aoi: { bbox, cells: cells?.length ?? null, regions: regs }, alpha: alphaSummary(regs, regionsDb) });
+  return respond(out, annual, { from, to, months: req.months ?? null, baseline, aoi: { bbox, cells: cells?.length ?? null, regions: regs }, alpha: alphaSummary(regs, regionsDb), coverage: cov });
 }
 
 async function aoiDays(sql: Sql, regs: string[], r0: number, r1: number, c0: number, c1: number, from: string, to: string, cells: number[] | null) {
@@ -173,7 +179,7 @@ function alphaSummary(regs: string[], regionsDb: { region_id: string; validation
   });
 }
 
-function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: number; lo: number | null; hi: number | null }[], o: { from: string; to: string; months: number[] | null; baseline: [number, number]; aoi: unknown; alpha: unknown }) {
+function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: number; lo: number | null; hi: number | null }[], o: { from: string; to: string; months: number[] | null; baseline: [number, number]; aoi: unknown; alpha: unknown; coverage: number }) {
   const { cells: scored, climatology } = computeAnomalies(cells, { baselineYears: o.baseline });
   const inRange = (c: { year: number; month: number }) => {
     const k = `${c.year}-${String(c.month).padStart(2, '0')}`;
@@ -195,6 +201,8 @@ function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: numb
   return {
     mode: 'archival',
     aoi: o.aoi,
+    // Share (0..1) of the AOI's cells inside harmonized coverage (US regions). < 0.5 never gets here (422).
+    meta: { coverage: o.coverage },
     range: { from: o.from, to: o.to },
     units: 'VIIRS-equivalent active 0.05° cell-days (MODIS-only days scaled with α_eff); lo/hi = 90% band',
     calendar: cal,

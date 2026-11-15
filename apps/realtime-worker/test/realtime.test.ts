@@ -290,7 +290,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v4/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v5/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
