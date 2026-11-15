@@ -38,8 +38,9 @@ export interface MapSettings {
 }
 
 export const DEFAULT_SETTINGS: MapSettings = {
-  basemap: 'explore',
-  light: 'auto',
+  // FIRMS-like default: dark, quiet basemap so detections glow.
+  basemap: 'muted',
+  light: 'night',
   projection: 'globe',
   atmosphere: true,
   spin: false,

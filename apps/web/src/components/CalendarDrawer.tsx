@@ -1,3 +1,4 @@
+import { YLORRD } from '../lib/colors';
 import { Ember } from './Ember';
 // Archival burning-activity calendar (SPEC.md §7.1): Year × Month heatmap for the US or the current view,
 // with the before/after-harmonization toggle, 90% bands and anomalies on hover, and CSV export.
@@ -20,7 +21,7 @@ const SCOPES: SegmentedOption<Scope>[] = [
 const DRAWN: SegmentedOption<Scope> = { id: 'drawn', label: 'Drawn area' };
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const RAMP = ['#fcffa4', '#f9c932', '#f98e09', '#e45a31', '#bc3754', '#87216b', '#57106e'];
+const RAMP = YLORRD;
 const value = (m: CalendarMonth, s: Series) => (s === 'harmonized' ? m.harmonizedCellDays : s === 'gridded' ? m.unscaledCellDays : m.rawDetections);
 const fmt = (n: number) => Math.round(n).toLocaleString();
 

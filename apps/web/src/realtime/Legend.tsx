@@ -1,5 +1,5 @@
 import { fmtInt } from './format';
-import { INCIDENT_FRP_STOPS, RAMP } from './layers';
+import { AGE_STOPS, INCIDENT_FRP_STOPS, RAMP } from './layers';
 
 /** Ramp + labelled stops, and a size key: color is never the only cue. */
 export function Legend() {
@@ -19,6 +19,21 @@ export function Legend() {
         </span>
       </div>
       <span className="divider divider--vertical rt-legend__divider" />
+      <div className="rt-legend__block">
+        <span className="rt-legend__title">Detection age</span>
+        <span
+          className="rt-legend__ramp"
+          style={{ background: `linear-gradient(90deg, ${AGE_STOPS.map(([h, c]) => `${c} ${Math.round((h / 48) * 100)}%`).join(', ')})` }}
+          aria-hidden="true"
+        />
+        <span className="rt-legend__ticks">
+          <span>new</span>
+          <span>12 h</span>
+          <span>24 h</span>
+          <span>48 h</span>
+        </span>
+      </div>
+      <span className="divider divider--vertical rt-legend__divider" />
       <div className="rt-legend__block rt-legend__sizes">
         <span className="rt-legend__circles" aria-hidden="true">
           <span />
@@ -28,7 +43,7 @@ export function Legend() {
         <span className="rt-legend__note">
           Circle area = area with detections
           <br />
-          Heat = individual detections, fading over 48 h
+          Dots = individual detections, fading over 48 h
         </span>
       </div>
     </div>

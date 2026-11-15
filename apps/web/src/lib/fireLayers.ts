@@ -1,3 +1,4 @@
+import { YLORRD } from './colors';
 // Fire data layers on the map. Colors (colorblind-safe):
 //  hotspots  flame ramp yellow → orange → red → deep purple (by age, FRP, or sensor)
 //  sensors   VIIRS orange #e8710a, MODIS blue #1f77b4 (distinct under common color-vision deficiencies)
@@ -13,9 +14,9 @@ export const PRONE = 'fire-prone';
 export const INDUSTRIAL = 'industrial-heat';
 export const REGIONS = 'harmonized-regions';
 
-export const FLAME = ['#fde725', '#fdb42f', '#f8850f', '#e45a31', '#c42a3f', '#8f0f4f', '#4b0c4f'];
-/** Dark basemaps: the same hues run the other way so MORE fire is BRIGHTER (deep red embers → white-hot). */
-export const FLAME_DARK = ['#6b1a2a', '#a3202f', '#d6342b', '#f2622a', '#f9952b', '#fcc83e', '#fff1a8'];
+/** One ramp on every basemap (YlOrRd, low → high); see lib/colors.ts. */
+export const FLAME: string[] = [...YLORRD];
+export const FLAME_DARK = FLAME;
 let darkMap = false;
 /** Set from the current basemap/light preset; the next draw uses the matching ramp. */
 export function setFireTheme(dark: boolean) { darkMap = dark; }

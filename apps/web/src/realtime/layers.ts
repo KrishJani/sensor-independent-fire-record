@@ -1,4 +1,5 @@
 import { FADE_IN_MS } from './config';
+import { YLORRD5 } from '../lib/colors';
 import type mapboxgl from 'mapbox-gl';
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import type { DetectionPoint, IncidentSummary } from './types';
@@ -15,6 +16,7 @@ export const SRC = {
 
 export const LAYER = {
   heat: 'overlay-rt-heat',
+  glow: 'overlay-rt-glow',
   points: 'overlay-rt-points',
   incidentSelected: 'overlay-rt-incident-selected',
   incidentCasing: 'overlay-rt-incident-casing',
@@ -27,11 +29,8 @@ export const LAYER = {
 /** Layers that respond to clicks, top first. */
 export const INCIDENT_HIT_LAYERS = [LAYER.incidents];
 
-/**
- * Inferno, trimmed at both ends so the darkest step still reads on dark basemaps and
- * the lightest still reads on light ones. Perceptually ordered and colorblind safe.
- */
-export const RAMP = ['#57106e', '#9c2964', '#d94a3f', '#f8850f', '#f9cb35'] as const;
+/** The shared YlOrRd ramp (lib/colors.ts), low → high. */
+export const RAMP = YLORRD5;
 
 /** Detection FRP stops (MW) for the ramp. */
 export const POINT_FRP_STOPS = [1, 10, 40, 150, 500] as const;
@@ -60,6 +59,11 @@ const AGE_OPACITY: mapboxgl.ExpressionSpecification = [
   ['coalesce', ['get', 'f'], 1],
   ['interpolate', ['linear'], ['get', 'a'], 0, 0.95, 6, 0.8, 24, 0.45, 48, 0.15],
 ];
+/** Detection age (hours): newest brightest yellow, older deeper red. */
+export const AGE_STOPS = [
+  [0, '#ffff8c'], [3, '#fed976'], [8, '#fd8d3c'], [16, '#fc4e2a'], [30, '#e31a1c'], [48, '#800026'],
+] as const;
+const AGE_COLOR = ['interpolate', ['linear'], ['get', 'a'], ...AGE_STOPS.flat()] as unknown as mapboxgl.ExpressionSpecification;
 /** Radius grows from 40% to full while a detection fades in. */
 const GROW: mapboxgl.ExpressionSpecification = ['+', 0.4, ['*', 0.6, ['coalesce', ['get', 'f'], 1]]];
 
@@ -82,32 +86,45 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
         'heatmap-color': [
           'interpolate', ['linear'], ['heatmap-density'],
           0, 'rgba(0,0,0,0)',
-          0.08, 'rgba(87,16,110,0.55)',
+          0.08, 'rgba(254,217,118,0.45)',
           0.3, RAMP[1],
           0.55, RAMP[2],
           0.8, RAMP[3],
           1, RAMP[4],
         ],
-        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.85, 9.5, 0],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 6, 0],
       },
     },
     {
+      // FIRMS-like soft halo under each detection.
+      id: LAYER.glow,
+      type: 'circle',
+      source: SRC.detections,
+      minzoom: 3,
+      paint: {
+        'circle-radius': ['interpolate', ['exponential', 1.6], ['zoom'], 3, ['*', GROW, 3], 8, ['*', GROW, 7], 12, ['*', GROW, 14]],
+        'circle-color': AGE_COLOR,
+        'circle-blur': 1,
+        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0, 4.5, ['*', 0.45, AGE_OPACITY]],
+        'circle-pitch-alignment': 'map',
+      },
+    },
+    {
+      // Small crisp dot, colored by detection age (newest yellow, older deep red), sized by zoom.
       id: LAYER.points,
       type: 'circle',
       source: SRC.detections,
-      minzoom: 7,
+      minzoom: 3,
       paint: {
-        // Size and color both encode FRP, so the ramp is never the only cue.
         'circle-radius': [
-          'interpolate', ['linear'], ['zoom'],
-          7, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 1.5, 100, 3, 1000, 5]],
-          12, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 3, 100, 6, 1000, 10]],
+          'interpolate', ['exponential', 1.6], ['zoom'],
+          3, ['*', GROW, 0.9],
+          8, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 1.8, 500, 3]],
+          12, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 4, 500, 7]],
         ],
-        'circle-color': ramp('frp', POINT_FRP_STOPS),
-        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 8.5, AGE_OPACITY],
-        'circle-stroke-color': 'rgba(0,0,0,0.55)',
-        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 8, 0, 11, 0.6],
-        'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 8.5, AGE_OPACITY],
+        'circle-color': AGE_COLOR,
+        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0, 4.5, AGE_OPACITY],
+        'circle-stroke-width': 0,
         'circle-pitch-alignment': 'map',
       },
     },
