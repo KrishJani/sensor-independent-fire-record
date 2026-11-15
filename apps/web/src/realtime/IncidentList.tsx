@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { fmtAgo, fmtKm2, fmtMw } from './format';
 import { INCIDENT_FRP_STOPS, RAMP } from './layers';
 import type { IncidentSummary } from './types';
@@ -20,7 +21,7 @@ export function fmtLatLon([lon, lat]: [number, number]): string {
   return `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`;
 }
 
-export function IncidentList({ incidents, selectedId, clock, onSelect, emptyText }: Props) {
+export const IncidentList = memo(function IncidentList({ incidents, selectedId, clock, onSelect, emptyText }: Props) {
   if (!incidents.length) return <p className="rt-empty">{emptyText}</p>;
   return (
     <ol className="rt-list" aria-label="Fire incidents, largest area with detections first">
@@ -60,4 +61,4 @@ export function IncidentList({ incidents, selectedId, clock, onSelect, emptyText
       ))}
     </ol>
   );
-}
+});

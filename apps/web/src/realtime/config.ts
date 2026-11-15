@@ -14,4 +14,7 @@ export const POINT_CAP = 20_000;
 export const POINT_MAX_AGE_MS = 48 * 3600_000;
 
 /** setData at most this often. */
-export const MAP_UPDATE_MS = 500;
+export const MAP_UPDATE_MS = 250;
+
+/** New detections fade and grow in over this much real time. */
+export const FADE_IN_MS = 700;

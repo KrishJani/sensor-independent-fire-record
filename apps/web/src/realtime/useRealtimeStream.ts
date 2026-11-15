@@ -21,31 +21,74 @@ export type ConnectionStatus = 'connecting' | 'live' | 'reconnecting' | 'offline
  */
 export class PointBuffer {
   points: DetectionPoint[] = [];
+  /** performance.now() when each point arrived, parallel to `points` (drives the fade-in). */
+  arrived: number[] = [];
   version = 0;
 
   add(points: DetectionPoint[], replace: boolean, now: number | null) {
+    const at = performance.now();
+    // A replace (snapshot on join/viewport change) should not flash everything in again.
+    const stamp = replace ? at - 10_000 : at;
+    const stamps = new Array<number>(points.length).fill(stamp);
     this.points = replace ? points.slice() : this.points.concat(points);
+    this.arrived = replace ? stamps : this.arrived.concat(stamps);
     this.prune(now);
     this.version++;
   }
 
   prune(now: number | null) {
     let pts = this.points;
+    let arr = this.arrived;
     if (now !== null) {
       const cutoff = now - POINT_MAX_AGE_MS;
-      if (pts.length && pts[0][3] < cutoff) pts = pts.filter((p) => p[3] >= cutoff);
+      if (pts.length && pts[0][3] < cutoff) {
+        const keepP: DetectionPoint[] = [];
+        const keepA: number[] = [];
+        for (let i = 0; i < pts.length; i++) if (pts[i][3] >= cutoff) { keepP.push(pts[i]); keepA.push(arr[i]); }
+        pts = keepP;
+        arr = keepA;
+      }
     }
     // Points arrive roughly in time order, so dropping from the front keeps the newest.
-    if (pts.length > POINT_CAP) pts = pts.slice(pts.length - POINT_CAP);
+    if (pts.length > POINT_CAP) {
+      arr = arr.slice(pts.length - POINT_CAP);
+      pts = pts.slice(pts.length - POINT_CAP);
+    }
     if (pts !== this.points) {
       this.points = pts;
+      this.arrived = arr;
       this.version++;
     }
   }
 
   clear() {
     this.points = [];
+    this.arrived = [];
     this.version++;
+  }
+}
+
+/**
+ * The last server clock tick plus when it arrived, so the UI can advance the clock smoothly
+ * between ticks (`clockAt`) without a React render per frame.
+ */
+export class StreamClock {
+  t: number | null = null;
+  at = 0;
+  /** Stream ms per real ms while playing; 0 when live, paused or ended. */
+  rate = 0;
+  /** Never run further ahead of the last tick than this much real time (covers a late tick, not a stall). */
+  static MAX_LEAD_MS = 1500;
+
+  set(t: number) {
+    this.t = t;
+    this.at = performance.now();
+  }
+
+  clockAt(now = performance.now()): number | null {
+    if (this.t === null) return null;
+    if (!this.rate) return this.t;
+    return this.t + Math.min(now - this.at, StreamClock.MAX_LEAD_MS) * this.rate;
   }
 }
 
@@ -53,6 +96,8 @@ export interface RealtimeStreamState {
   incidents: Map<string, IncidentSummary>;
   briefs: Map<string, Brief>;
   points: PointBuffer;
+  /** Interpolating clock for per-frame consumers (HUD, map). */
+  streamClock: StreamClock;
   /** Stream time: replay clock, or the latest detection time for live. */
   clock: number | null;
   /** Replay status from the socket, tagged with the stream it belongs to. */
@@ -64,6 +109,8 @@ const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 const OFFLINE_AFTER_FAILURES = 4;
 const PING_MS = 25_000;
+/** React sees incidents, briefs and the coarse clock at most this often. */
+const FLUSH_MS = 250;
 
 /** Map viewport as a valid [w, s, e, n], or null (= everything) for world-scale or wrapped views. */
 export function viewportBbox(map: mapboxgl.Map): Bbox | null {
@@ -88,6 +135,7 @@ export function useRealtimeStream(
   const [replay, setReplay] = useState<RealtimeStreamState['replay']>(null);
   const [connection, setConnection] = useState<ConnectionStatus>('connecting');
   const pointsRef = useRef(new PointBuffer());
+  const clockRef = useRef(new StreamClock());
 
   useEffect(() => {
     setIncidents(new Map());
@@ -95,6 +143,7 @@ export function useRealtimeStream(
     setClock(null);
     setReplay(null);
     pointsRef.current.clear();
+    clockRef.current.t = null;
     if (!stream) {
       setConnection('offline');
       return;
@@ -107,6 +156,37 @@ export function useRealtimeStream(
     let pingTimer: ReturnType<typeof setInterval> | undefined;
     let moveTimer: ReturnType<typeof setTimeout> | undefined;
     let streamT: number | null = null;
+    // Socket frames only touch these; one timer flushes them to React at most every FLUSH_MS.
+    const pending = { incidents: new Map<string, IncidentSummary>(), briefs: new Map<string, Brief>(), clock: false };
+    const flush = () => {
+      if (pending.clock) {
+        pending.clock = false;
+        setClock(streamT);
+      }
+      if (pending.incidents.size) {
+        const upserts = pending.incidents;
+        pending.incidents = new Map();
+        setIncidents((prev) => {
+          const next = new Map(prev);
+          for (const [id, i] of upserts) next.set(id, i);
+          return next;
+        });
+      }
+      if (pending.briefs.size) {
+        const nb = pending.briefs;
+        pending.briefs = new Map();
+        setBriefs((prev) => {
+          const next = new Map(prev);
+          // Enrichment runs can finish out of order: keep the brief describing the latest moment.
+          for (const [id, b] of nb) {
+            const have = next.get(id);
+            if (!have || briefTime(b) >= briefTime(have)) next.set(id, b);
+          }
+          return next;
+        });
+      }
+    };
+    const flushTimer = setInterval(flush, FLUSH_MS);
     const isReplay = stream.startsWith('replay:');
     const url = `${REALTIME_URL.replace(/^http/, 'ws')}/realtime/ws?stream=${encodeURIComponent(stream)}`;
 
@@ -119,14 +199,12 @@ export function useRealtimeStream(
       if (typeof t !== 'number' || !Number.isFinite(t)) return;
       if (streamT === null || t > streamT) {
         streamT = t;
-        setClock(t);
+        clockRef.current.set(t);
+        pending.clock = true;
       }
     };
 
     const handleFrame = (frame: ServerMessage) => {
-      // Collect one frame's worth of changes so each frame is a single React update.
-      const upserts: IncidentSummary[] = [];
-      const newBriefs: [string, Brief][] = [];
 
       const visit = (m: ServerMessage) => {
         switch (m.type) {
@@ -137,11 +215,14 @@ export function useRealtimeStream(
             advance(m.streamT);
             break;
           case 'incident.upsert':
-            upserts.push(normalizeIncident(m.incident));
+            pending.incidents.set(m.incident.id, normalizeIncident(m.incident));
             if (!isReplay) advance(m.incident.lastSeen);
             break;
           case 'incident.brief':
-            newBriefs.push([m.id, m.brief]);
+            {
+              const have = pending.briefs.get(m.id);
+              if (!have || briefTime(m.brief) >= briefTime(have)) pending.briefs.set(m.id, m.brief);
+            }
             break;
           case 'detections':
             if (!isReplay) for (const p of m.points) advance(p[3]);
@@ -160,23 +241,6 @@ export function useRealtimeStream(
         }
       };
       visit(frame);
-
-      if (upserts.length)
-        setIncidents((prev) => {
-          const next = new Map(prev);
-          for (const i of upserts) next.set(i.id, i);
-          return next;
-        });
-      if (newBriefs.length)
-        setBriefs((prev) => {
-          const next = new Map(prev);
-          // Enrichment runs can finish out of order: keep the brief describing the latest moment.
-          for (const [id, b] of newBriefs) {
-            const have = next.get(id);
-            if (!have || briefTime(b) >= briefTime(have)) next.set(id, b);
-          }
-          return next;
-        });
       pointsRef.current.prune(streamT);
     };
 
@@ -238,6 +302,7 @@ export function useRealtimeStream(
 
     return () => {
       closed = true;
+      clearInterval(flushTimer);
       clearTimeout(retryTimer);
       clearTimeout(moveTimer);
       clearInterval(pingTimer);
@@ -250,5 +315,5 @@ export function useRealtimeStream(
     };
   }, [stream, map]);
 
-  return { incidents, briefs, points: pointsRef.current, clock, replay, connection };
+  return { incidents, briefs, points: pointsRef.current, streamClock: clockRef.current, clock, replay, connection };
 }

@@ -29,10 +29,11 @@ export const SCENARIOS: Scenario[] = [
 export const scenarioById = (id: string | undefined) => SCENARIOS.find((s) => s.id === id) ?? null;
 
 /** Stream seconds per real second. 12,000 is the worker default (10 days in ~75 s). */
-export type SpeedId = '6000' | '12000' | '24000';
+export type SpeedId = '6000' | '12000' | '24000' | '36000';
 
 export const SPEEDS: { id: SpeedId; label: string }[] = [
   { id: '6000', label: '0.5×' },
   { id: '12000', label: '1×' },
   { id: '24000', label: '2×' },
+  { id: '36000', label: '3×' },
 ];
