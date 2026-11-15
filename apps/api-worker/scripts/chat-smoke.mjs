@@ -155,6 +155,10 @@ client.addEventListener("message", (event) => {
         break;
       case "text-delta": {
         const d = chunk.delta ?? "";
+        const now = Date.now() - current.t0;
+        current.firstTextMs ??= now;
+        current.lastTextMs = now;
+        if (d) current.deltas++;
         // A new text part (next model step) must not glue onto the previous word ("stillin").
         if (current.newPart && d) {
           if (/\S$/.test(current.text) && /^\S/.test(d))
@@ -166,6 +170,7 @@ client.addEventListener("message", (event) => {
         break;
       }
       case "tool-input-available":
+        current.firstToolMs ??= Date.now() - current.t0;
         current.tools.push(chunk.toolName);
         current.inputs.set(chunk.toolCallId, { name: chunk.toolName, input: chunk.input });
         if (!JSON_OUT) process.stdout.write(`\n  🔧 ${chunk.toolName}(${JSON.stringify(chunk.input)})\n`);
@@ -212,7 +217,7 @@ async function ask(text) {
   const id = randomUUID();
   if (!JSON_OUT) console.log(`\n━━━ USER: ${text}\n━━━ ASSISTANT:`);
   const done = new Promise((resolve, reject) => {
-    current = { id, resolve, reject, text: "", tools: [], inputs: new Map(), fetched: [], usedMock: false, newPart: false, glued: [] };
+    current = { id, resolve, reject, text: "", tools: [], inputs: new Map(), fetched: [], usedMock: false, newPart: false, glued: [], t0: Date.now(), firstToolMs: null, firstTextMs: null, lastTextMs: null, deltas: 0 };
     setTimeout(() => reject(new Error(`no answer within ${TURN_TIMEOUT_MS / 1000}s`)), TURN_TIMEOUT_MS);
   });
   client.send(
@@ -227,7 +232,15 @@ async function ask(text) {
   result.ms = Date.now() - started;
   transcript = messages; // the server broadcast replaces this with the persisted transcript
   await new Promise((r) => setTimeout(r, 300));
-  if (!JSON_OUT) console.log(`\n━━━ tools called: ${result.tools.join(", ") || "(none)"} (${result.ms} ms)`);
+  if (!JSON_OUT) {
+    console.log(`\n━━━ tools called: ${result.tools.join(", ") || "(none)"} (${result.ms} ms)`);
+    // Streaming check: many deltas spread over time = streamed; one delta / ~0 ms span = one block.
+    const s = (ms) => (ms == null ? "-" : `${(ms / 1000).toFixed(1)} s`);
+    console.log(
+      `━━━ timing: first tool call ${s(result.firstToolMs)}, first text delta ${s(result.firstTextMs)}, total ${s(result.ms)}; ` +
+        `${result.deltas} text deltas over ${s(result.lastTextMs - result.firstTextMs)}`
+    );
+  }
   return result;
 }
 
