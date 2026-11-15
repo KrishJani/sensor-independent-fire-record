@@ -62,7 +62,9 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 900);
-  const [timelineOpen, setTimelineOpen] = useState(() => window.innerWidth >= 700);
+  // Collapsed until asked for: the toolbar toggle, a region click or an analysed area opens it.
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [regionArea, setRegionArea] = useState<{ bbox: [number, number, number, number]; name: string } | null>(null);
   const scheme = useColorScheme();
 
   const latest = useRef({ settings, scheme });
@@ -166,6 +168,23 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
     return () => { map.off('style.load', draw); };
   }, [map, regions, settings.regionOutlines, tab]);
 
+  // Clicking inside a harmonized region opens the calendar for that region (smallest match wins).
+  useEffect(() => {
+    if (!map || tab !== 'archival' || !regions) return;
+    const onClick = (e: mapboxgl.MapMouseEvent) => {
+      if (measuring.current) return;
+      const { lng, lat } = e.lngLat;
+      const hit = regions
+        .filter(({ bbox: [w, s, ee, n] }) => lng >= w && lng <= ee && lat >= s && lat <= n)
+        .sort((a, b) => (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]) - (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]))[0];
+      if (!hit) return;
+      setRegionArea({ bbox: hit.bbox, name: hit.name });
+      setTimelineOpen(true);
+    };
+    map.on('click', onClick);
+    return () => { map.off('click', onClick); };
+  }, [map, regions, tab]);
+
   // Click popups: prone tiles explain WHY; points show the detection.
   useEffect(() => {
     if (!map) return;
@@ -237,7 +256,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 onClose={() => setExplorerOpen(false)}
                 onJump={(date, center, zoom) => { if (date) onPickDate(date); if (center) map.flyTo({ center, zoom: zoom ?? map.getZoom() }); }}
               />
-              {<CalendarDrawer map={map} onPickMonth={onPickDate} open={timelineOpen} onToggle={() => setTimelineOpen(!timelineOpen)} drawn={analysed} />}
+              {timelineOpen && <CalendarDrawer map={map} onPickMonth={onPickDate} onClose={() => setTimelineOpen(false)} drawn={analysed} region={regionArea} />}
               {measure.mode !== 'off' && (
                 <div className="measure material" role="status" aria-label="Measurement">
                   <div className="measure__modes">

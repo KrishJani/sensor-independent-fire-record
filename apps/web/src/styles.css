@@ -821,3 +821,9 @@ button:focus-visible {
 @keyframes ember-spin { to { transform: rotate(360deg); } }
 @keyframes ember-pulse { 0%, 100% { transform: scale(0.8); opacity: 0.75; } 50% { transform: scale(1.1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ember__orbit, .ember__core { animation: none; } }
+
+.calendar-drawer__title { font-weight: 600; font-size: 13px; padding: 0 4px; }
+.calendar-drawer__close { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--label-secondary); font-size: 16px; line-height: 1; cursor: pointer; }
+.calendar-drawer__close:hover { background: var(--hover); color: var(--label); }
+.calendar-years { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--label-secondary); }
+.calendar-years select { height: 24px; border: 0; border-radius: 6px; background: var(--track); color: var(--label); font: inherit; font-size: 12px; padding: 0 4px; }

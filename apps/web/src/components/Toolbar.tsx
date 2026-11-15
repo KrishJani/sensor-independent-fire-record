@@ -44,7 +44,7 @@ export function Toolbar({ map, explorerOpen, onExplorer, timelineOpen, onTimelin
     <>
       <nav className="toolbar material" aria-label="Tools">
         <button type="button" aria-pressed={explorerOpen} onClick={onExplorer}><span aria-hidden>☰</span>Explorer</button>
-        {showTimeline && <button type="button" aria-pressed={timelineOpen} onClick={onTimeline}><span aria-hidden>▦</span>Timeline</button>}
+        {showTimeline && <button type="button" aria-pressed={timelineOpen} onClick={onTimeline}><span aria-hidden>▦</span>Calendar</button>}
         <button type="button" aria-pressed={measuring} onClick={onMeasure}><span aria-hidden>⟷</span>Measure</button>
         <button type="button" onClick={capture}><span aria-hidden>⎙</span>Capture</button>
         <button type="button" onClick={locate}><span aria-hidden>◎</span>Locate</button>
