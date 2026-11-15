@@ -30,7 +30,9 @@ export interface Meta {
 }
 
 export interface SpotsResponse extends FeatureCollection {
-  meta: { level: Level; heat: 'fire' | 'industrial'; bbox: Bbox; from: string; to: string; truncated: boolean; globalFallback: boolean };
+  meta: { level: Level; heat: 'fire' | 'industrial'; bbox: Bbox; from: string; to: string; truncated: boolean; globalFallback?: boolean;
+    /** realtime only: the VIIRS reference satellite per day, and days with no VIIRS at all */
+    reference?: Record<string, string | null>; noViirsDays?: string[] };
 }
 
 export interface CalendarMonth {
@@ -63,8 +65,8 @@ export type CalendarRequest = { scope: string } | { bbox: Bbox } | { geometry: G
 
 export const api = {
   meta: () => call<Meta>('/api/meta'),
-  spots: (bbox: Bbox, level: Level, from: string, to: string, heat: 'fire' | 'industrial', signal?: AbortSignal, sensor: 'all' | 'viirs' | 'modis' = 'all', measure: 'harmonized' | 'raw' = 'harmonized') =>
-    call<SpotsResponse>(`/api/archival/spots?bbox=${bbox.map((v) => v.toFixed(2)).join(',')}&level=${level}&from=${from}&to=${to}&heat=${heat}&sensor=${sensor}&measure=${measure}`, { signal }),
+  spots: (bbox: Bbox, level: Level, from: string, to: string, heat: 'fire' | 'industrial', signal?: AbortSignal, sensor: 'all' | 'viirs' | 'modis' = 'all', measure: 'harmonized' | 'raw' = 'harmonized', tier: 'archival' | 'realtime' = 'archival') =>
+    call<SpotsResponse>(`/api/${tier}/spots?bbox=${bbox.map((v) => v.toFixed(2)).join(',')}&level=${level}&from=${from}&to=${to}&heat=${heat}&sensor=${sensor}&measure=${measure}`, { signal }),
   proneSummary: () => call<{ regions: Record<string, Record<string, number>>; mostSignificant: { tile_id: number; lat: number; lon: number; region_id: string; gi_z: number; why: string }[] }>('/api/prone/summary?scope=us&top=8'),
   calendar: (req: CalendarRequest & { from?: string; to?: string }, signal?: AbortSignal) =>
     call<CalendarResponse>('/api/calendar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'archival', ...req }), signal }),

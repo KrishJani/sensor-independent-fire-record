@@ -6,6 +6,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
+  // Workers Paid: parsing a world NRT file (~40k rows) and diffing it against D1 needs more than the
+  // default 30 s of CPU on a catch-up tick.
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true },
   "triggers": {
     // ONE cron (SPEC §2). Every 3 h: NRT → D1, always. The 24 h SP job (→ Postgres) and the
     // 92-day D1 → Postgres handover run on the same tick, gated by the KV key

@@ -36,7 +36,9 @@ function remember(k: string, v: FeatureCollection) {
   if (lru.size > 50) lru.delete(lru.keys().next().value!);
 }
 
-export interface LayerState { loading: boolean; error: string | null; level: Level; truncated: boolean; count: number }
+export interface LayerState { loading: boolean; error: string | null; level: Level; truncated: boolean; count: number;
+  /** realtime: VIIRS reference satellite per day (provenance for the freshness chip) */
+  reference: Record<string, string | null> | null }
 export interface LayerOptions {
   enabled: boolean;
   from: string;
@@ -49,10 +51,14 @@ export interface LayerOptions {
   industrial: boolean;
   /** Dark basemap: fire colours flip so more/newer = brighter. */
   dark: boolean;
+  /** Which store: archival (Postgres) or realtime (D1, last 92 days). */
+  tier: 'archival' | 'realtime';
+  /** Data version: a new ingest changes it, so cached layers are refetched. */
+  version: number;
 }
 
 export function useArchivalLayers(map: mapboxgl.Map | null, o: LayerOptions) {
-  const [state, setState] = useState<LayerState>({ loading: false, error: null, level: 'coarse', truncated: false, count: 0 });
+  const [state, setState] = useState<LayerState>({ loading: false, error: null, level: 'coarse', truncated: false, count: 0, reference: null });
   const last = useRef<{ key: string; box: Bbox } | null>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -72,7 +78,7 @@ export function useArchivalLayers(map: mapboxgl.Map | null, o: LayerOptions) {
       const level: Level = o.mode === 'activity' ? (z <= 6 ? 'coarse' : 'cells') : z >= 3 ? (o.mode === 'raw' ? 'points' : 'cells') : 'coarse';
       const measure = o.mode === 'raw' ? 'raw' : 'harmonized';
       const { padded, raw } = paddedBbox(map);
-      const sig = `${o.mode}|${level}|${o.from}|${o.to}|${o.activity}|${o.sensor}|${o.coloring}|${o.prone}|${o.industrial}|${o.dark}`;
+      const sig = `${o.mode}|${level}|${o.from}|${o.to}|${o.activity}|${o.sensor}|${o.coloring}|${o.prone}|${o.industrial}|${o.dark}|${o.tier}|${o.version}`;
       if (last.current && last.current.key === sig && inside(raw, last.current.box)) return; // small pan: nothing to fetch
       abort.current?.abort();
       const ac = (abort.current = new AbortController());
@@ -82,18 +88,18 @@ export function useArchivalLayers(map: mapboxgl.Map | null, o: LayerOptions) {
       const get = async (k: string, f: () => Promise<FeatureCollection>) => lru.get(k) ?? f().then((d) => (remember(k, d), d));
       const sensor = o.mode === 'raw' ? o.sensor : 'all';
       if (o.activity && sensor !== 'none')
-        jobs.push(get(`a|${o.mode}|${level}|${box}|${o.from}|${o.to}|${sensor}`, () => api.spots(box, level, o.from, o.to, 'fire', ac.signal, sensor, measure)).then((d) => {
+        jobs.push(get(`a|${o.tier}|${o.version}|${o.mode}|${level}|${box}|${o.from}|${o.to}|${sensor}`, () => api.spots(box, level, o.from, o.to, 'fire', ac.signal, sensor, measure, o.tier)).then((d) => {
           // hotspots: one marker per active 5.5 km cell (sensor-independent), at the cell center
           const shown = o.mode === 'hotspots' && level === 'cells' ? toCentroids(d) : d;
           drawActivity(map, shown, level === 'points' || (o.mode === 'hotspots' && level === 'cells') ? 'points' : 'polygons', o.coloring, o.from, o.to);
-          const m = (d as { meta?: { truncated: boolean } }).meta;
-          setState((s) => ({ ...s, truncated: !!m?.truncated, count: d.features.length }));
+          const m = (d as { meta?: { truncated: boolean; reference?: Record<string, string | null> } }).meta;
+          setState((s) => ({ ...s, truncated: !!m?.truncated, count: d.features.length, reference: m?.reference ?? null }));
         }));
       else { drawActivity(map, null, 'points'); setState((s) => ({ ...s, truncated: false, count: 0 })); }
       if (o.prone) jobs.push(get(`p|${box}`, () => api.prone(box, ac.signal)).then((d) => drawProne(map, d)));
       else drawProne(map, null);
       const ilevel: Level = z >= 9 ? 'points' : 'cells';
-      if (o.industrial && z >= 5) jobs.push(get(`i|${ilevel}|${clampArea(padded, 100)}|${o.from}|${o.to}`, () => api.spots(clampArea(padded, ilevel === 'cells' ? 100 : 2500), ilevel, o.from, o.to, 'industrial', ac.signal)).then((d) => drawIndustrial(map, d)));
+      if (o.industrial && z >= 5) jobs.push(get(`i|${o.tier}|${o.version}|${ilevel}|${clampArea(padded, 100)}|${o.from}|${o.to}`, () => api.spots(clampArea(padded, ilevel === 'cells' ? 100 : 2500), ilevel, o.from, o.to, 'industrial', ac.signal, 'all', 'raw', o.tier)).then((d) => drawIndustrial(map, d)));
       else drawIndustrial(map, null);
       Promise.all(jobs)
         .then(() => { last.current = { key: sig, box }; setState((s) => ({ ...s, loading: false })); })
@@ -106,7 +112,7 @@ export function useArchivalLayers(map: mapboxgl.Map | null, o: LayerOptions) {
     map.on('moveend', onMove);
     map.on('style.load', onStyle);
     return () => { clearTimeout(timer); map.off('moveend', onMove); map.off('style.load', onStyle); abort.current?.abort(); };
-  }, [map, o.enabled, o.from, o.to, o.activity, o.mode, o.sensor, o.coloring, o.prone, o.industrial, o.dark]);
+  }, [map, o.enabled, o.from, o.to, o.activity, o.mode, o.sensor, o.coloring, o.prone, o.industrial, o.dark, o.tier, o.version]);
 
   return state;
 }

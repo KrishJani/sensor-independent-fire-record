@@ -19,7 +19,7 @@ const COARSE_CAP = 25000; // 0.5° bins
 const CELL_CAP = 20000;
 const POINT_CAP = 5000;
 
-const square = (lat0: number, lon0: number, d: number) => ({ type: 'Polygon' as const, coordinates: [[[lon0, lat0], [lon0 + d, lat0], [lon0 + d, lat0 + d], [lon0, lat0 + d], [lon0, lat0]]] });
+export const square = (lat0: number, lon0: number, d: number) => ({ type: 'Polygon' as const, coordinates: [[[lon0, lat0], [lon0 + d, lat0], [lon0 + d, lat0 + d], [lon0, lat0 + d], [lon0, lat0]]] });
 const inAnyRegion = (lat: number, lon: number) => REGIONS.some((r) => {
   const ex = (r.exclude ?? []).map((id) => REGIONS.find((x) => x.id === id)!.bbox) as Bbox[];
   const row = Math.floor((lat + 90) * 20), col = Math.floor((lon + 180) * 20);

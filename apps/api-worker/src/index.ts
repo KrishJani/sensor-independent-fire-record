@@ -10,6 +10,7 @@ import { calendar, calendarCsv, type CalendarRequest } from './routes/calendar.t
 import { health, meta } from './routes/meta.ts';
 import { prone, proneSummary } from './routes/prone.ts';
 import { spots } from './routes/spots.ts';
+import { realtimeSpots } from './routes/realtime.ts';
 
 const app = new Hono<{ Bindings: Env }>();
 const DAY = 86400;
@@ -32,6 +33,13 @@ app.get('/api/health', async (c) => c.json(await health(c.env, c.executionCtx)))
 app.get('/api/meta', async (c) => {
   const v = `${await dataVersion(c.env, 'archival')}.${await dataVersion(c.env, 'realtime')}`;
   return cachedJson(c.executionCtx, 'meta', v, 60, () => meta(c.env, c.executionCtx));
+});
+
+// Realtime tier (D1): 15-min TTL, keyed by data:version:realtime (bumped by the ingest worker).
+app.get('/api/realtime/spots', async (c) => {
+  const q = new URL(c.req.url).searchParams;
+  const key = `rt-spots|${[...q.entries()].sort().map(([k, v]) => `${k}=${v}`).join('&')}`;
+  return cachedJson(c.executionCtx, key, await dataVersion(c.env, 'realtime'), 900, () => realtimeSpots(c.env, q));
 });
 
 app.get('/api/archival/spots', async (c) => {

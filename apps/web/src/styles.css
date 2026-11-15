@@ -792,6 +792,14 @@ button:focus-visible {
 .measure__analyse { border: 0; border-radius: 8px; padding: 5px 12px; background: #e45a31; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 .measure__analyse:hover { filter: brightness(1.08); }
 
+/* Realtime freshness chip (top-centre, under the tab bar) */
+.live-chip { position: absolute; top: calc(max(var(--inset), env(safe-area-inset-top)) + 8px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; font-size: 12px; z-index: 3; color: var(--label-secondary); white-space: nowrap; }
+.live-chip b { color: var(--label); }
+.live-chip__dot { width: 8px; height: 8px; border-radius: 50%; background: #e45a31; box-shadow: 0 0 0 0 rgba(228, 90, 49, 0.6); animation: live-pulse 2s infinite; }
+@keyframes live-pulse { 70% { box-shadow: 0 0 0 8px rgba(228, 90, 49, 0); } 100% { box-shadow: 0 0 0 0 rgba(228, 90, 49, 0); } }
+@media (prefers-reduced-motion: reduce) { .live-chip__dot { animation: none; } }
+@media (max-width: 900px) { .live-chip { top: auto; bottom: 12px; } }
+
 /* Calendar drawer sits bottom-left; on narrow screens the toolbar rides above it. */
 @media (max-width: 900px) {
   .toolbar { bottom: auto; top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px); left: max(var(--inset), env(safe-area-inset-left)); transform: none; }

@@ -7,6 +7,8 @@ interface Props {
   explorerOpen: boolean;
   onExplorer(): void;
   timelineOpen: boolean;
+  /** The calendar is archival-only. */
+  showTimeline?: boolean;
   onTimeline(): void;
   shareUrl(): string;
   measuring: boolean;
@@ -14,7 +16,7 @@ interface Props {
   onCapture(): Promise<void>;
 }
 
-export function Toolbar({ map, explorerOpen, onExplorer, timelineOpen, onTimeline, shareUrl, measuring, onMeasure, onCapture }: Props) {
+export function Toolbar({ map, explorerOpen, onExplorer, timelineOpen, onTimeline, showTimeline = true, shareUrl, measuring, onMeasure, onCapture }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [method, setMethod] = useState(false);
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2200); };
@@ -42,7 +44,7 @@ export function Toolbar({ map, explorerOpen, onExplorer, timelineOpen, onTimelin
     <>
       <nav className="toolbar material" aria-label="Tools">
         <button type="button" aria-pressed={explorerOpen} onClick={onExplorer}><span aria-hidden>☰</span>Explorer</button>
-        <button type="button" aria-pressed={timelineOpen} onClick={onTimeline}><span aria-hidden>▦</span>Timeline</button>
+        {showTimeline && <button type="button" aria-pressed={timelineOpen} onClick={onTimeline}><span aria-hidden>▦</span>Timeline</button>}
         <button type="button" aria-pressed={measuring} onClick={onMeasure}><span aria-hidden>⟷</span>Measure</button>
         <button type="button" onClick={capture}><span aria-hidden>⎙</span>Capture</button>
         <button type="button" onClick={locate}><span aria-hidden>◎</span>Locate</button>

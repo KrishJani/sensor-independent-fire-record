@@ -31,6 +31,8 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 interface Props {
   map: mapboxgl.Map;
+  /** realtime: last 92 days from D1 (Day / Week / Month only, no archival events). */
+  tier: 'archival' | 'realtime';
   settings: MapSettings;
   onChange(patch: Partial<MapSettings>): void;
   rangeLabel: string;
@@ -39,7 +41,7 @@ interface Props {
   onClose(): void;
 }
 
-export function FireExplorer({ map, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
+export function FireExplorer({ map, tier, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
   const coloringOptions: SegmentedOption<FireColoring>[] =
     s.fireMode === 'raw'
       ? [{ id: 'recency', label: 'Time' }, { id: 'intensity', label: 'Intensity' }, { id: 'sensor', label: 'Sensor' }]
@@ -50,13 +52,13 @@ export function FireExplorer({ map, settings: s, onChange, rangeLabel, onJump, o
   return (
     <aside className="explorer material" aria-label="Fire explorer">
       <header className="explorer__header">
-        <h2>Fire Explorer</h2>
+        <h2>{tier === 'realtime' ? 'Live fires' : 'Fire Explorer'}</h2>
         <button type="button" className="text-button" onClick={onClose} aria-label="Close panel">✕</button>
       </header>
 
       <Section title="Time" meta={rangeLabel}>
-        <Segmented<RangePreset> options={PRESETS} value={s.rangePreset} onChange={(rangePreset) => onChange({ rangePreset })} label="Time range" className="segmented--fill" />
-        <p className="explorer__note">Pick the day in the date bar; the range ends on it.</p>
+        <Segmented<RangePreset> options={tier === 'realtime' ? PRESETS.filter((p) => p.id === 'day' || p.id === 'week' || p.id === 'month') : PRESETS} value={tier === 'realtime' && (s.rangePreset === 'season' || s.rangePreset === 'year') ? 'month' : s.rangePreset} onChange={(rangePreset) => onChange({ rangePreset })} label="Time range" className="segmented--fill" />
+        <p className="explorer__note">{tier === 'realtime' ? 'Near-real-time FIRMS data, last 92 days, refreshed every 3 hours.' : 'Pick the day in the date bar; the range ends on it.'}</p>
       </Section>
 
       <Section title="Fires & hotspots">
@@ -86,10 +88,10 @@ export function FireExplorer({ map, settings: s, onChange, rangeLabel, onJump, o
         )}
         <Toggle label="Industrial heat (flares, static sources)" checked={s.industrialHeat} onChange={(industrialHeat) => onChange({ industrialHeat })} />
         {s.industrialHeat && <p className="explorer__note"><i className="swatch" style={{ background: INDUSTRIAL_COLOR }} /> Not counted as fire. Visible from regional zoom.</p>}
-        <Toggle label="Harmonized region outlines" checked={s.regionOutlines} onChange={(regionOutlines) => onChange({ regionOutlines })} />
+        {tier === 'archival' && <Toggle label="Harmonized region outlines" checked={s.regionOutlines} onChange={(regionOutlines) => onChange({ regionOutlines })} />}
       </Section>
 
-      <NotableEvents map={map} onJump={onJump} />
+      {tier === 'archival' && <NotableEvents map={map} onJump={onJump} />}
 
       <Section title="Background">
         <Segmented<BasemapId> options={BASEMAP_ORDER.map((id) => ({ id, label: BASEMAPS[id].label }))} value={s.basemap} onChange={(basemap) => onChange({ basemap })} label="Map type" className="segmented--fill" />

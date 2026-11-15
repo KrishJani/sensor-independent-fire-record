@@ -5,7 +5,6 @@ import { resolveLightPreset, type MapSettings } from '../lib/mapSettings';
 import { applyOverlays } from '../lib/overlays';
 import { useColorScheme, type ColorScheme } from '../lib/useColorScheme';
 import { useGlobeSpin } from '../lib/useGlobeSpin';
-import { BasemapSwitcher } from './BasemapSwitcher';
 import { LayersPanel } from './LayersPanel';
 import { MapControls } from './MapControls';
 import { StatusBar } from './StatusBar';
@@ -52,9 +51,11 @@ interface Props {
   reset(): void;
   initialView?: { center: [number, number]; zoom: number } | null;
   shareUrl(view: { center: [number, number]; zoom: number }): string;
+  /** Realtime tier status from /api/meta (polled): last ingest time and data version. */
+  realtime?: { updatedAt: string | null; version: number } | null;
 }
 
-export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl }: Props) {
+export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl, realtime }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -130,7 +131,9 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   })();
 
   const layers = useArchivalLayers(map, {
-    enabled: tab === 'archival',
+    enabled: true,
+    tier: tab,
+    version: tab === 'realtime' ? realtime?.version ?? 0 : 0,
     from,
     to,
     activity: settings.fireActivity,
@@ -202,20 +205,21 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             onLayersOpenChange={setLayersOpen}
             layersPanel={<LayersPanel settings={settings} onChange={update} onReset={reset} />}
           />
-          {tab !== 'archival' && <BasemapSwitcher value={settings.basemap} onChange={(basemap) => update({ basemap })} />}
           <StatusBar
             map={map}
             showCoordinates={settings.coordinates}
             showScale={settings.scale}
           />
-          {tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
+          {tab === 'realtime' && <LiveChip updatedAt={realtime?.updatedAt ?? null} reference={layers.reference} />}
+          {(layers.loading || layers.error || layers.truncated) && (
             <div className="map-status material" role="status">
               {layers.error ? `Couldn't load fire data: ${layers.error}` : layers.loading ? 'Loading fire data…' : 'Showing the strongest results in view. Zoom in to see all.'}
             </div>
           )}
-          {tab === 'archival' && (
+          {(
             <>
               <FireExplorer
+                tier={tab}
                 map={map}
                 settings={settings}
                 onChange={update}
@@ -224,7 +228,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 onClose={() => setExplorerOpen(false)}
                 onJump={(date, center, zoom) => { if (date) onPickDate(date); if (center) map.flyTo({ center, zoom: zoom ?? map.getZoom() }); }}
               />
-              <CalendarDrawer map={map} onPickMonth={onPickDate} open={timelineOpen} onToggle={() => setTimelineOpen(!timelineOpen)} drawn={analysed} />
+              {tab === 'archival' && <CalendarDrawer map={map} onPickMonth={onPickDate} open={timelineOpen} onToggle={() => setTimelineOpen(!timelineOpen)} drawn={analysed} />}
               {measure.mode !== 'off' && (
                 <div className="measure material" role="status" aria-label="Measurement">
                   <div className="measure__modes">
@@ -246,6 +250,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 explorerOpen={explorerOpen}
                 onExplorer={() => setExplorerOpen(!explorerOpen)}
                 timelineOpen={timelineOpen}
+                showTimeline={tab === 'archival'}
                 onTimeline={() => setTimelineOpen(!timelineOpen)}
                 shareUrl={() => shareUrl({ center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() })}
                 measuring={measure.mode !== 'off'}
@@ -264,3 +269,22 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
     </>
   );
 }
+
+const SAT_NAME: Record<string, string> = { SNPP: 'S-NPP', NOAA20: 'NOAA-20', NOAA21: 'NOAA-21' };
+
+/** Realtime freshness + provenance: when D1 was last updated and which VIIRS satellite is the reference. */
+function LiveChip({ updatedAt, reference }: { updatedAt: string | null; reference: Record<string, string | null> | null }) {
+  const days = reference ? Object.keys(reference).sort() : [];
+  const latest = days.length ? reference![days[days.length - 1]] : null;
+  const usedSnpp = days.some((d) => reference![d] === 'SNPP');
+  const ago = updatedAt ? Math.round((Date.now() - Date.parse(updatedAt)) / 60000) : null;
+  return (
+    <div className="live-chip material" role="status">
+      <span className="live-chip__dot" aria-hidden />
+      <b>Live</b>
+      <span>{ago === null ? 'waiting for the first update' : `updated ${ago < 60 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago`}</span>
+      {latest && <span title="Each day counts the active cells of one VIIRS satellite (S-NPP, else NOAA-20, else NOAA-21), so totals do not depend on which satellites flew.">reference {SAT_NAME[latest] ?? latest}{latest !== 'SNPP' && !usedSnpp ? ' (S-NPP offline)' : ''}</span>}
+    </div>
+  );
+}
+
