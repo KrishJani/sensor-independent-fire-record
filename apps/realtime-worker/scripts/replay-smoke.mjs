@@ -3,7 +3,8 @@
 //   pnpm --filter realtime-worker replay-smoke
 // Env: HOST (default localhost:8789), SCENARIO (default quebec-2023-06; falls back to the bundled
 // sample if not in R2), SPEED (stream s per real s; default = worker's REPLAY_DEFAULT_SPEED),
-// TIMEOUT_S (default 180), QUIET=1 (only the summary), REPLAY_TOKEN (sent as x-replay-token),
+// TIMEOUT_S (default 180), QUIET=1 (only the summary), REPLAY_TOKEN (x-replay-token; only pause/resume/stop
+// need it: with it, the smoke also checks that stop without the token is refused),
 // WAIT_BRIEFS_S (after the replay, wait up to this long for every started enrichment's brief,
 // at least the largest incident's; reports the replay brief cache hit rate).
 // Checks: incidents get created, detection counts grow, the clock advances, the replay finishes.
@@ -22,7 +23,7 @@ const log = (...a) => !QUIET && console.log(...a);
 const started = Date.now();
 const res = await fetch(`${base}/realtime/replay`, {
   method: "POST",
-  headers: { "content-type": "application/json", ...(process.env.REPLAY_TOKEN ? { "x-replay-token": process.env.REPLAY_TOKEN } : {}) },
+  headers: { "content-type": "application/json" }, // start is public
   body: JSON.stringify({ scenario: SCENARIO, ...(SPEED ? { speed: SPEED } : {}) })
 });
 if (!res.ok) {
@@ -131,7 +132,15 @@ const lat = [...briefed.values()].filter((b) => !b.cached).map((b) => b.latencyM
 const growing = [...incidents.values()].filter((s) => s.detections > (firstCounts.get(s.id) ?? s.detections)).length;
 const clockAdvanced = clocks.length >= 2 && clocks.at(-1) > clocks[0];
 
+// Control routes: refused without the token when the worker has one (only checked when we know it).
+let controlCheck = null;
+if (process.env.REPLAY_TOKEN) {
+  const r = await fetch(`${base}/realtime/replay/${replay.id}/stop`, { method: "POST" });
+  controlCheck = ["stop needs token", r.status === 401, `POST /stop without x-replay-token → HTTP ${r.status}`];
+}
+
 const checks = [
+  ...(controlCheck ? [controlCheck] : []),
   ["incidents created", incidents.size > 0, `${incidents.size} significant incidents over WebSocket, ${list.count} via REST`],
   ["counts grow", growing > 0, `${growing} incidents grew after first upsert`],
   ["clock advances", clockAdvanced, `${clocks.length} clock msgs, ${fmt(clocks[0])} → ${fmt(clocks.at(-1))}`],

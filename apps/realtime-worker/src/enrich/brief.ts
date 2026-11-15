@@ -8,7 +8,7 @@ interface BriefInput {
   summary: IncidentSummary;
   stream: string;
   weather: Step<{ windSpeedKmh: number | null; windFrom: string | null; relativeHumidityPct: number | null; temperatureC: number | null }>;
-  places: Step<{ name: string; distanceKm: number; direction: string }[]>;
+  places: Step<{ name: string; place?: string; distanceKm: number; direction: string }[]>;
   history: Step<{ dataSource: string; summary: unknown }>;
 }
 
@@ -31,9 +31,9 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
   }
   if (i.places.status === "ok" && "data" in i.places && i.places.data.length) {
     facts.push(
-      `Nearest towns: ${i.places.data
+      `Nearest populated places: ${i.places.data
         .slice(0, 3)
-        .map((p) => `${p.name} (${p.distanceKm} km ${p.direction})`)
+        .map((p) => `${p.name} (${p.place ? `${p.place}, ` : ""}${p.distanceKm} km ${p.direction})`)
         .join(", ")}`
     );
   }
@@ -46,7 +46,7 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
       content:
         "You write short factual incident briefs for emergency managers. Write 2 or 3 plain sentences in English. " +
         "Use only the facts and numbers given; do not add causes, forecasts, names of fires, or any number not given. " +
-        "Lead with the area with detections and its last-24-hour growth, then the weather, then the nearest town if one is given. " +
+        "Lead with the area with detections and its last-24-hour growth, then the weather, then the nearest populated place if one is given (say its type, e.g. the village of X). " +
         'Always call the size "area with detections". Never call it burned area, never say the fire burned or covers that area. ' +
         "Do not give coordinates or list every number. If a fact (such as a town or the weather) is not given, leave it out without saying it is missing. " +
         "Never give evacuation or safety advice. Do not use dashes as punctuation. No headings, no lists, no preamble."
@@ -76,7 +76,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v1";
+export const BRIEF_CACHE_VERSION = "v2"; // v2: places within 75 km (were always missing in v1)
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
 }

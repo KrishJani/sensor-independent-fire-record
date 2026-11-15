@@ -16,6 +16,11 @@
     // Tried when CHAT_MODEL fails before producing output. "" disables it (demo setting: the glm
     // fallback is the model that drifted into Chinese; see CHAT.md).
     "CHAT_FALLBACK_MODEL": "",
+    // Chat reasoning: "none" = off (demo setting: ~11-15 s per turn instead of 45-140 s, see CHAT.md),
+    // "" = model default (kimi: high).
+    "CHAT_REASONING_EFFORT": "none",
+    // AI Gateway response cache TTL (s) for chat model calls. "0" = off (default).
+    "CHAT_CACHE_TTL": "0",
     // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
     "WEB_SEARCH_PROVIDER": "tavily",
     // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.

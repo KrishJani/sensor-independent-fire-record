@@ -169,7 +169,7 @@ All responses are JSON. Errors are `{ error: { code, message } }` with status 40
 | `POST /realtime/replay/:id/pause` · `/resume` · `/stop` | Replay control. Returns `ReplayInfo`. A replay paused for more than 30 min (since it started) gives up its slot to the next start. |
 | `GET /realtime/ws?stream=` | WebSocket (§2) |
 
-When the `REPLAY_TOKEN` secret is set (production), the four replay `POST` routes need the header `x-replay-token: <token>`, otherwise 401 `unauthorized`. `GET` routes and the WebSocket stay open. Locally the secret is unset and no header is needed.
+Starting a replay (`POST /realtime/replay`) is **public**: it reuses the running replay, only one replay runs at a time, and replay briefs come from the brief cache after the first run, so it costs nothing to repeat. When the `REPLAY_TOKEN` secret is set (production), `pause`, `resume` and `stop` need the header `x-replay-token: <token>`, otherwise 401 `unauthorized`. `GET` routes and the WebSocket stay open. Locally the secret is unset and no header is needed.
 
 `ReplayInfo`:
 
@@ -218,13 +218,16 @@ A failed step is recorded and does not fail the run.
   incidentId, reason: "significant" | "area_doubled", streamT, completedAt,
   weather: { status: "ok", data: { source: "open-meteo-forecast" | "open-meteo-archive", time, windSpeedKmh,
              windDirectionDeg, windFrom: "NW", relativeHumidityPct, temperatureC } } | { status: "failed", error },
-  places:  { status: "ok", data: [{ name, place: "town" | "city", distanceKm, direction, population }] } | { status: "failed", error },
+  places:  { status: "ok", data: [{ name, place: "city" | "town" | "village" | "hamlet" | "locality", distanceKm, direction, population }],
+             source: "overpass" | "photon", radiusKm: 75 }
+           | { status: "failed", error, unavailable: true },
   history: { status: "ok", data: { dataSource: "mock" | "live", summary } } | { status: "skipped", reason } | { status: "failed", error },
   brief:   { status: "ok", data: { text, model, generatedAt, streamT } } | { status: "failed", error }
 }
 ```
 
 - Replays get the weather **at stream time** from the Open-Meteo historical archive.
+- Places: populated places (city, town, village, hamlet, locality) within **75 km**, nearest first (up to 8; a city/town outranks a smaller place within 5 km). Overpass is tried first (two endpoints, 8 s each), then Photon reverse geocoding (photon.komoot.io). In the UI, `status: "ok"` with an empty list means **none within 75 km**; `status: "failed"` means the lookup is **unavailable** (show "unavailable", not "none"; `error` gives every source's reason). History: until 2026-11-15 the step searched only cities/towns within 30 km on Overpass with a 15 s step timeout, and on the deployed worker it failed for every Quebec incident (`WorkflowTimeoutError: Execution timed out after 15000ms`). Overpass still fails from Workers today, so Photon supplies the places.
 - The brief is 2 or 3 plain sentences written only from these numbers, with no advice. The prompt calls the size "area with detections" and forbids "burned area" (the output is also scrubbed for it). `brief.asOf` (ISO) / `brief.streamT` say which moment it describes, so show "as of <time>" next to it, because the incident may have grown since.
 
 #### Brief model settings
@@ -272,7 +275,7 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `BRIEF_MIN_AREA_KM2` | var | `200` | Replays only brief incidents with at least this `affectedAreaKm2` |
 | `BRIEF_REASONING_EFFORT` | var | `none` | Sent to kimi models only. `""` = model default. kimi-k2.6 accepts `high` or `none` (`low`/`medium` map to `high`). |
 | `BRIEF_MAX_TOKENS` | var | `120` | Brief output budget |
-| `REPLAY_TOKEN` | secret | unset | When set, replay `POST` routes need `x-replay-token`. `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
+| `REPLAY_TOKEN` | secret | unset | When set, replay pause/resume/stop need `x-replay-token` (start is public). `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
 Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` and `REPLAY_KV` (replay scenarios when R2 is not bound, and the replay brief cache); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`; **optional**: comment out `r2_buckets` on an account without R2 and scenarios come from `REPLAY_KV` while the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).

@@ -42,8 +42,12 @@ async function sameSecret(a: string, b: string): Promise<boolean> {
   return (crypto.subtle as SubtleCrypto & { timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean }).timingSafeEqual(ha, hb);
 }
 
-/** When the REPLAY_TOKEN secret is set, replay start/pause/resume/stop need a matching x-replay-token header. */
-app.use("/realtime/replay*", async (c, next) => {
+/**
+ * When the REPLAY_TOKEN secret is set, pause/resume/stop need a matching x-replay-token header.
+ * Starting a replay is public: it reuses the running replay, only one runs at a time, and replay
+ * briefs come from the cache after the first run.
+ */
+app.use("/realtime/replay/:id/*", async (c, next) => {
   const token = (c.env as Env & { REPLAY_TOKEN?: string }).REPLAY_TOKEN;
   if (c.req.method !== "POST" || !token) return next();
   const given = c.req.header("x-replay-token") ?? "";

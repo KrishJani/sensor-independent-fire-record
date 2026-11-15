@@ -1,7 +1,8 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { haversineKm } from "../grid";
 import type { IncidentSummary } from "../incidentModel";
 import type { Brief } from "../protocol";
+import { compass, fetchPlaces, PLACES_RADIUS_KM, type Place, type PlacesSource } from "./places";
+export type { Place } from "./places";
 import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS, reasoningParams } from "./brief";
 
 export interface EnrichParams {
@@ -18,6 +19,12 @@ export interface EnrichParams {
 
 type StepResult<T> = { status: "ok"; data: T } | { status: "failed"; error: string } | { status: "skipped"; reason: string };
 
+/** places: "ok" with an empty list = nothing within radiusKm; "failed" = lookup unavailable (error says why). */
+export type PlacesResult =
+  | { status: "ok"; data: Place[]; source: PlacesSource; radiusKm: number }
+  | { status: "failed"; error: string; unavailable?: true }
+  | { status: "skipped"; reason: string };
+
 export interface Weather {
   source: "open-meteo-forecast" | "open-meteo-archive";
   time: string;
@@ -28,13 +35,6 @@ export interface Weather {
   temperatureC: number | null;
 }
 
-export interface Place {
-  name: string;
-  place: string;
-  distanceKm: number;
-  direction: string;
-  population: number | null;
-}
 
 export interface HistoryContext {
   dataSource: string;
@@ -46,23 +46,14 @@ export interface Enrichment {
   reason: EnrichParams["reason"];
   streamT: number;
   weather: StepResult<Weather>;
-  places: StepResult<Place[]>;
+  places: PlacesResult;
   history: StepResult<HistoryContext>;
   brief: StepResult<Brief>;
   completedAt: number;
 }
 
 const UA = "skywalkers77-fire-realtime/1.0 (NASA Space Apps 2026 demo; https://github.com/skywalkers77)";
-const OVERPASS_ENDPOINTS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
-const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-const compass = (deg: number) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
 
-function bearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const r = Math.PI / 180;
-  const y = Math.sin((lon2 - lon1) * r) * Math.cos(lat2 * r);
-  const x = Math.cos(lat1 * r) * Math.sin(lat2 * r) - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lon2 - lon1) * r);
-  return (Math.atan2(y, x) / r + 360) % 360;
-}
 
 async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<unknown> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, ...(init.headers ?? {}) } });
@@ -108,38 +99,18 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
       return { status: "ok", data: toWeather("open-meteo-archive", String(pick.time), pick) };
     });
 
-    const places = await safe<Place[]>("nearby-places", { retries: { limit: 2, delay: "3 seconds", backoff: "exponential" }, timeout: "15 seconds" }, async () => {
-      const q = `[out:json][timeout:10];node(around:30000,${lat},${lon})[place~"^(city|town)$"];out tags 40;`;
-      type OverpassResult = { elements: { lat: number; lon: number; tags?: Record<string, string> }[] };
-      let j = null as OverpassResult | null;
-      const errors: string[] = [];
-      for (const endpoint of OVERPASS_ENDPOINTS) {
-        try {
-          j = (await fetchJson(
-            endpoint,
-            { method: "POST", body: new URLSearchParams({ data: q }), headers: { "Content-Type": "application/x-www-form-urlencoded" } },
-            10_000
-          )) as OverpassResult;
-          break;
-        } catch (err) {
-          errors.push(`${new URL(endpoint).host}: ${err instanceof Error ? err.message : String(err)}`);
-        }
+    // Never throws: a failure is recorded as { status: "failed", unavailable: true } so the UI can say
+    // "unavailable" (lookup failed) rather than "none" (status ok, empty list within the radius).
+    const places = (await safe<Place[]>("nearby-places", { retries: { limit: 1, delay: "3 seconds" }, timeout: "60 seconds" }, async () => {
+      try {
+        const { places: data, source } = await fetchPlaces(fetchJson, lat, lon);
+        return { status: "ok", data, source, radiusKm: PLACES_RADIUS_KM } as StepResult<Place[]>;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        console.warn(JSON.stringify({ msg: "places_unavailable", incident: p.incidentId, error }));
+        return { status: "failed", error, unavailable: true } as StepResult<Place[]>;
       }
-      if (!j) throw new Error(errors.join("; "));
-      const elements: OverpassResult["elements"] = j.elements ?? [];
-      const out: Place[] = elements
-        .filter((e) => e.tags?.name)
-        .map((e) => ({
-          name: e.tags!["name:en"] ?? e.tags!.name,
-          place: e.tags!.place,
-          distanceKm: Math.round(haversineKm(lat, lon, e.lat, e.lon) * 10) / 10,
-          direction: compass(bearing(lat, lon, e.lat, e.lon)),
-          population: e.tags!.population ? Number(e.tags!.population.replace(/[^\d]/g, "")) || null : null
-        }))
-        .sort((a, b) => a.distanceKm - b.distanceKm)
-        .slice(0, 8);
-      return { status: "ok", data: out };
-    });
+    })) as PlacesResult;
 
     const history = await safe<HistoryContext>("historical-context", { retries: { limit: 1, delay: "2 seconds" }, timeout: "20 seconds" }, async () => {
       if (!this.env.API) return { status: "skipped", reason: "no API service binding" };

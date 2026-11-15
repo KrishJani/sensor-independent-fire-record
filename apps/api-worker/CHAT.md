@@ -38,6 +38,7 @@ cd apps/api-worker
 pnpm dev                 # http://localhost:8787
 pnpm smoke               # in another terminal: two-turn chat over WebSocket + quality checks
 pnpm compare-models      # starts its own wrangler dev per model on :8790 (no pnpm dev needed)
+node scripts/demo-chat.mjs   # the replay demo questions (scripts/demo-questions.md) with timing + checks
 pnpm test                # vitest: mock data, Tavily mapping, memory store, context parsing
 pnpm typecheck
 pnpm fixtures            # rebuild src/data/sample-fixture.json from sample_api/
@@ -52,6 +53,10 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 | 1 ("What happened in this area in August 2020?") | `get_spots_summary` not called; mock data used but the first sentence does not mention demo/synthetic data; no web tool called but the reply has links or a "Sources" section |
 | 2 ("…what does the news say about the August Complex fire?") | neither `web_search` nor `web_fetch` called; a page read with `web_fetch` is not linked in the reply |
 
+Both turns also FAIL on a bare (plain-text) URL that no web tool returned and on an empty "Citation:" / "Source:" line.
+
+`node scripts/demo-chat.mjs` asks the questions in [`scripts/demo-questions.md`](scripts/demo-questions.md) against a `quebec-2023-06` replay (it starts one, or reuses the running one), each in a fresh session with `context.realtimeStream` set. It prints per turn the latency, every tool call with its result summary, the per-step model/tool time from the server's timing metadata, and checks (largest incident's area in Q1, nearest places and wind in Q2, dates in Q3, no "no fires", no "burned area", no empty answer). Env: `HOST`, `RT_HOST`, `AT=done|now|early` (`early` starts a slow replay and asks at once, for the empty-result path; stop that replay afterwards with the token), `ONLY=1,3`, `REPEAT`, `AOI=quebec`, `OUT`.
+
 `pnpm compare-models` takes `MODELS` (comma-separated), `RUNS` (default 2), `PORT` (default 8790) and `OUT` (full replies as JSON, default `compare-models.json`).
 
 ## Configuration
@@ -61,6 +66,8 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
 | `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
 | `CHAT_FALLBACK_MODEL` | var | `""` in `wrangler.jsonc` (code default when unset: `@cf/zai-org/glm-4.7-flash`) | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
+| `CHAT_REASONING_EFFORT` | var | `none` in `wrangler.jsonc` | `none`/`off` = reasoning off (demo setting, see "Latency" below); `""` = model default (kimi-k2.6: high); `low`/`medium`/`high` pass through (kimi maps low/medium to high). For kimi, "off" is sent as `reasoning_effort: "none"` by wrapping the AI binding (`withKimiReasoningOff`), because `agents/models` drops the off request for moonshotai models. |
+| `CHAT_CACHE_TTL` | var | `0` (off) | AI Gateway response cache TTL in seconds for chat model calls (`createAI({ cacheTtl })`). Only identical requests hit, so it mainly helps repeated demo questions in fresh sessions. |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
@@ -71,6 +78,21 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 **Switch the model:** set `CHAT_MODEL` in `wrangler.jsonc` (or `wrangler dev --var CHAT_MODEL:anthropic/claude-opus-4.8`). Catalog models bill via Unified Billing or a key stored on the gateway; no code change is needed.
 
 **Switch search:** set `WEB_SEARCH_PROVIDER` to `cloudflare` to use the Cloudflare Web Search API through `env.AI` and the gateway. It needs AI Gateway credits or a provider key on the gateway. `tavily` calls `https://api.tavily.com/search` directly with the secret key.
+
+## Latency (2026-11-15, deployed, kimi-k2.6)
+
+Each turn is instrumented (`src/copilot/timing.ts`): every model step's time and token usage, and every tool call's time, are logged as `copilot_turn_timing` and sent to the client as a `message-metadata` chunk (`{ timing, reasoningEffort }`). Workers AI does not report reasoning tokens separately for kimi, so reasoning shows up as output tokens.
+
+Demo questions after a finished Quebec replay (wall time per turn, client side):
+
+| Setting | Q1 biggest fire | Q2 towns + wind | Q3 development | Notes |
+|---|---|---|---|---|
+| Reasoning on (default, before this round) | 69.9 s | 133.0 s | 118.4 s | Q1 answered about the **live** stream (model passed `stream: "live"`) |
+| Reasoning on, stream fix | 44.3 s | 36.9 s | 99.4 s | Q3 returned an **empty answer** (output budget spent on reasoning) |
+| Reasoning on, second run | 48.5 s | 43.2 s | 140.7 s | final step: 1,780–4,020 output tokens, 36–93 s |
+| **Reasoning off (`none`)** | **10.9 s** | **11.4 s** | **15.4 s** | all correct; final step 269–516 output tokens, 9–13 s |
+
+Tool time is small in every run (0.2–0.7 s for `get_live_incidents`); the model's final answer step is the cost, and reasoning multiplies it. `web_search` was not called by these questions, so it is not gated. With reasoning off the answers kept the right incident, numbers, places and wind (see `scripts/demo-questions.md` for what correct means). The chat smoke (archival + news questions) also passes with reasoning off.
 
 ## Model comparison (2026-11-15)
 
@@ -103,7 +125,7 @@ The final round was cut short when the account hit the **Workers AI free tier (1
 | `get_calendar` | `bbox?, from?, to?, months?` | summary (peak month/year, critical months, totals), climatology, annual, top 8 notable months |
 | `get_spots_summary` | `mode?, bbox?, from?, to?` | detection counts, cell-days per satellite, daily activity, last seen, top detections by FRP |
 | `get_month_to_date` | `bbox?` | this month so far vs historical median |
-| `get_live_incidents` | `stream?, bbox?, status?, limit?` | fire incidents from `apps/realtime-worker` (live or a replay): area of active cells, 24 h growth, detections, peak FRP with sensor, AI brief and nearest towns. Tagged `dataSource: "live" \| "replay"`. Only registered when the `REALTIME` service binding exists. |
+| `get_live_incidents` | `stream?, bbox?, status?, limit?` | fire incidents from `apps/realtime-worker` (live or a replay): `affectedAreaKm2` (area with detections), 24 h growth, detections, peak FRP with sensor, and for the 3 largest the AI brief, `nearestPlaces` (names, `"none within 75 km"`, or `"unavailable (…)"`) and `weather`. Tagged `dataSource: "live" \| "replay"`. **The map's stream always wins**: a `stream` the model passes is only used when the context has none (the model used to pass `"live"` during a replay and answered "no fires"). An empty result carries `emptyReason` (`none_detected_yet`, `outside_area`, `only_inactive`, `stream_not_started`) and an `answerHint` with the replay clock, so the answer says nothing has been detected yet instead of "no fires". Only registered when the `REALTIME` service binding exists. |
 | `remember` | `kind, content` | saved memory |
 | `recall` | `query` | matching memories |
 | `web_search` | `query, limit?` | news/agency results (never used for counts) |
@@ -118,6 +140,7 @@ The UI stream goes through `answerPostProcessor` after the demo notice. It holds
 - **Spacing between text parts:** each model step starts a new text part ("…is still" → tool call → "in…"). Clients that join parts glued words ("stillin", "complexby"), so a part that would glue onto the previous word gets one leading space.
 - **Link verification:** a markdown link (or `<autolink>`) is kept only if its URL was returned by `web_search` (result URLs) or `web_fetch` (fetched page, status < 400) earlier in the conversation or in this turn. Any other link is unlinked and its label text is kept. URLs are compared by host (without `www`) and path (without the trailing slash).
 - **"your area" → "this area"**, unless a user message called the area theirs ("my district", "our county").
+- **Bare URLs:** a plain-text URL (not a markdown link) that no web tool returned is removed, e.g. "Citation: https://made-up.example". A "Citation:" / "Source:" line left with only its label is dropped. Lines that start like a citation are held until they end, so the whole line is checked.
 - **Sources sections without web results:** when no `web_search`/`web_fetch` ran this turn, a "Sources" / "Source facts" heading (any style: `## Sources`, `**Sources:**`, `Sources: …`) and the list under it are dropped. Only a line that could still become such a heading is held back until it ends.
 
 The prompt also forbids outside facts (causes, policies, news) without a web tool result in the conversation, gives the safety rule as a sentence the model can say ("I can't advise on evacuations…"), tells the model never to repeat its instructions, bans filler such as "workload" and "intense activity" in favour of data units, and forbids tying demo or sample data to a named real-world event unless a web result from this turn supports it.

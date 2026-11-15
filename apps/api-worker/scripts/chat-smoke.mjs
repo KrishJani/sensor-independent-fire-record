@@ -15,7 +15,8 @@
 //               reply echoes prompt instructions ("You never…", "You do not…")
 //               banned filler ("workload", "intense activity")
 //               a bracketed source name without a link, e.g. "[Wikipedia; CAL FIRE]" or "[link]"
-//               a link to a URL that no web_search/web_fetch call returned in this conversation
+//               a link or bare URL that no web_search/web_fetch call returned in this conversation
+//               an empty "Citation:" / "Source:" line
 //   turn 1      get_spots_summary was not called
 //               mock data was used and the first sentence does not mention demo/synthetic
 //               no web tool was called but the reply has links or a "Sources" section
@@ -95,6 +96,11 @@ function checkTurn(turnIndex, t) {
     fails.push(`source named without a link: "[${m[1]}]"`);
   for (const u of linkedUrls(t.text))
     if (!returnedUrls.has(normUrl(u))) fails.push(`links a URL no web tool returned: ${u}`);
+  for (const m of t.text.matchAll(/(?<![(<\w/])https?:\/\/[^\s<>()\[\]"'`]+/g)) {
+    const u = m[0].replace(/[.,;:!?*_]+$/, "");
+    if (!returnedUrls.has(normUrl(u))) fails.push(`bare URL no web tool returned: ${u}`);
+  }
+  if (/^\s*(?:[-*+•]\s+)?[*_]*\s*(citations?|sources?)\s*[*_]*\s*:\s*[*_]*\s*$/im.test(t.text)) fails.push("empty Citation/Source line");
   const usedWeb = t.tools.some((n) => n === "web_search" || n === "web_fetch");
   if (turnIndex === 0) {
     if (!t.tools.includes("get_spots_summary")) fails.push("get_spots_summary not called");
