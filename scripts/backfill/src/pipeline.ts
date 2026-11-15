@@ -19,13 +19,17 @@ import {
   HARMONIZER_VERSION,
   STATIC_MASK_HEADER,
   addDays,
+  fmt,
   alphaRow,
   buildCalendar,
   buildCellDays,
   calendarRow,
   cellDayRow,
   compareDetections,
-  computeAlphaTable,
+  fitAlphaModel,
+  effectiveAlphas,
+  resolverFromEffective,
+  modelAsTable,
   createFirmsLineParser,
   createStaticMaskAccumulator,
   dailyRow,
@@ -42,7 +46,7 @@ import {
   newParseStats,
   sensorOf,
   staticMaskRow,
-  validateCalibration,
+  validateModel,
   dailyCountsAtResolution,
   gridSensitivity,
   assertValidGridDeg,
@@ -169,12 +173,17 @@ export async function runBackfill(o: RunOptions) {
       const d = p.line(line);
       if (!d) return;
       if (isNrtRow(d)) return void nrtRowsSkipped++;
+      // Coverage is a property of the FILE, not of the region: a country- or world-wide file
+      // with fires on a day proves the granules for that day were processed, even if the
+      // region itself was quiet. So track the span over every in-range row, before clipping.
+      if (d.acqDate >= o.from && d.acqDate <= o.to) {
+        const s = (f.seen[d.sensor] ??= { min: d.acqDate, max: d.acqDate, sats: new Set() });
+        if (d.acqDate < s.min) s.min = d.acqDate;
+        if (d.acqDate > s.max) s.max = d.acqDate;
+        s.sats.add(d.satellite);
+      }
       if (!inside(d)) return void outsideRows++;
       maskAcc.add(d);
-      const s = (f.seen[d.sensor] ??= { min: d.acqDate, max: d.acqDate, sats: new Set() });
-      if (d.acqDate < s.min) s.min = d.acqDate;
-      if (d.acqDate > s.max) s.max = d.acqDate;
-      s.sats.add(d.satellite);
     });
     f.sha256 = res.sha256;
   }
@@ -262,8 +271,9 @@ export async function runBackfill(o: RunOptions) {
       // API chunk: coverage is exactly the requested window, fires or not.
       for (const sat of satellitesOfSource(f.sourceHint)) addRange(sat, f.chunk.from, addDays(f.chunk.from, f.chunk.days - 1));
     } else {
-      // Archive file: coverage is the observed date span (conservative: quiet edge days become
-      // NONE/incomplete instead of false zeros). A MODIS_SP file covers both Terra and Aqua.
+      // Archive file: coverage is the date span observed in the whole file (all rows, not just
+      // the region). For a region-clipped download quiet edge days stay NONE (conservative);
+      // for a country/yearly file this is the full year. A MODIS_SP file covers Terra and Aqua.
       for (const fam of ['MODIS', 'VIIRS'] as SensorFamily[]) {
         const s = f.seen[fam];
         if (!s) continue;
@@ -279,21 +289,34 @@ export async function runBackfill(o: RunOptions) {
   log(`availability: ${ALL_SATELLITES.map((s) => `${s}=${availability.get(s)?.size ?? 0}d`).join(' ')}; ${detected.length} auto-detected outage days`);
 
   // ---------------- calibration, harmonization, calendar, validation ----------------
-  const alpha = computeAlphaTable(daily, availability, {
+  // Activity-dependent α (Poisson GLM, docs/HARMONIZATION.md §3): α_eff(year, month) from the region's
+  // own MODIS activity that month. MODIS is scaled to VIIRS units on every day it flew; the calendar
+  // uses VIIRS when available and MODIS × α_eff otherwise.
+  const model = fitAlphaModel(daily, availability, {
     years: o.calibrationYears,
     k: o.k,
     bootstrap: o.bootstrapReps > 0 ? { reps: o.bootstrapReps, seed: 20260101 } : null,
   });
-  const harmonized = harmonizeDaily(daily, availability, alpha, { from: o.from, to: o.to });
+  const effective = effectiveAlphas(model, daily, availability, { from: o.from, to: o.to });
+  const harmonized = harmonizeDaily(daily, availability, resolverFromEffective(effective, model), { from: o.from, to: o.to });
   const calendar = buildCalendar(harmonized);
-  const validation = validateCalibration(daily, availability, alpha, { years: o.calibrationYears, k: o.k, minMonthlyCells: o.minMonthlyCells });
+  const validation = validateModel(daily, availability, model, { years: o.calibrationYears, k: o.k, minMonthlyCells: o.minMonthlyCells });
+  const alpha = modelAsTable(model);
   // Same availability for every grid size, so cell size is the only variable.
   const sensitivity: GridSensitivityReport | null = perGrid.size
     ? gridSensitivity(perGrid, availability, { years: o.calibrationYears, k: o.k, minMonthlyCells: o.minMonthlyCells })
     : null;
 
   // ---------------- outputs ----------------
+  // alpha_monthly.csv: α at each month's typical activity (for display; the CI is the bootstrap of that value).
   outputs.set('alpha_monthly.csv', ALPHA_HEADER + '\n' + MODIS_CONFIGS.flatMap((c) => alpha[c].map(alphaRow)).join(''));
+  // alpha_model.json: the full model (what the api-worker needs for AOIs and the realtime baseline).
+  outputs.set('alpha_model.json', JSON.stringify({ harmonizer_version: HARMONIZER_VERSION, calibration_years: o.calibrationYears, model }, r6, 2) + '\n');
+  // alpha_effective.csv: the α actually applied, per (year, month, MODIS configuration).
+  outputs.set(
+    'alpha_effective.csv',
+    'year,month,modis_config,modis_cells_per_day,alpha_eff\n' + effective.map((e) => `${e.year},${e.month},${e.config},${fmt(e.rate, 3)},${fmt(e.alpha, 4)}\n`).join(''),
+  );
   outputs.set('static_mask.csv', STATIC_MASK_HEADER + '\n' + mask.map(staticMaskRow).join(''));
   let avCsv = AVAILABILITY_HEADER + '\n';
   for (const sat of ALL_SATELLITES) for (const d of [...(availability.get(sat) ?? [])].sort()) avCsv += `${sat},${d}\n`;
@@ -374,7 +397,7 @@ export async function runBackfill(o: RunOptions) {
     log(`wrote ${outputs.size + 1} files to ${o.outDir}`);
   }
   log(`done in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  return { manifest, alpha, calendar, validation, sensitivity, harmonized, detected, outDir: o.outDir };
+  return { manifest, alpha, model, effective, calendar, validation, sensitivity, harmonized, detected, outDir: o.outDir };
 }
 
 export function verifyOutputs(outDir: string): { ok: boolean; problems: string[] } {

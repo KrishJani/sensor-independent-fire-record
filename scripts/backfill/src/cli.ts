@@ -8,7 +8,8 @@ import { getRegion, loadRegions, REPO_ROOT, SP_SOURCES } from './config.ts';
 import { download, fetchAvailability } from './download.ts';
 import { FirmsFatalError } from './firms.ts';
 import { runBackfill, verifyOutputs } from './pipeline.ts';
-import { DEFAULT_SENSITIVITY_GRIDS, fmt } from '../../../packages/harmonizer/src/index.ts';
+import { runGlobal } from './global.ts';
+import { DEFAULT_SENSITIVITY_GRIDS, alphaAt, fmt } from '../../../packages/harmonizer/src/index.ts';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -27,6 +28,7 @@ const { positionals, values } = parseArgs({
     'max-transactions': { type: 'string' },
     'no-auto-outages': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
+    force: { type: 'boolean', default: false },
     quiet: { type: 'boolean', default: false },
   },
 });
@@ -90,26 +92,31 @@ async function main() {
         dryRun: values['dry-run']!,
         log,
       });
-      console.log('\nα (TA = Terra∪Aqua), VIIRS-equivalent cell-days per MODIS cell-day');
-      console.log('month  alpha   local    w      ΣM      ΣV    90% CI');
-      for (const a of res.alpha.TA)
-        console.log(
-          `${String(a.month).padStart(5)}  ${fmt(a.alpha, 3)}  ${(fmt(a.alphaLocal, 3) || '  —  ').padStart(5)}  ${fmt(a.w, 2)}  ${String(a.sumModis).padStart(6)}  ${String(a.sumViirs).padStart(6)}  ${a.ciLow === null ? '—' : `${fmt(a.ciLow, 2)}–${fmt(a.ciHigh, 2)}`}`,
-        );
+      const mt = res.model.TA;
+      const pc = (x: number | null) => (x === null ? 'n/a' : `${fmt(x * 100, 1)}%`.padStart(6));
+      console.log(`\nα model (TA = Terra∪Aqua): ${mt.kind === 'glm' ? 'activity-dependent (Poisson GLM)' : 'constant ratio'}` +
+        `  β = ${fmt(mt.beta, 3)}${mt.betaCi ? ` (90% CI ${fmt(mt.betaCi[0], 3)}–${fmt(mt.betaCi[1], 3)})` : ''}` +
+        (mt.test ? `  test of β = 1: F = ${fmt(mt.test.f, 1)}, p = ${mt.test.p < 1e-4 ? '<0.0001' : fmt(mt.test.p, 4)}` : '') +
+        (mt.reason ? `\n  note: ${mt.reason}` : ''));
+      console.log('month  α typical  (90% CI)     α quiet  α busy   cells/day (min–typ–max)');
+      for (let i = 0; i < 12; i++) {
+        const ci = mt.alphaTypicalCi[i];
+        console.log(`${String(i + 1).padStart(5)}  ${fmt(mt.alphaTypical[i], 3).padStart(9)}  ${(ci ? `${fmt(ci[0], 2)}–${fmt(ci[1], 2)}` : '—').padEnd(11)}  ${fmt(alphaAt(mt, i + 1, mt.rateMin[i]), 2).padStart(7)}  ${fmt(alphaAt(mt, i + 1, mt.rateMax[i]), 2).padStart(6)}   ${fmt(mt.rateMin[i], 1)}–${fmt(mt.typicalRate[i], 1)}–${fmt(mt.rateMax[i], 1)}`);
+      }
       const v = res.validation.configs.TA;
-      console.log(`\nvalidation (TA): LOYO MdAPE ${fmt(v.loyo.mdape === null ? null : v.loyo.mdape * 100, 1) || 'n/a'}%  ` +
-        `in-sample MdAPE ${fmt(v.inSample.mdape === null ? null : v.inSample.mdape * 100, 1) || 'n/a'}%  ` +
-        `transition step ${fmt(v.continuity.medianStepPct === null ? null : v.continuity.medianStepPct * 100, 1) || 'n/a'}%  ` +
-        `log-log β ${fmt(v.linearity.beta, 3) || 'n/a'}`);
+      console.log('\nvalidation (TA, monthly totals)        MdAPE   top-10%  bottom-25%  total   residual β');
+      for (const [name, sc] of [['in-sample', v.inSample], ['leave-one-year-out', v.loyo], ['  constant ratio (β = 1), LOYO', v.loyoConstantRatio]] as const)
+        console.log(`  ${name.padEnd(34)} ${pc(sc.mdape)}  ${pc(sc.topDecileBias)}  ${pc(sc.bottomQuartileBias).padStart(9)}  ${pc(sc.totalBias)}  ${sc.residualBeta === null ? 'n/a' : `${fmt(sc.residualBeta, 3)} ±${fmt(sc.residualBetaSe, 3)}`}`);
+      console.log(`  transition step ${pc(v.continuity.medianStepPct)}  (worst year ${pc(v.continuity.worstYearPct)})`);
       console.log('acceptance:', JSON.stringify(res.validation.acceptance));
       if (res.sensitivity) {
         const pct = (x: number | null) => (x === null ? 'n/a' : `${fmt(x * 100, 1)}%`);
         const yn = (x: boolean | null) => (x === null ? 'n/a' : x ? 'pass' : 'FAIL');
         console.log(`\ngrid-size sensitivity (TA, calibration ${res.sensitivity.calibrationYears.join('–')}; production grid 0.05°)`);
-        console.log('grid     ~km   pooled α  LOYO MdAPE  in-sample  step    β (±SE)        proportional  no-step  coincidence');
+        console.log('grid     ~km   pooled α  LOYO MdAPE  in-sample  step    β · resid β    unbiased      no-step  coincidence');
         for (const r of res.sensitivity.rows)
           console.log(
-            `${fmt(r.gridDeg, 3)}  ${fmt(r.approxKm, 1).padStart(5)}  ${(fmt(r.pooledAlphaTA, 3) || 'n/a').padStart(8)}  ${pct(r.loyoMdape).padStart(10)}  ${pct(r.inSampleMdape).padStart(9)}  ${pct(r.stepPct).padStart(6)}  ${(r.beta === null ? 'n/a' : `${fmt(r.beta, 2)} ±${fmt(r.betaSe, 2)}`).padEnd(13)}  ${yn(r.proportional).padEnd(12)}  ${yn(r.noStepAtTransition).padEnd(7)}  ${pct(r.coincidence)}`,
+            `${fmt(r.gridDeg, 3)}  ${fmt(r.approxKm, 1).padStart(5)}  ${(fmt(r.pooledAlphaTA, 3) || 'n/a').padStart(8)}  ${pct(r.loyoMdape).padStart(10)}  ${pct(r.inSampleMdape).padStart(9)}  ${pct(r.stepPct).padStart(6)}  ${(r.beta === null ? 'n/a' : `${fmt(r.beta, 2)} · ${fmt(r.betaSe, 2)}`).padEnd(13)}  ${yn(r.proportional).padEnd(12)}  ${yn(r.noStepAtTransition).padEnd(7)}  ${pct(r.coincidence)}`,
           );
         console.log(`recommended: ${res.sensitivity.recommended === null ? 'none' : `${res.sensitivity.recommended}°`} (${res.sensitivity.reason})`);
       }
@@ -117,6 +124,22 @@ async function main() {
       console.log('year-mo  harmonized  modis  viirs  mix   complete');
       for (const c of res.calendar.slice(-12))
         console.log(`${c.year}-${String(c.month).padStart(2, '0')}  ${fmt(c.harmonizedCellDays, 1).padStart(10)}  ${String(c.modisCellDays).padStart(5)}  ${String(c.viirsCellDays).padStart(5)}  ${fmt(c.sourceMix, 2)}  ${c.complete}`);
+      return;
+    }
+    case 'global': {
+      // Global, NOT harmonized, map layer from FIRMS Country Yearly Summary files.
+      const g = await runGlobal({
+        rawDir: values['raw-dir'] ? abs(values['raw-dir']) : join(REPO_ROOT, 'data/raw/global'),
+        outDir: values['out-dir'] ? abs(values['out-dir']) : join(REPO_ROOT, 'data/global'),
+        fromYear: +values.from!.slice(0, 4),
+        toYear: +to.slice(0, 4),
+        minStaticDetections: cfg.staticMaskMinDetections,
+        force: values.force!,
+        log,
+      });
+      console.log(`\nunits on disk (${g.manifest.units.length}): ${g.manifest.units.join(' ')}`);
+      console.log(`\nfully processed — safe to delete (${g.safeToDelete.length}):\n  ${g.safeToDelete.join('\n  ') || '(none)'}`);
+      if (g.pending.length) console.log(`\nnot finished — keep (${g.pending.length}):\n  ${g.pending.join('\n  ')}`);
       return;
     }
     case 'verify': {
@@ -129,7 +152,7 @@ async function main() {
       return;
     }
     default:
-      throw new Error(`unknown command "${cmd}" (availability | download | run | verify)`);
+      throw new Error(`unknown command "${cmd}" (availability | download | run | global | verify)`);
   }
 }
 

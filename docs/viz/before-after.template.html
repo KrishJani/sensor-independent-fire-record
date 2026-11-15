@@ -1,0 +1,286 @@
+<title>California Fire Calendar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of explanation, then three heatmap panels side by side (stacked on phones), then the indexed annual chart. */
+:root {
+  --bg: #f7f6f2; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983; --rule: #e3e1da;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --q1: #cde2fb; --q2: #9ec5f4; --q3: #6da7ec; --q4: #3987e5; --q5: #256abf; --q6: #184f95; --q7: #0d366b;
+  --empty: #ecebe6; --viirs-line: #0b0b0b;
+  --f-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --f-body: "Inter", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --rule: #2e2e2b;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --q1: #0d366b; --q2: #184f95; --q3: #256abf; --q4: #3987e5; --q5: #6da7ec; --q6: #9ec5f4; --q7: #cde2fb;
+  --empty: #242422; --viirs-line: #f0efec; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --rule: #2e2e2b;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --q1: #0d366b; --q2: #184f95; --q3: #256abf; --q4: #3987e5; --q5: #6da7ec; --q6: #9ec5f4; --q7: #cde2fb;
+  --empty: #242422; --viirs-line: #f0efec; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 32px; }
+header { display: grid; gap: 10px; max-width: 70ch; }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+h1 { font: 600 clamp(28px, 4vw, 40px)/1.1 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 600 20px/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; color: var(--ink-2); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.fact b { font: 600 26px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--ink-2); }
+.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 820px) { .panels { grid-template-columns: 1fr; } }
+.panel { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.panel h3 { font: 600 15px/1.2 var(--f-display); margin: 0; display: flex; align-items: center; gap: 8px; }
+.panel h3 i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.panel .sub { font-size: 12.5px; color: var(--ink-2); min-height: 3.2em; }
+.grid { display: grid; grid-template-columns: 34px repeat(12, minmax(0, 1fr)); gap: 2px; font: 400 10.5px/1 var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.grid .yl { text-align: right; padding-right: 4px; align-self: center; }
+.grid .ml { text-align: center; padding-bottom: 2px; }
+.cell { height: 14px; border-radius: 2px; background: var(--empty); cursor: crosshair; }
+.cell.partial { background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--bg) 70%, transparent) 3px 5px); }
+.cell:hover, .cell:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
+.viirs { grid-column: 1 / -1; height: 0; border-top: 1.5px dashed var(--viirs-line); margin: 3px 0; position: relative; }
+.viirs span { position: absolute; right: 0; top: -9px; background: var(--bg); padding-left: 4px; font: 500 10px/1 var(--f-mono); color: var(--ink-2); letter-spacing: .04em; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; font: 400 10.5px/1 var(--f-mono); color: var(--ink-3); }
+.legend i { width: 18px; height: 8px; border-radius: 2px; display: inline-block; }
+.legend .lab { margin: 0 6px; }
+.chart-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+.keyrow { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-2); }
+.keyrow span { display: inline-flex; align-items: center; gap: 6px; }
+.keyrow i { width: 16px; height: 2px; display: inline-block; border-radius: 1px; }
+.svgbox { overflow-x: auto; }
+svg text { font-family: var(--f-mono); font-size: 11px; fill: var(--ink-3); }
+.tip { position: fixed; pointer-events: none; z-index: 20; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font: 400 12px/1.45 var(--f-body); box-shadow: 0 4px 16px rgb(0 0 0 / .12); min-width: 190px; font-variant-numeric: tabular-nums; }
+.tip b { font-family: var(--f-display); }
+.tip .row { display: flex; justify-content: space-between; gap: 12px; }
+.tip .row em { font-style: normal; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.tip .row em i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.notes { display: grid; gap: 10px; max-width: 75ch; font-size: 14px; }
+.notes h2 { margin-bottom: 2px; }
+table.alpha { border-collapse: collapse; font: 400 12px/1.3 var(--f-mono); font-variant-numeric: tabular-nums; }
+table.alpha th, table.alpha td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--rule); }
+table.alpha th { color: var(--ink-3); font-weight: 500; }
+.tablebox { overflow-x: auto; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">NASA FIRMS · MODIS + VIIRS · California · 2000-11 → 2026-08</div>
+    <h1>Before and after harmonization</h1>
+    <p>The same California fire record, three ways. Each day uses one sensor family: MODIS before VIIRS existed, VIIRS from 20 January 2012. The panels differ only in what we do to those numbers. Hover any month for the values.</p>
+  </header>
+
+  <section class="facts" id="facts" aria-label="Key numbers"></section>
+
+  <section class="panels" id="panels" aria-label="Year by month calendars"></section>
+
+  <section class="chart-card" aria-labelledby="ann-h">
+    <h2 id="ann-h">Annual totals, indexed to their 2013–2021 average = 100</h2>
+    <p style="font-size:13px">Indexing puts the three series on one scale. A sensor artifact shows up as a cliff at 2012; real fire years show up in all three.</p>
+    <div class="keyrow" id="annkey"></div>
+    <div class="svgbox"><svg id="ann" role="img" aria-label="Annual totals for raw detections, gridded cell-days and harmonized cell-days, indexed to 2013 to 2021"></svg></div>
+  </section>
+
+  <section class="chart-card" aria-labelledby="ov-h">
+    <h2 id="ov-h">MODIS harmonized to VIIRS units, against observed VIIRS</h2>
+    <p style="font-size:13px">Where both sensors flew, MODIS × α should land on VIIRS. Same units, one axis. The model was calibrated on 2013–2021; 2012 and 2022–2025 are outside that window.</p>
+    <div class="keyrow"><span><i style="background:var(--s1)"></i>VIIRS, as observed</span><span><i style="background:var(--s2)"></i>MODIS × α (harmonized)</span></div>
+    <div class="svgbox"><svg id="ov" role="img" aria-label="Annual VIIRS cell-days and MODIS harmonized cell-days, 2012 to 2025"></svg></div>
+  </section>
+
+  <section class="notes">
+    <h2>How to read it</h2>
+    <p><b>Raw detections</b> count every filtered hotspot. VIIRS pixels are about 1/7 the area of MODIS pixels, so one fire produces many more VIIRS dots, and the record jumps when VIIRS takes over.</p>
+    <p><b>Gridded</b> counts each 0.05° cell (about 5.5 km) once per day. This removes the pixel-size effect. A smaller jump remains, because VIIRS also sees smaller and cooler fires.</p>
+    <p><b>Harmonized</b> uses VIIRS as observed whenever it flew, and MODIS × α otherwise. α is learned from 2013–2021, when both sensors flew. It depends on the calendar month and on how active the region is that month, because VIIRS adds relatively fewer cells in a big fire month: both sensors already flag nearly every cell inside large fires. The result is in VIIRS-equivalent cell-days.</p>
+    <p id="caveat"></p>
+    <h2 style="margin-top:8px">α by month (Terra + Aqua): a typical month, and the quietest and busiest months seen in calibration</h2>
+    <div class="tablebox"><table class="alpha" id="alpha"></table></div>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = __DATA__;
+const MONTHS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SERIES = [
+  { key: 2, name: 'Raw detections', unit: 'dots', color: '--s2', sub: 'Filtered hotspot dots. The jump at 2012 is the sensor change.' },
+  { key: 3, name: 'Gridded', unit: 'cell-days', color: '--s3', sub: '5.5 km cell-days, no α. Pixel size removed; sensitivity gap remains.' },
+  { key: 4, name: 'Harmonized', unit: 'VIIRS-eq. cell-days', color: '--s1', sub: 'Cell-days × α on MODIS-only days. Comparable across 2012.' },
+];
+const fmt = (x, d = 0) => x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const rows = DATA.rows.map(r => ({ y: r[0], m: r[1], raw: r[2], grid: r[3], unscaled: r[3], harm: r[4], mix: r[5], complete: !!r[6], mscaled: r[7], nModis: r[8], viirs: r[9], nDays: r[10], vals: r }));
+const byKey = new Map(rows.map(r => [r.y + '-' + r.m, r]));
+const years = [...new Set(rows.map(r => r.y))].sort((a, b) => a - b);
+const tip = document.getElementById('tip');
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - pad;
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+}
+function hideTip() { tip.hidden = true; }
+function monthTip(r) {
+  const basis = r.mix >= 0.999 ? 'VIIRS (as observed)' : r.mix <= 0.001 ? (r.unscaled > 0 ? `MODIS × α (${(r.harm / r.grid).toFixed(2)})` : 'MODIS × α') : `mixed: ${Math.round(r.mix * 100)}% VIIRS days`;
+  return `<b>${MONTH_NAMES[r.m - 1]} ${r.y}</b>${r.complete ? '' : ' <span style="color:var(--ink-3)">· partial</span>'}
+  ${SERIES.map(s => `<div class="row"><em><i style="background:var(${s.color})"></i>${s.name}</em><span>${fmt(r.vals[s.key], s.key === 4 ? 0 : 0)}</span></div>`).join('')}
+  <div class="row" style="margin-top:4px"><em>Basis</em><span>${basis}</span></div>`;
+}
+
+// ---------- key numbers ----------
+const ann = {};
+for (const r of rows) { if (!r.complete) continue; (ann[r.y] ??= [0, 0, 0]); ann[r.y][0] += r.raw; ann[r.y][1] += r.grid; ann[r.y][2] += r.harm; }
+const avg = (a, b, i) => { let s = 0, n = 0; for (let y = a; y <= b; y++) if (ann[y]) { s += ann[y][i]; n++; } return s / n; };
+const jump = i => avg(2012, 2014, i) / avg(2009, 2011, i);
+// Overlap cross-check: months where VIIRS and MODIS both flew every day.
+const ov = {};
+for (const r of rows) { if (r.y < 2012 || r.y > 2025 || !r.complete || r.mix < 0.999 || r.nModis !== r.nDays) continue; (ov[r.y] ??= { vi: 0, mod: 0 }); ov[r.y].vi += r.viirs; ov[r.y].mod += r.mscaled; }
+const overlapYears = Object.entries(ov).map(([y, v]) => ({ y: +y, ...v })).sort((a, b) => a.y - b.y);
+document.getElementById('facts').innerHTML = [
+  [`${jump(0).toFixed(1)}×`, 'Jump in raw detections, 2012–14 vs 2009–11'],
+  [`${jump(1).toFixed(1)}×`, 'Same jump after gridding to 5.5 km cells'],
+  [`${jump(2).toFixed(1)}×`, 'Same jump after harmonization (2010 was a quiet year)'],
+  [`±${(Math.max(...overlapYears.map(d => Math.abs(d.mod / d.vi - 1))) * 100).toFixed(0)}%`, 'Largest yearly gap between MODIS × α and observed VIIRS, 2012–2025'],
+  [`${(DATA.val.loyo * 100).toFixed(1)}%`, `Median error predicting a held-out year from MODIS (constant ratio: ${(DATA.val.loyo1 * 100).toFixed(1)}%)`],
+].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join('');
+
+// ---------- heatmaps ----------
+function quantileBreaks(vals, n = 7) {
+  const xs = vals.filter(v => v > 0).sort((a, b) => a - b);
+  const q = p => { const h = (xs.length - 1) * p, lo = Math.floor(h), hi = Math.ceil(h); return xs[lo] + (h - lo) * (xs[hi] - xs[lo]); };
+  return Array.from({ length: n - 1 }, (_, i) => q((i + 1) / n));
+}
+const panels = document.getElementById('panels');
+for (const s of SERIES) {
+  const vals = rows.filter(r => r.complete).map(r => r.vals[s.key]);
+  const br = quantileBreaks(vals);
+  const cls = v => (v <= 0 ? 0 : 1 + br.filter(b => v > b).length);
+  const el = document.createElement('div');
+  el.className = 'panel';
+  let g = `<div class="grid" role="grid" aria-label="${s.name} by year and month"><div></div>${MONTHS.map(m => `<div class="ml">${m}</div>`).join('')}`;
+  for (const y of years) {
+    if (y === 2012) g += `<div class="viirs"><span>VIIRS starts</span></div>`;
+    g += `<div class="yl">${y}</div>`;
+    for (let m = 1; m <= 12; m++) {
+      const r = byKey.get(y + '-' + m);
+      if (!r) { g += `<div></div>`; continue; }
+      const c = cls(r.vals[s.key]);
+      g += `<div class="cell${r.complete ? '' : ' partial'}" tabindex="0" data-k="${y}-${m}" style="${c ? `background-color:var(--q${c})` : ''}" aria-label="${MONTH_NAMES[m - 1]} ${y}: ${fmt(r.vals[s.key])} ${s.unit}"></div>`;
+    }
+  }
+  g += `</div>`;
+  const lo = Math.min(...vals.filter(v => v > 0)), hi = Math.max(...vals);
+  const legend = `<div class="legend"><span class="lab">${fmt(lo)}</span>${[1,2,3,4,5,6,7].map(i => `<i style="background:var(--q${i})"></i>`).join('')}<span class="lab">${fmt(hi)} ${s.unit}</span></div>`;
+  el.innerHTML = `<h3><i style="background:var(${s.color})"></i>${s.name}</h3><div class="sub">${s.sub}</div>${g}${legend}`;
+  panels.appendChild(el);
+}
+panels.addEventListener('pointermove', e => { const c = e.target.closest('.cell'); if (!c) return hideTip(); showTip(monthTip(byKey.get(c.dataset.k)), e); });
+panels.addEventListener('pointerleave', hideTip);
+panels.addEventListener('focusin', e => { const c = e.target.closest('.cell'); if (!c) return; const b = c.getBoundingClientRect(); showTip(monthTip(byKey.get(c.dataset.k)), { clientX: b.right, clientY: b.bottom }); });
+panels.addEventListener('focusout', hideTip);
+
+// ---------- indexed annual chart ----------
+const ay = years.filter(y => ann[y] && y >= 2001 && y <= 2025);
+const base = [0, 1, 2].map(i => avg(2013, 2021, i));
+const idx = ay.map(y => ({ y, v: [0, 1, 2].map(i => (ann[y][i] / base[i]) * 100) }));
+const LINES = [{ i: 0, s: SERIES[0] }, { i: 1, s: SERIES[1] }, { i: 2, s: SERIES[2] }];
+document.getElementById('annkey').innerHTML = LINES.map(l => `<span><i style="background:var(${l.s.color})"></i>${l.s.name}</span>`).join('');
+function drawAnnual() {
+  const svg = document.getElementById('ann');
+  const W = Math.max(640, svg.parentElement.clientWidth), H = 300, m = { l: 44, r: 92, t: 12, b: 28 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const maxV = Math.max(...idx.flatMap(d => d.v));
+  const yMax = Math.ceil(maxV / 50) * 50;
+  const x = y => m.l + ((y - ay[0]) / (ay[ay.length - 1] - ay[0])) * (W - m.l - m.r);
+  const yy = v => H - m.b - (v / yMax) * (H - m.t - m.b);
+  const rule = cssVar('--rule'), ink3 = cssVar('--ink-3');
+  let s = '';
+  for (let v = 0; v <= yMax; v += 50) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(v)}" y2="${yy(v)}" stroke="${rule}" stroke-width="1"/><text x="${m.l - 8}" y="${yy(v) + 4}" text-anchor="end">${v}</text>`;
+  for (const y of ay) if (y % 5 === 0 || y === ay[0]) s += `<text x="${x(y)}" y="${H - 8}" text-anchor="middle">${y}</text>`;
+  s += `<line x1="${x(2012) - (x(2012) - x(2011)) / 2}" x2="${x(2012) - (x(2012) - x(2011)) / 2}" y1="${m.t}" y2="${H - m.b}" stroke="${cssVar('--viirs-line')}" stroke-dasharray="4 3" stroke-width="1.2"/>`;
+  s += `<text x="${x(2012) - (x(2012) - x(2011)) / 2 + 6}" y="${m.t + 10}">VIIRS starts</text>`;
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(100)}" y2="${yy(100)}" stroke="${ink3}" stroke-width="1" stroke-dasharray="1 3"/>`;
+  for (const l of LINES) {
+    const col = cssVar(l.s.color);
+    s += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${idx.map(d => `${x(d.y)},${yy(d.v[l.i])}`).join(' ')}"/>`;
+    const last = idx[idx.length - 1];
+    s += `<circle cx="${x(last.y)}" cy="${yy(last.v[l.i])}" r="4" fill="${col}" stroke="${cssVar('--surface')}" stroke-width="2"/>`;
+  }
+  // direct labels at the right edge, nudged apart
+  const ends = LINES.map(l => ({ l, y: yy(idx[idx.length - 1].v[l.i]) })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 14) ends[k].y = ends[k - 1].y + 14;
+  for (const e of ends) s += `<text x="${W - m.r + 10}" y="${e.y + 4}" style="fill:${cssVar('--ink-2')}">${e.l.s.name.split(' ')[0]}</text>`;
+  s += `<line id="xh" y1="${m.t}" y2="${H - m.b}" stroke="${ink3}" stroke-width="1" visibility="hidden"/><rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  svg.innerHTML = s;
+  const xh = svg.querySelector('#xh');
+  svg.querySelector('#hit').addEventListener('pointermove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const d = idx.reduce((a, b) => Math.abs(x(b.y) - p.x) < Math.abs(x(a.y) - p.x) ? b : a);
+    xh.setAttribute('x1', x(d.y)); xh.setAttribute('x2', x(d.y)); xh.setAttribute('visibility', 'visible');
+    showTip(`<b>${d.y}</b>${LINES.map(l => `<div class="row"><em><i style="background:var(${l.s.color})"></i>${l.s.name}</em><span>${fmt(d.v[l.i])} · ${fmt(ann[d.y][l.i])}</span></div>`).join('')}<div class="row" style="margin-top:4px"><em>index · annual total</em><span></span></div>`, e);
+  });
+  svg.querySelector('#hit').addEventListener('pointerleave', () => { xh.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+function drawOverlap() {
+  const svg = document.getElementById('ov');
+  const W = Math.max(640, svg.parentElement.clientWidth), H = 260, m = { l: 56, r: 20, t: 12, b: 28 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const ys = overlapYears; if (!ys.length) return;
+  const maxV = Math.max(...ys.flatMap(d => [d.vi, d.mod]));
+  const step = maxV > 10000 ? 5000 : 2000, yMax = Math.ceil(maxV / step) * step;
+  const x = y => m.l + ((y - ys[0].y) / (ys[ys.length - 1].y - ys[0].y)) * (W - m.l - m.r);
+  const yy = v => H - m.b - (v / yMax) * (H - m.t - m.b);
+  const rule = cssVar('--rule'), ink3 = cssVar('--ink-3');
+  let s = '';
+  for (let v = 0; v <= yMax; v += step) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(v)}" y2="${yy(v)}" stroke="${rule}"/><text x="${m.l - 8}" y="${yy(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  for (const d of ys) if (d.y % 2 === 0) s += `<text x="${x(d.y)}" y="${H - 8}" text-anchor="middle">${d.y}</text>`;
+  const band = (a, b) => `<rect x="${x(a)}" y="${m.t}" width="${x(b) - x(a)}" height="${H - m.t - m.b}" fill="${cssVar('--ink')}" opacity="0.04"/>`;
+  s += band(2013, 2021) + `<text x="${(x(2013) + x(2021)) / 2}" y="${m.t + 12}" text-anchor="middle">calibration years</text>`;
+  for (const [key, col] of [['vi', '--s1'], ['mod', '--s2']]) {
+    const c = cssVar(col);
+    s += `<polyline fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" points="${ys.map(d => `${x(d.y)},${yy(d[key])}`).join(' ')}"/>`;
+    for (const d of ys) s += `<circle cx="${x(d.y)}" cy="${yy(d[key])}" r="3.5" fill="${c}" stroke="${cssVar('--surface')}" stroke-width="2"/>`;
+  }
+  s += `<line id="xo" y1="${m.t}" y2="${H - m.b}" stroke="${ink3}" visibility="hidden"/><rect id="ho" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  svg.innerHTML = s;
+  const xo = svg.querySelector('#xo');
+  svg.querySelector('#ho').addEventListener('pointermove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const d = ys.reduce((a, b) => Math.abs(x(b.y) - p.x) < Math.abs(x(a.y) - p.x) ? b : a);
+    xo.setAttribute('x1', x(d.y)); xo.setAttribute('x2', x(d.y)); xo.setAttribute('visibility', 'visible');
+    showTip(`<b>${d.y}</b><div class="row"><em><i style="background:var(--s1)"></i>VIIRS</em><span>${fmt(d.vi)}</span></div><div class="row"><em><i style="background:var(--s2)"></i>MODIS × α</em><span>${fmt(d.mod)}</span></div><div class="row" style="margin-top:4px"><em>difference</em><span>${(d.mod / d.vi - 1 >= 0 ? '+' : '') + ((d.mod / d.vi - 1) * 100).toFixed(1)}%</span></div>`, e);
+  });
+  svg.querySelector('#ho').addEventListener('pointerleave', () => { xo.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+function drawAll() { drawAnnual(); drawOverlap(); }
+drawAll();
+addEventListener('resize', drawAll);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- α table + caveat ----------
+document.getElementById('alpha').innerHTML =
+  `<tr><th style="text-align:left">Month</th>${MONTH_NAMES.map(m => `<th>${m}</th>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α typical</td>${DATA.alpha.map(a => `<td>${a[0].toFixed(2)}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">90% CI</td>${DATA.alpha.map(a => `<td>${a[1] ? a[1].toFixed(2) + '–' + a[2].toFixed(2) : '—'}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α quiet month</td>${DATA.alpha.map(a => `<td>${a[3].toFixed(2)}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α busy month</td>${DATA.alpha.map(a => `<td>${a[4].toFixed(2)}</td>`).join('')}</tr>`;
+document.getElementById('caveat').innerHTML = `<b>Why α depends on activity.</b> A single ratio per month assumed VIIRS adds the same share of cells in quiet and record months. The overlap data reject that (exponent β = ${DATA.model.beta.toFixed(3)}, 90% CI ${DATA.model.betaCi[0].toFixed(2)}–${DATA.model.betaCi[1].toFixed(2)}; 1 would mean a constant ratio; F = ${DATA.model.f.toFixed(1)}, p < 0.0001). Held out year by year, the constant ratio overstated the busiest 10% of months by ${(DATA.val.top1 * 100).toFixed(1)}% and understated the quietest quarter by ${(-DATA.val.bot1 * 100).toFixed(1)}%. With α depending on activity, those errors are ${(DATA.val.top * 100).toFixed(1)}% and ${(DATA.val.bot * 100).toFixed(1)}%. Data: ${fmt(DATA.n.det)} filtered detections, ${fmt(DATA.n.cd)} cell-days.`;
+</script>

@@ -71,8 +71,8 @@ export async function download(o: DownloadOptions) {
       }
       writeAtomic(path, body.endsWith('\n') || body === '' ? body : body + '\n');
       fetched++;
-      if (fetched % 50 === 0) o.log(`  ${source} … ${d} (${fetched} fetched, ${client.transactionsUsed} tx)`);
+      if (fetched % 50 === 0) o.log(`  ${source} … ${d} (${fetched} fetched, ${client.transactionsUsed} requests)`);
     }
   }
-  o.log(`download done: ${fetched} chunks fetched, ${skipped} already present, ${client.transactionsUsed} transactions`);
+  o.log(`download done: ${fetched} chunks fetched, ${skipped} already present, ${client.transactionsUsed} requests`);
 }

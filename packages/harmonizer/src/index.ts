@@ -64,6 +64,9 @@ export { computeAnomalies, cumulativeToDay, scoreAgainst, baselineStats, type An
 export { countClasses, anomalyColor } from './colors.ts';
 export {
   validateCalibration,
+  validateModel,
+  type ModelValidationReport,
+  type ModelScore,
   inSampleAgreement,
   leaveOneYearOut,
   annualContinuity,
@@ -72,6 +75,24 @@ export {
   type ValidationReport,
 } from './validate.ts';
 export { detectOutages, withoutDates, type DetectedOutage } from './outages.ts';
+export {
+  fitAlphaModel,
+  fitAlphaGLM,
+  fitModelConfig,
+  alphaAt,
+  effectiveAlphas,
+  resolverFromEffective,
+  resolverFromTable,
+  modelAsTable,
+  monthlyRates,
+  monthPairs as modelMonthPairs,
+  type AlphaModel,
+  type AlphaModelConfig,
+  type AlphaModelOptions,
+  type AlphaResolver,
+  type EffectiveAlpha,
+  type MonthPair,
+} from './model.ts';
 export {
   gridSensitivity,
   pickGridSize,
@@ -87,4 +108,5 @@ export {
 export * from './serialize.ts';
 export { addDays, dateRange, daysInMonth } from './dates.ts';
 
-export const HARMONIZER_VERSION = '1.0.0';
+// 1.1.0: activity-dependent α (Poisson GLM, model.ts) replaces the constant monthly ratio.
+export const HARMONIZER_VERSION = '1.1.0';

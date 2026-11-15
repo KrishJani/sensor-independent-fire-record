@@ -84,6 +84,7 @@ This serves map features from **Postgres**.
 | `points` | `detections` | Point: `satellite`, `acq_date`, `acq_time`, `frp_mw`, `confidence`, `day_night` |
 
 - In the `coarse` and `cells` levels, `cell_days` counts distinct `(cell, date)` pairs across the VIIRS reference and MODIS. It is meant for map density only; harmonized counts come from `/api/calendar`.
+- **Global coverage.** The parts of the bbox inside configured regions are served as above. Everything else is served at the `coarse` level only, from `global_coarse_months` (0.5° bins, per satellite, *not harmonized*). Those features carry `harmonized: false`, and the UI labels them by satellite. `cells` and `points` outside regions fall back to `coarse`, with `meta.globalFallback: true`.
 - `points` is limited to 5000 rows `ORDER BY frp_mw DESC`. When the limit is hit, the response sets `truncated: true`.
 - The response is a GeoJSON `FeatureCollection` plus `meta: { level, bbox, from, to, truncated, dataVersion }`.
 
@@ -120,7 +121,8 @@ This has the same contract as the archival endpoint, but the source is **D1**:
 
    ```json
    { "mode": "archival",
-     "calendar": [{ "year": 2020, "month": 8, "harmonizedCellDays": 1834, "modisCellDays": 611, "viirsCellDays": 1834,
+     "calendar": [{ "year": 2020, "month": 8, "harmonizedCellDays": 1834, "rawDetections": 41250, "unscaledCellDays": 1834,
+                    "modisCellDays": 611, "viirsCellDays": 1834,
                     "sourceMix": 1.0, "peakFrpMw": 9120.4, "peakFrpSensor": "VIIRS", "complete": true,
                     "anomaly": { "median": 212, "ratioToMedian": 8.65, "robustZ": 6.1, "percentile": 100, "class": "record_high" } }],
      "alpha": [{ "month": 1, "alpha": 2.71, "w": 0.84, "sumModis": 263, "sumViirs": 712 }],

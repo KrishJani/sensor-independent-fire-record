@@ -60,6 +60,8 @@ export interface DailyCounts {
   cells: Record<Satellite, number>;
   modisUnion: number; // |TERRA ∪ AQUA|
   peakFrpMw: Record<Satellite, number>; // max cell-day peakFrpMw per satellite (0 if none)
+  /** Raw (filtered) detection counts per satellite — the "dots on the map", before gridding. */
+  detections: Record<Satellite, number>;
 }
 
 /** satellite → set of 'YYYY-MM-DD' dates on which that satellite has data for the tier. */
@@ -88,10 +90,16 @@ export type HarmonizedBasis = 'VIIRS' | 'MODIS_SCALED' | 'NONE';
 export interface HarmonizedDay {
   acqDate: string;
   harmonizedCellDays: number; // VIIRS-equivalent
+  /** Before harmonization: raw detections of the basis sensor (VIIRS reference, or Terra + Aqua summed). */
+  rawDetections: number;
+  /** Gridded but not calibrated: V(d) on VIIRS days, M(d) on MODIS days (no α). */
+  unscaledCellDays: number;
+  /** MODIS × α on every day MODIS flew (null if it did not): the harmonized MODIS record, also on VIIRS days. */
+  modisScaledCellDays: number | null;
   modisCellDays: number; // M(d) for the MODIS configuration of the day (0 if none)
   viirsCellDays: number; // V(d) of the reference satellite (0 if none)
   basis: HarmonizedBasis;
-  alpha: number | null; // α used (only for MODIS_SCALED)
+  alpha: number | null; // α that scales MODIS on this day (applied to the calendar only on MODIS_SCALED days)
   modisConfig: ModisConfig | null;
   viirsReference: Satellite | null;
   peakFrpMw: number | null; // from the basis sensor
@@ -102,6 +110,10 @@ export interface CalendarCell {
   year: number;
   month: number; // 1–12
   harmonizedCellDays: number;
+  rawDetections: number; // before harmonization (see HarmonizedDay)
+  unscaledCellDays: number; // gridded, no α
+  modisScaledCellDays: number; // Σ MODIS × α over days MODIS flew
+  nModisDays: number; // days with MODIS data (denominator for modisScaledCellDays)
   modisCellDays: number;
   viirsCellDays: number;
   sourceMix: number; // fraction of days with basis = VIIRS

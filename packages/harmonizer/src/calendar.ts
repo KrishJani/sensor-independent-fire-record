@@ -15,6 +15,10 @@ export function buildCalendar(days: Iterable<HarmonizedDay>): CalendarCell[] {
         year,
         month,
         harmonizedCellDays: 0,
+        rawDetections: 0,
+        unscaledCellDays: 0,
+        modisScaledCellDays: 0,
+        nModisDays: 0,
         modisCellDays: 0,
         viirsCellDays: 0,
         sourceMix: 0,
@@ -29,6 +33,12 @@ export function buildCalendar(days: Iterable<HarmonizedDay>): CalendarCell[] {
       cells.set(key, c);
     }
     c.harmonizedCellDays += d.harmonizedCellDays;
+    c.rawDetections += d.rawDetections;
+    c.unscaledCellDays += d.unscaledCellDays;
+    if (d.modisScaledCellDays !== null) {
+      c.modisScaledCellDays += d.modisScaledCellDays;
+      c.nModisDays++;
+    }
     c.modisCellDays += d.modisCellDays;
     c.viirsCellDays += d.viirsCellDays;
     c.nDays++;

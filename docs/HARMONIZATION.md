@@ -42,7 +42,7 @@ For a day *d* inside an AOI [`dailySensorCounts`]:
 
 ## 3. The calibration factor α
 
-### 3.1 Why multiplicative
+### 3.1 Starting point: a ratio of detection probabilities
 
 Let N(d) be the number of truly burning cells. Each one is detected by VIIRS with probability
 p_V and by MODIS with probability p_M (p_V > p_M because VIIRS is more sensitive). Then
@@ -51,73 +51,86 @@ p_V and by MODIS with probability p_M (p_V > p_M because VIIRS is more sensitive
 E[V(d)] = p_V · N(d),   E[M(d)] = p_M · N(d)   ⇒   E[V(d)] = α · E[M(d)],  α = p_V / p_M
 ```
 
-α depends only on relative sensitivity, not on how much is burning. So one factor applies to
-quiet and active periods alike, and zero MODIS activity maps to zero VIIRS-equivalent
-activity. An additive model (V = M + c) would invent fire on fire-free days and would
-under-correct big months. We test this assumption rather than assume it (§5.4).
+This argues for a **multiplicative** factor: zero MODIS activity maps to zero, and an
+additive offset would invent fire on fire-free days. The calendar is in **VIIRS-equivalent
+cell-days**, because VIIRS continues after MODIS: present data stays native and the MODIS
+record is scaled up (α ≥ 1).
 
-The calendar is expressed in **VIIRS-equivalent cell-days** because VIIRS continues after
-MODIS. Present data stays native, and only the MODIS-only years are scaled. So
-α = V/M ≥ 1 typically. Older READMEs stated MODIS/VIIRS, which was the wrong direction.
+The simplest version takes one α per calendar month: α_m = Σ V / Σ M over the overlap days.
+This ratio of sums is the maximum-likelihood estimate under V(d) ~ Poisson(α·M(d)), because
+∂/∂α Σ[V log(αM) − αM] = 0 ⇒ α̂ = ΣV/ΣM. It is defined on zero-fire days, unlike a mean of
+daily ratios.
 
-### 3.2 Estimator [`computeAlpha`]
+### 3.2 Why a constant ratio is not enough (evidence)
 
-Over the overlap days *d* in calendar month *m*, meaning days on which the MODIS configuration
-and a VIIRS reference **both** have data [`calibrationSamples`]:
+The constant ratio assumes that p_V/p_M is the same in quiet and busy months. On the
+California 2013–2021 overlap it is not:
 
-```
-α_local[m] = Σ V(d) / Σ M(d)
-```
+- **37–42% of VIIRS cell-days fall in 0.5° areas where MODIS saw nothing that day.** These
+  are small and cool fires that only VIIRS detects, and their number does not rise in step
+  with large-fire activity.
+- **Inside large fire complexes, both sensors flag nearly every 5.5 km cell.** VIIRS
+  therefore has little to add in a big month.
+- **The result:** within a calendar month, the log-log slope of V on M is 0.82 ± 0.02, not 1.
+  A constant α overstated the busiest 10% of months by 6.8% and understated the quietest
+  25% by 9.0% (out of sample).
 
-This is the ratio of sums, not the mean of daily ratios V/M:
+Alternatives were tested on the real overlap data with leave-one-year-out
+(`scripts/backfill/experiments/alpha-models.ts`). α stratified by local fire density did not
+remove the bias (residual slope 0.80). Adding a fixed per-area background over-corrected
+(1.34). What worked was letting α depend on **how active the region is that month**.
 
-- It is the **maximum-likelihood** estimator if V(d) ~ Poisson(α·M(d)). Setting
-  ∂/∂α Σ[V log(αM) − αM] = ΣV/α − ΣM = 0 gives α̂ = ΣV/ΣM.
-- It is the weighted least-squares slope through the origin when Var[V|M] ∝ M, which is
-  count noise.
-- It is defined on days with M = 0. A mean of daily ratios is undefined there, and it is
-  biased upward by days with small denominators (Jensen).
+### 3.3 The model: Poisson GLM with log link [`fitAlphaModel`, `model.ts`]
 
-### 3.3 Seasonal and regional variation, and shrinkage
-
-α varies with the fire regime: small agricultural burns in spring, large wildfires in
-summer, cloud and day-length differences. It is therefore estimated **per calendar month**
-and **per region** (the backfill writes `alpha_monthly.csv` for each region in
-`config/regions.json`).
-
-Quiet months have few overlap cell-days, so their raw ratio is noisy. We shrink toward a
-prior:
+For each MODIS configuration c, the unit is one (year, calendar month) of overlap days:
+n days, M = Σ M_c(d), V = Σ V(d).
 
 ```
-w     = ΣM / (ΣM + k)                       k = 50 MODIS cell-days (config: alphaShrinkageK)
-α[m]  = w · α_local[m] + (1 − w) · α_prior[m]       clamp to [0.5, 10]
+E[V] = n · exp(a_m + β · log(M / n))           a_m: one intercept per calendar month; β: shared
 ```
 
-- For the **regional** table, the prior is the region's pooled all-month ratio ΣV/ΣM.
-- For a **user-drawn AOI** (api-worker, Stage 3+), the prior is the regional α[m]. A
-  small AOI therefore inherits the regional factor, and a large one earns its own.
-- k = 50 means a month needs 50 MODIS cell-days of overlap to get half its weight from local
-  data.
+- **β = 1 is exactly the constant ratio** (a_m = log ΣV/ΣM). The new model nests the old one,
+  so the data decide between them. A quasi-likelihood F-test of β = 1 against free β is
+  reported in `alpha_model.json`.
+- **California, 2013–2021:** **β = 0.862** (90% CI 0.785–0.894). The test gives F = 71.7,
+  p < 0.0001, so the constant ratio is rejected.
+- **Fitting:** maximum likelihood on the count scale, so there is no log-transform
+  retransformation bias. The a_m have a closed form given β, and β takes Newton steps on the
+  profile likelihood. Convergence is quadratic, and the parameters are recovered exactly on
+  synthetic data (tests).
 
-### 3.4 One α per MODIS configuration [`computeAlphaTable`]
+### 3.4 Applying it: α_eff per month, additive by construction [`effectiveAlphas`]
 
-\|Terra ∪ Aqua\| ≥ \|Terra\|. Applying the TA factor to Terra-only days (2000-11 → 2002-07)
-would bias those 20 months low by \|T∪A\|/\|T\|. On the fixture that ratio is 289/255 = 1.13,
-a 13% artificial drop. Each configuration therefore gets its own α, fitted on the same
-overlap years using only its own satellites for M(d). Terra-only and Aqua-only samples
-exist on every overlap day, so neither is data-starved.
+```
+rate(y, m)   = region's MODIS cells per day in that month (days where config c flew)
+α_eff(y, m)  = exp(a_m) · rate^(β − 1)          (β < 1 ⇒ busier month, smaller α)
+H(d)         = α_eff(y, m) · M(d)               for every day d of that month
+```
 
-### 3.5 Calibration window
-
-`calibrationYears: [2013, 2021]` (config). 2012 is excluded because VIIRS SP starts on
-2012-01-20. Years after 2021 are excluded because Terra and Aqua drift off their nominal
-equator-crossing times, which changes the diurnal sampling and therefore M.
-
-### 3.6 Uncertainty
-
-A **year-block bootstrap** (1000 reps, fixed seed) gives a 90% interval per month
-(`ci90_low`, `ci90_high` in `alpha_monthly.csv`). It resamples whole years because days
-within a fire season are strongly autocorrelated.
+- **Additive.** Every day of a month uses the same α_eff, so the days add up to the month.
+  α_eff comes from the **region's** activity, so a user-drawn AOI inside the region is
+  exactly the sum of its parts. (A power law applied to each AOI's own totals would not be
+  additive.)
+- **No extrapolation.** The rate is clamped to the range seen for that month in calibration,
+  and α_eff to [0.5, 10].
+- **Quiet months borrow strength.** a_m is shrunk toward the ΣM-weighted mean of all months,
+  with weight w = ΣM/(ΣM + k), k = 50 MODIS cell-days.
+- **Too little data.** With fewer than 3 calibration years, β is fixed at 1 and the model is
+  the constant ratio. It is flagged `kind: "ratio"`. This applies to the 5-day test fixture.
+- **One model per MODIS configuration** (Terra ∪ Aqua, Terra only, Aqua only). \|T ∪ A\| ≥ \|T\|,
+  so using the TA factor on Terra-only days (2000-11 → 2002-07) would bias them low. On the
+  fixture that bias is 13%.
+- **Calibration window:** `calibrationYears: [2013, 2021]`. 2012 is partial (VIIRS SP starts
+  on 2012-01-20). After 2021, Terra and Aqua drift off their nominal overpass times.
+- **Uncertainty:** a year-block bootstrap (1000 reps, fixed seed) gives the CIs for β and
+  for α at each month's typical activity. Whole years are resampled because days within a
+  fire season are autocorrelated.
+- **Outputs:**
+  - `alpha_model.json`: the full model
+  - `alpha_effective.csv`: the α applied, per (year, month, config)
+  - `alpha_monthly.csv`: α at each month's typical activity, for display
+- **User-drawn AOIs (api-worker):** use the regional α_eff, times an optional local factor
+  ρ_m = ΣV_AOI / Σ(α_eff · M_AOI) over the AOI's overlap days, shrunk toward 1 with the same w.
 
 ## 4. Harmonized daily series: OR-based availability [`harmonizeDaily`]
 
@@ -127,10 +140,16 @@ zero-fire days are explicit zeros.
 | condition | harmonized | basis |
 |---|---|---|
 | a VIIRS reference has data on d | V(d) | `VIIRS` |
-| else, a MODIS configuration c has data | α_c[m] · M_c(d) | `MODIS_SCALED` |
+| else, a MODIS configuration c has data | α_eff,c(y, m) · M_c(d) | `MODIS_SCALED` |
 | else | 0, month flagged `complete = false` | `NONE` |
 
-Exactly one sensor family contributes per day, so nothing is double-counted. The 2012
+Exactly one sensor family contributes per day, so nothing is double-counted.
+
+**MODIS is also harmonized on every day it flew** (`modis_scaled_cell_days`), VIIRS days
+included. The calendar ignores that series on VIIRS days. It is the cross-check: for
+2012–2026 it can be plotted against the observed VIIRS series to show that the scaling
+reproduces VIIRS. It also gives a MODIS-only record in VIIRS units from 2000 to the end of
+MODIS. The 2012
 transition, VIIRS outages and the eventual MODIS retirement are all handled day by day. A
 partial-month transition (January 2012) is a weighted mix of correctly scaled days.
 
@@ -158,27 +177,32 @@ Terra and VIIRS data but no Aqua rows on 08-16 and 08-18. Both days are detected
 fall back to config `T`. Detected days are listed in `outages_detected.csv`. Disable with
 `--no-auto-outages`.
 
-## 5. Validation [`validateCalibration` → `validation.json`]
+## 5. Validation [`validateModel` → `validation.json`]
 
-All of these are computed per MODIS configuration on overlap days.
+All of these are computed per MODIS configuration, on monthly totals over overlap days.
+Every score is also computed for the constant-ratio model (β = 1), so the two can be
+compared directly (`loyoConstantRatio`).
 
-1. **In-sample agreement:** the monthly α·M against V. This reports the median absolute
-   percentage error (MdAPE) over months with V ≥ 20.
-2. **Leave-one-year-out (LOYO):** α is refitted without year y, then predicts year y. This
-   is the honest out-of-sample error. **Acceptance: LOYO MdAPE ≤ 15%** (SPEC §11).
-3. **Continuity across the transition:** for each overlap year,
-   r(y) = Σ α·M / Σ V. If the MODIS-scaled and native-VIIRS series are interchangeable,
-   r ≈ 1 with no trend, so switching between them (at 2012, or at any outage) cannot create
-   a step. **Acceptance: |median r − 1| ≤ 5%.** The report also includes the worst year and
-   the trend per year.
-4. **Proportionality:** fit log V = a + β log M on monthly totals. β ≈ 1 supports a
-   multiplicative α. β < 1 means the relation saturates (inside very large fires both sensors
-   light up every 0.05° cell), so a single α would *overstate* record months before 2012.
-   **Acceptance: |β − 1| ≤ max(0.1, 2·SE).** If this fails on the real data, report it, and
-   consider stratifying α by activity level. Do not ignore it.
+| Score | What it measures |
+|---|---|
+| **LOYO MdAPE** | Refit without year y, predict year y: the honest out-of-sample error. **Acceptance ≤ 15%** (SPEC §11) |
+| **Top-10% / bottom-25% bias** | Σpred/Σobs − 1 over the busiest and the quietest months |
+| **Residual β** | Within-month slope of log observed on log predicted (month fixed effects). 1 means unbiased across activity levels. **Acceptance \|β_res − 1\| ≤ max(0.1, 2·SE)** |
+| **Transition step** | Median over overlap years of Σ(α_eff·M) / ΣV. ≈ 0 means switching sensors (at 2012 or at any outage) creates no step. **Acceptance ≤ 5%** |
 
-The sample fixture spans only 5 days, so LOYO, β and the bootstrap report `null` there.
-They become meaningful with the full 2000–2026 backfill.
+**California, 2013–2021 overlap (Terra ∪ Aqua):**
+
+| | Constant ratio (β = 1) | Activity-dependent α (β = 0.862) |
+|---|---|---|
+| LOYO MdAPE | 9.8% | **8.0%** |
+| Busiest 10% of months | +6.8% | **+0.7%** |
+| Quietest 25% of months | −9.0% | **−2.1%** |
+| Total bias | +1.0% | +0.9% |
+| Residual β | 0.80 ± 0.02 ✗ | **0.91 ± 0.03** ✓ |
+| Transition step (in-sample) | −1.0% | +3.2% (worst year 7%) |
+
+All three acceptance checks pass. The fixture spans only 5 days, so its validation fields
+are `null` and its model is the flagged constant ratio.
 
 ## 6. Out of scope (v1)
 

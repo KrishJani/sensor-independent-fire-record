@@ -15,8 +15,8 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 ## 1. Goals
 
 1. **Harmonize** MODIS (2000→) and VIIRS (2012→) active-fire hotspots from NASA FIRMS into one consistent daily and monthly time series. Once harmonized, the sensor a value came from does not matter.
-2. **Serve** a burning activity calendar (Year × Month) for any area of interest (AOI), with anomalies against the multi-year median.
-3. **Show** fire spots on an interactive map. The map fetches the spots for the visible area as the user pans and zooms.
+2. **Serve** a burning activity calendar (Year × Month) for any area of interest (AOI) inside a **harmonized region** (`config/regions.json`), with anomalies against the multi-year median. Each calendar is shown **before and after harmonization** (§7.1).
+3. **Show** fire spots on an interactive map, **globally**, on both tabs. The map fetches the spots for the visible area as the user pans and zooms. Outside harmonized regions the map shows raw sensor activity, labelled by satellite (decided 2026-11-15).
 4. **Separate** two data tiers:
    - **Archival** = FIRMS Standard Processing (`_SP`), stored in **PlanetScale Postgres**.
    - **Realtime** = FIRMS Near Real-Time (`_NRT`), stored in **Cloudflare D1**.
@@ -26,7 +26,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 ### Non-goals (v1)
 
 - Burned-area products (MCD64, VNP64). Only active-fire hotspots are in scope.
-- Global coverage on day 1. Coverage is driven by a region config (see §4). It can grow to `world` later.
+- A **global harmonized calendar**. α is calibrated per region (harmonizer spec §7.2), so the calendar and anomalies exist only inside configured regions. The map is global; the calendar grows region by region.
 - Harmonizing FRP across sensors. FRP is shown with its native sensor label (see the harmonizer spec, §8).
 
 ---
@@ -104,7 +104,7 @@ This file lists the AOIs that are backfilled and ingested. The backfill script, 
 }
 ```
 
-Users can draw any AOI. Data, however, only exists inside configured regions. The UI shows region outlines and clips queries to them.
+Users can draw any AOI. **Map spots are global.** The **harmonized calendar** only exists inside configured regions: the UI shows region outlines and clips calendar queries to them. Outside every region, the calendar panel says so and offers the raw (unharmonized) monthly counts from the global layer instead.
 
 ---
 
@@ -121,7 +121,9 @@ The unit of harmonized activity is the **active cell-day**: one 0.05° grid cell
 | `static_mask` | Postgres + checked-in CSV | Cells with persistent non-vegetation heat sources |
 | `alpha_region` | Postgres + checked-in CSV | Regional monthly calibration factors (fallback) |
 | `nrt_detections` | D1 | Raw filtered NRT hotspots (rolling window) |
-| `nrt_cell_days` | D1 | NRT cell-days per satellite |
+| `nrt_cell_days` | D1 | NRT cell-days per satellite (global) |
+| `global_coarse_months` | Postgres | **Global** map layer: per 0.5° bin, month and satellite, the active 0.05° cell-days, raw detections and FRP. Not harmonized. Built by `backfill global` (§6.5) from the FIRMS Country Yearly Summary files |
+| `global_static_mask` | Postgres + KV cache | Global static-source cells, used to filter global NRT (which has no `type`) |
 
 Migrations are in `packages/db/postgres/` and `packages/db/d1/`.
 
@@ -176,6 +178,20 @@ pnpm --filter backfill start -- \
 
 ---
 
+### 6.5 Global map layer: `backfill global`
+
+```
+node scripts/backfill/src/cli.ts global --from 2000-01-01 --to 2025-12-31   # reads data/raw/global/**/<product>_<YYYY>_<Country>.csv
+```
+
+- **Input:** the FIRMS "Country Yearly Summary" CSVs (all countries; MODIS, VIIRS S-NPP, VIIRS NOAA-20). These are SP data and include `type`.
+- **Process:** one streaming pass, one year in memory at a time. It applies the same `type` and confidence filter as the regions, counts distinct 0.05° cell-days, and aggregates them to 0.5° bins per month and satellite.
+- **Output** (`data/global/`, gitignored because it is too large):
+  - `coarse_0.5/<year>.csv`: `year, month, bin_lat, bin_lon, satellite, sensor, cell_days, detections, peak_frp_mw, sum_frp_mw`
+  - `static_mask.csv`
+  - `manifest.json`
+- **Not harmonized:** this layer is for the map, and values are labelled by satellite. Harmonized numbers come only from regional backfills (§6.1–6.4).
+
 ## 7. Web app: `apps/web`
 
 This is React + Vite + Mapbox GL JS (with Mapbox Draw), deployed on Cloudflare Pages. It needs `VITE_MAPBOX_TOKEN` and `VITE_API_BASE`.
@@ -203,8 +219,23 @@ This is React + Vite + Mapbox GL JS (with Mapbox Draw), deployed on Cloudflare P
 - **Chat (bottom-right).** A floating button that opens a side panel. It sits bottom-right so it never overlaps the calendar box. See the api-worker spec, §6.
 - **Calendar drawer (bottom).**
   - *Archival:* the Year × Month heatmap of harmonized cell-days for the AOI, with a toggle between counts and anomaly. Below it, a monthly climatology chart (median and P10–P90 band) and the annual totals.
+  - **Before / after harmonization (§7.1):** a three-way toggle on the heatmap: **Raw detections** → **Gridded cell-days** → **Harmonized**.
   - *Realtime:* a daily strip for the selected range, plus "this month so far compared with the historical median for this month" from `/api/calendar?mode=realtime`.
 - **AOI.** Draw a polygon or rectangle, type lat/lon plus a radius, or use the current viewport if nothing is drawn.
+
+#### 7.1 Before / after harmonization view
+
+This view shows *why* harmonization is needed, using the region's own data. Each calendar month carries three series, all from `/api/calendar`. Each day uses the same sensor in all three: VIIRS when available, otherwise MODIS. The only differences are therefore the harmonization steps.
+
+| Series | Field | What it is | What it shows |
+|---|---|---|---|
+| Raw detections | `rawDetections` | Filtered hotspot dots: Terra + Aqua before VIIRS, the VIIRS reference after | The false jump at 2012 (VIIRS detects several times more dots) |
+| Gridded | `unscaledCellDays` | Active 0.05° cell-days, no α | Most of the jump removed by gridding (pixel-size effect) |
+| Harmonized | `harmonizedCellDays` | Cell-days × α on MODIS-only days | The remaining sensitivity gap removed; continuous across 2012 |
+
+- All three panels share one layout. Each uses its own color scale (quantile classes per series), because the units differ.
+- A dashed line marks the first VIIRS month.
+- Under each panel, a single-line sparkline shows the annual totals, so the step (or its absence) is visible at a glance.
 - **Export.** Two buttons: "Hotspots CSV" and "Calendar CSV". Each calls `/api/export/*` with the current tab, AOI and range.
 - **Colors.**
   - Counts use a sequential, colorblind-safe ramp (viridis/inferno family) on quantile classes.

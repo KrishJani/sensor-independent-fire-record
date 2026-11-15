@@ -66,12 +66,14 @@ async scheduled(event, env, ctx) {
 
 ### 3.1 NRT job (every 3 h) → D1
 
-Steps run for each region in `regions.json` and each source in `MODIS_NRT`, `VIIRS_SNPP_NRT`, `VIIRS_NOAA20_NRT` and `VIIRS_NOAA21_NRT`:
+Steps run for each source in `MODIS_NRT`, `VIIRS_SNPP_NRT`, `VIIRS_NOAA20_NRT` and `VIIRS_NOAA21_NRT`, **globally** (decided 2026-11-15: the realtime map is global):
 
-1. **Fetch** `GET /api/area/csv/{KEY}/{SOURCE}/{bbox}/{NRT_DAY_RANGE}`. The default day range is 2 days, so the overlap with the previous run catches late-arriving granules.
+1. **Fetch** `GET /api/area/csv/{KEY}/{SOURCE}/world/{NRT_DAY_RANGE}`. The default day range is 2 days, so the overlap with the previous run catches late-arriving granules.
+   - **Budget:** a California 5-day request costs about 10 FIRMS transactions, and a world request will cost more. Before enabling `world`, measure the cost with `mapkey_status` (Stage 4). If the world requests exceed `FIRMS_MAX_TX_PER_RUN`, fetch by continent tiles and spread them across ticks.
+   - Pace by the key's live usage (`/mapserver/mapkey_status`), as `scripts/backfill/src/firms.ts` does. FIRMS answers `Invalid MAP_KEY` when a valid key is over its limit.
 2. **Harmonize:**
    - `parseFirmsCsv(tier: 'NRT')`
-   - `filterDetections` with the **static mask**. NRT has no `type` column, so the mask is required. It is loaded from the Postgres `static_mask` table and cached in KV under `cache:static_mask:<region>` with a 24 h TTL.
+   - `filterDetections` with the **static mask**. NRT has no `type` column, so the mask is required. Inside regions, the regional `static_mask` is used, which keeps NRT identical to the regional SP. Elsewhere, `global_static_mask` is used. Both are cached in KV (`cache:static_mask:<region|global>`, 24 h TTL).
 3. **Upsert raw detections** into `nrt_detections`.
    - Key: `(satellite, acq_date, acq_time, lat, lon)`.
    - `INSERT … ON CONFLICT DO UPDATE` makes it idempotent.

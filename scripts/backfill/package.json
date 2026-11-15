@@ -7,9 +7,13 @@
     "availability": "node --env-file-if-exists=../../.env src/cli.ts availability",
     "download": "node --env-file-if-exists=../../.env src/cli.ts download",
     "verify": "node src/cli.ts verify",
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@repo/harmonizer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2"
   }
 }

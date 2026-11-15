@@ -4,9 +4,10 @@
 // validation with the SAME per-day source availability, so the only thing that varies is the
 // cell size. Production always uses the fixed GRID_DEG grid; this is a diagnostic only.
 
-import { calibrationSamples, computeAlphaTable } from './calibrate.ts';
+import { calibrationSamples } from './calibrate.ts';
+import { fitAlphaModel } from './model.ts';
 import { pickViirsReference } from './harmonize.ts';
-import { validateCalibration } from './validate.ts';
+import { validateModel } from './validate.ts';
 import { ALL_SATELLITES, type DailyCounts, type Detection, type Satellite, type SourceAvailability } from './types.ts';
 
 export const DEFAULT_SENSITIVITY_GRIDS = [0.025, 0.05, 0.1];
@@ -40,7 +41,11 @@ const zeros = (): Record<Satellite, number> => ({ TERRA: 0, AQUA: 0, SNPP: 0, NO
 export function dailyCountsAtResolution(dets: Iterable<Detection>, deg: number): ResolutionDaily[] {
   assertValidGridDeg(deg);
   const byDate = new Map<string, Map<Satellite, Set<number>>>();
+  const detCounts = new Map<string, Record<Satellite, number>>();
   for (const d of dets) {
+    let dc = detCounts.get(d.acqDate);
+    if (!dc) detCounts.set(d.acqDate, (dc = zeros()));
+    dc[d.satellite]++;
     let sats = byDate.get(d.acqDate);
     if (!sats) byDate.set(d.acqDate, (sats = new Map()));
     let s = sats.get(d.satellite);
@@ -57,7 +62,7 @@ export function dailyCountsAtResolution(dets: Iterable<Detection>, deg: number):
       const vs = sats.get(v);
       if (vs) for (const c of modis) if (vs.has(c)) also[v]++;
     }
-    out.push({ acqDate, cells, modisUnion: modis.size, peakFrpMw: zeros(), modisAlsoViirs: also });
+    out.push({ acqDate, cells, modisUnion: modis.size, peakFrpMw: zeros(), detections: detCounts.get(acqDate)!, modisAlsoViirs: also });
   }
   return out.sort((a, b) => (a.acqDate < b.acqDate ? -1 : a.acqDate > b.acqDate ? 1 : 0));
 }
@@ -70,9 +75,9 @@ export interface GridSensitivityRow {
   inSampleMdape: number | null;
   loyoMdape: number | null;
   stepPct: number | null;
-  beta: number | null;
-  betaSe: number | null;
-  proportional: boolean | null;
+  beta: number | null; // fitted exponent of the activity-dependent model
+  betaSe: number | null; // NOTE: holds the out-of-sample residual β (1 = unbiased across activity)
+  proportional: boolean | null; // = unbiasedAcrossActivity
   noStepAtTransition: boolean | null;
   /** Share of MODIS cells that the day's VIIRS reference also flagged (calibration days, TA). */
   coincidence: number | null;
@@ -88,7 +93,7 @@ export interface GridSensitivityReport {
 }
 
 export const GRID_PICK_RULE =
-  'lowest leave-one-year-out MdAPE (TA) among grid sizes whose proportionality and no-step checks do not fail';
+  'lowest leave-one-year-out MdAPE (TA) among grid sizes whose unbiased-across-activity and no-step checks do not fail';
 
 /** Apply GRID_PICK_RULE. Pure, so it is unit-testable on its own. */
 export function pickGridSize(rows: GridSensitivityRow[]): { recommended: number | null; reason: string } {
@@ -98,7 +103,7 @@ export function pickGridSize(rows: GridSensitivityRow[]): { recommended: number 
     return {
       recommended: null,
       reason: anyLoyo
-        ? 'no grid size passes the proportionality and no-step checks'
+        ? 'no grid size passes the unbiased-across-activity and no-step checks'
         : 'not enough overlap years for leave-one-year-out (need ≥ 2 calibration years)',
     };
   }
@@ -114,8 +119,9 @@ export function gridSensitivity(
   const rows: GridSensitivityRow[] = [];
   for (const gridDeg of [...perGrid.keys()].sort((a, b) => a - b)) {
     const daily = perGrid.get(gridDeg)!;
-    const alpha = computeAlphaTable(daily, av, { years: opts.years, k: opts.k, bootstrap: null });
-    const v = validateCalibration(daily, av, alpha, { years: opts.years, k: opts.k, minMonthlyCells: opts.minMonthlyCells });
+    // Same production model (activity-dependent α) and validation at every grid size.
+    const model = fitAlphaModel(daily, av, { years: opts.years, k: opts.k, bootstrap: null });
+    const v = validateModel(daily, av, model, { years: opts.years, k: opts.k, minMonthlyCells: opts.minMonthlyCells });
     const samples = calibrationSamples(daily, av, { years: opts.years, config: 'TA' });
     const byDate = new Map(daily.map((d) => [d.acqDate, d]));
     let sm = 0;
@@ -132,14 +138,14 @@ export function gridSensitivity(
     rows.push({
       gridDeg,
       approxKm: Math.round(gridDeg * 111.32 * 10) / 10,
-      alphaTA: alpha.TA.map((a) => a.alpha),
+      alphaTA: model.TA.alphaTypical,
       pooledAlphaTA: sm > 0 ? sv / sm : null,
       inSampleMdape: ta.inSample.mdape,
       loyoMdape: ta.loyo.mdape,
       stepPct: ta.continuity.medianStepPct,
-      beta: ta.linearity.beta,
-      betaSe: ta.linearity.betaSe,
-      proportional: v.acceptance.proportional,
+      beta: model.TA.beta,
+      betaSe: ta.loyo.residualBeta,
+      proportional: v.acceptance.unbiasedAcrossActivity,
       noStepAtTransition: v.acceptance.noStepAtTransition,
       coincidence: sm > 0 ? both / sm : null,
       nCalibrationDays: samples.length,

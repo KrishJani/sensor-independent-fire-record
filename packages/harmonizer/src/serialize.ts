@@ -92,7 +92,7 @@ export function alphaRow(a: Alpha): string {
 }
 
 export const CALENDAR_HEADER =
-  'year,month,harmonized_cell_days,modis_cell_days,viirs_cell_days,source_mix,n_days,n_viirs_days,n_modis_scaled_days,n_none_days,peak_frp_mw,peak_frp_sensor,complete';
+  'year,month,harmonized_cell_days,modis_cell_days,viirs_cell_days,source_mix,n_days,n_viirs_days,n_modis_scaled_days,n_none_days,peak_frp_mw,peak_frp_sensor,complete,raw_detections,unscaled_cell_days,modis_scaled_cell_days,n_modis_days';
 
 export function calendarRow(c: CalendarCell): string {
   return line([
@@ -109,11 +109,15 @@ export function calendarRow(c: CalendarCell): string {
     fmt(c.peakFrpMw, 1),
     c.peakFrpSensor ?? '',
     c.complete ? 1 : 0,
+    c.rawDetections,
+    c.unscaledCellDays,
+    fmt(c.modisScaledCellDays, 2),
+    c.nModisDays,
   ]);
 }
 
 export const DAILY_HEADER =
-  'acq_date,harmonized_cell_days,modis_cell_days,viirs_cell_days,basis,alpha,modis_config,viirs_reference,peak_frp_mw,peak_frp_sensor';
+  'acq_date,harmonized_cell_days,modis_cell_days,viirs_cell_days,basis,alpha,modis_config,viirs_reference,peak_frp_mw,peak_frp_sensor,raw_detections,unscaled_cell_days,modis_scaled_cell_days';
 
 export function dailyRow(d: HarmonizedDay): string {
   return line([
@@ -127,6 +131,9 @@ export function dailyRow(d: HarmonizedDay): string {
     d.viirsReference ?? '',
     fmt(d.peakFrpMw, 1),
     d.peakFrpSensor ?? '',
+    d.rawDetections,
+    d.unscaledCellDays,
+    fmt(d.modisScaledCellDays, 2),
   ]);
 }
 

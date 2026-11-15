@@ -1,6 +1,7 @@
 // Validation of the calibration (docs/HARMONIZATION.md §5). Pure functions over overlap samples.
 
 import { calibrationSamples, computeAlpha, quantileSorted, type CalibrationSample } from './calibrate.ts';
+import { alphaAt, fitModelConfig, monthPairs as modelMonthPairs, type AlphaModel, type AlphaModelConfig, type AlphaModelOptions, type MonthPair } from './model.ts';
 import { MODIS_CONFIGS, type Alpha, type AlphaTable, type DailyCounts, type ModisConfig, type SourceAvailability } from './types.ts';
 
 export interface MonthlyPair {
@@ -109,18 +110,61 @@ export function annualContinuity(samples: CalibrationSample[], alpha: Alpha[]) {
 }
 
 /**
- * Is the MODIS→VIIRS relation proportional (V = αM)? Fit log V = a + β log M on monthly
- * totals. β ≈ 1 supports a multiplicative α; β < 1 means α overstates the biggest months
- * (both sensors saturate the 0.05° cells inside large fires).
+ * Is the MODIS→VIIRS relation proportional (V = α_m · M) WITHIN each calendar month?
+ *
+ * Fit log V = a_m + β · log M on monthly totals with a separate intercept per calendar month
+ * (month fixed effects = demean both sides by month). The intercepts absorb the seasonal α
+ * we already model, so β tests only what a per-month constant α assumes: that within a month,
+ * a year with k× more MODIS activity has k× more VIIRS activity. β ≈ 1 supports it; β < 1
+ * means α overstates the biggest months (both sensors saturate the 0.05° cells in large fires).
+ *
+ * `pooledBeta` (one intercept for all months) is reported for reference only: it is biased
+ * below 1 whenever quiet months have a higher α than busy months, even if every month is
+ * perfectly proportional.
  */
 export function linearityDiagnostics(samples: CalibrationSample[], minMonthlyCells = 20) {
   const pts = monthlyPairs(samples).filter((p) => p.m >= minMonthlyCells && p.v >= minMonthlyCells);
-  if (pts.length < 3) return { n: pts.length, beta: null, betaSe: null, intercept: null, r2: null };
-  const xs = pts.map((p) => Math.log(p.m));
-  const ys = pts.map((p) => Math.log(p.v));
+  const groups = new Map<number, MonthlyPair[]>();
+  for (const p of pts) {
+    let g = groups.get(p.month);
+    if (!g) groups.set(p.month, (g = []));
+    g.push(p);
+  }
+  // Within-month deviations; months with a single year carry no within-month information.
+  const dx: number[] = [];
+  const dy: number[] = [];
+  let usedMonths = 0;
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    usedMonths++;
+    const lx = g.map((p) => Math.log(p.m));
+    const ly = g.map((p) => Math.log(p.v));
+    const mx = lx.reduce((a, b) => a + b, 0) / g.length;
+    const my = ly.reduce((a, b) => a + b, 0) / g.length;
+    for (let i = 0; i < g.length; i++) {
+      dx.push(lx[i] - mx);
+      dy.push(ly[i] - my);
+    }
+  }
+  const pooled = olsSlope(pts.map((p) => Math.log(p.m)), pts.map((p) => Math.log(p.v)), true, 2);
+  const within = olsSlope(dx, dy, false, usedMonths + 1);
+  return {
+    n: dx.length,
+    monthsUsed: usedMonths,
+    beta: within.beta,
+    betaSe: within.se,
+    r2Within: within.r2,
+    pooledBeta: pooled.beta,
+    pooledBetaSe: pooled.se,
+  };
+}
+
+/** Simple OLS slope with SE; `center` subtracts means first; `dfUsed` = parameters estimated. */
+function olsSlope(xs: number[], ys: number[], center: boolean, dfUsed: number) {
   const n = xs.length;
-  const mx = xs.reduce((a, b) => a + b, 0) / n;
-  const my = ys.reduce((a, b) => a + b, 0) / n;
+  if (n - dfUsed < 1) return { beta: null, se: null, r2: null };
+  const mx = center ? xs.reduce((a, b) => a + b, 0) / n : 0;
+  const my = center ? ys.reduce((a, b) => a + b, 0) / n : 0;
   let sxx = 0;
   let sxy = 0;
   let syy = 0;
@@ -129,11 +173,10 @@ export function linearityDiagnostics(samples: CalibrationSample[], minMonthlyCel
     sxy += (xs[i] - mx) * (ys[i] - my);
     syy += (ys[i] - my) ** 2;
   }
+  if (sxx === 0) return { beta: null, se: null, r2: null };
   const beta = sxy / sxx;
-  const intercept = my - beta * mx;
-  const sse = syy - beta * sxy;
-  const betaSe = n > 2 ? Math.sqrt(sse / (n - 2) / sxx) : null;
-  return { n, beta, betaSe, intercept, r2: syy > 0 ? 1 - sse / syy : null };
+  const sse = Math.max(0, syy - beta * sxy);
+  return { beta, se: Math.sqrt(sse / (n - dfUsed) / sxx), r2: syy > 0 ? 1 - sse / syy : null };
 }
 
 export interface ValidationReport {
@@ -183,6 +226,139 @@ export function validateCalibration(
       loyoMdapeWithin15pct: ta.loyo.mdape === null ? null : ta.loyo.mdape <= 0.15,
       noStepAtTransition: ta.continuity.medianStepPct === null ? null : Math.abs(ta.continuity.medianStepPct) <= 0.05,
       proportional: lin.beta === null || lin.betaSe === null ? null : Math.abs(lin.beta - 1) <= Math.max(0.1, 2 * lin.betaSe),
+    },
+  };
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Validation of the activity-dependent model (model.ts), with the constant-ratio model alongside.
+// ---------------------------------------------------------------------------------------------
+
+export interface ModelScore {
+  nMonthsScored: number;
+  mdape: number | null; // median |pred − obs| / obs over months with obs ≥ minMonthlyCells
+  p90ape: number | null;
+  totalBias: number | null; // Σpred/Σobs − 1
+  topDecileBias: number | null; // the busiest 10 % of months
+  bottomQuartileBias: number | null; // the quietest 25 % of months
+  residualBeta: number | null; // within-month slope of log obs on log pred (1 = unbiased across activity)
+  residualBetaSe: number | null;
+}
+
+interface PredRow { year: number; month: number; obs: number; pred: number }
+
+function predict(mc: AlphaModelConfig, p: MonthPair): number {
+  return p.m > 0 ? alphaAt(mc, p.month, p.m / p.n) * p.m : 0;
+}
+
+function scoreRows(rows: PredRow[], minCells: number): ModelScore {
+  const sc = rows.filter((r) => r.obs >= minCells);
+  const apes = sc.map((r) => Math.abs(r.pred - r.obs) / r.obs).sort((a, b) => a - b);
+  const bias = (s: PredRow[]) => {
+    const o = s.reduce((x, r) => x + r.obs, 0);
+    return o > 0 ? s.reduce((x, r) => x + r.pred, 0) / o - 1 : null;
+  };
+  const byObs = [...sc].sort((a, b) => b.obs - a.obs);
+  const top = byObs.slice(0, Math.max(1, Math.round(sc.length / 10)));
+  const bottom = byObs.slice(-Math.max(1, Math.round(sc.length / 4)));
+  const groups = new Map<number, PredRow[]>();
+  for (const r of sc.filter((r) => r.pred > 0)) (groups.get(r.month) ?? groups.set(r.month, []).get(r.month)!).push(r);
+  const dx: number[] = [];
+  const dy: number[] = [];
+  let used = 0;
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    used++;
+    const mx = g.reduce((s, r) => s + Math.log(r.pred), 0) / g.length;
+    const my = g.reduce((s, r) => s + Math.log(r.obs), 0) / g.length;
+    for (const r of g) { dx.push(Math.log(r.pred) - mx); dy.push(Math.log(r.obs) - my); }
+  }
+  let sxx = 0, sxy = 0, syy = 0;
+  for (let i = 0; i < dx.length; i++) { sxx += dx[i] ** 2; sxy += dx[i] * dy[i]; syy += dy[i] ** 2; }
+  const rb = sxx > 0 ? sxy / sxx : null;
+  const df = dx.length - used - 1;
+  const se = rb !== null && df > 0 ? Math.sqrt(Math.max(0, syy - rb * sxy) / df / sxx) : null;
+  return {
+    nMonthsScored: sc.length,
+    mdape: apes.length ? quantileSorted(apes, 0.5) : null,
+    p90ape: apes.length ? quantileSorted(apes, 0.9) : null,
+    totalBias: bias(rows),
+    topDecileBias: sc.length ? bias(top) : null,
+    bottomQuartileBias: sc.length ? bias(bottom) : null,
+    residualBeta: rb,
+    residualBetaSe: se,
+  };
+}
+
+function loyoRows(pairs: MonthPair[], config: AlphaModelConfig['config'], o: AlphaModelOptions): PredRow[] {
+  const years = [...new Set(pairs.map((p) => p.year))].sort((a, b) => a - b);
+  const rows: PredRow[] = [];
+  for (const y of years) {
+    const train = pairs.filter((p) => p.year !== y);
+    if (!train.some((p) => p.m > 0)) continue;
+    const mc = fitModelConfig(train, config, { ...o, bootstrap: null });
+    for (const p of pairs.filter((q) => q.year === y)) rows.push({ year: y, month: p.month, obs: p.v, pred: predict(mc, p) });
+  }
+  return rows;
+}
+
+function continuity(rows: PredRow[]) {
+  const byYear = new Map<number, { pred: number; obs: number }>();
+  for (const r of rows) { const e = byYear.get(r.year) ?? { pred: 0, obs: 0 }; e.pred += r.pred; e.obs += r.obs; byYear.set(r.year, e); }
+  const yr = [...byYear.entries()].sort((a, b) => a[0] - b[0]).map(([year, e]) => ({ year, modisScaled: e.pred, viirs: e.obs, ratio: e.obs > 0 ? e.pred / e.obs : null }));
+  const logs = yr.filter((r) => r.ratio && r.ratio > 0).map((r) => Math.log(r.ratio!)).sort((a, b) => a - b);
+  return {
+    rows: yr,
+    medianStepPct: logs.length ? Math.exp(quantileSorted(logs, 0.5)) - 1 : null,
+    worstYearPct: logs.length ? Math.exp(Math.max(...logs.map(Math.abs))) - 1 : null,
+  };
+}
+
+export interface ModelValidationReport {
+  calibrationYears: [number, number];
+  configs: Record<string, {
+    nPairs: number;
+    model: { kind: string; beta: number; betaCi: [number, number] | null; test: AlphaModelConfig['test'] };
+    inSample: ModelScore;
+    loyo: ModelScore;
+    /** The constant-ratio (β = 1) model scored the same way, for comparison. */
+    loyoConstantRatio: ModelScore;
+    continuity: ReturnType<typeof continuity>;
+  }>;
+  acceptance: { loyoMdapeWithin15pct: boolean | null; noStepAtTransition: boolean | null; unbiasedAcrossActivity: boolean | null };
+}
+
+export function validateModel(
+  daily: DailyCounts[],
+  av: SourceAvailability,
+  model: AlphaModel,
+  opts: AlphaModelOptions & { minMonthlyCells?: number },
+): ModelValidationReport {
+  const minCells = opts.minMonthlyCells ?? 20;
+  const configs: ModelValidationReport['configs'] = {};
+  for (const config of MODIS_CONFIGS) {
+    const pairs = modelMonthPairs(calibrationSamples(daily, av, { years: opts.years, config }));
+    const mc = model[config];
+    const inRows = pairs.map((p) => ({ year: p.year, month: p.month, obs: p.v, pred: predict(mc, p) }));
+    configs[config] = {
+      nPairs: pairs.length,
+      model: { kind: mc.kind, beta: mc.beta, betaCi: mc.betaCi, test: mc.test },
+      inSample: scoreRows(inRows, minCells),
+      loyo: scoreRows(loyoRows(pairs, config, opts), minCells),
+      loyoConstantRatio: scoreRows(loyoRows(pairs, config, { ...opts, forceRatio: true }), minCells),
+      continuity: continuity(inRows),
+    };
+  }
+  const ta = configs.TA;
+  const rb = ta.loyo.residualBeta;
+  return {
+    calibrationYears: opts.years,
+    configs,
+    acceptance: {
+      loyoMdapeWithin15pct: ta.loyo.mdape === null ? null : ta.loyo.mdape <= 0.15,
+      noStepAtTransition: ta.continuity.medianStepPct === null ? null : Math.abs(ta.continuity.medianStepPct) <= 0.05,
+      unbiasedAcrossActivity: rb === null ? null : Math.abs(rb - 1) <= Math.max(0.1, 2 * (ta.loyo.residualBetaSe ?? 0)),
     },
   };
 }

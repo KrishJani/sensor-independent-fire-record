@@ -45,6 +45,11 @@ describe('backfill e2e (sample_api)', () => {
     assert.deepEqual(r.detected.map((d) => `${d.satellite}:${d.acqDate}`), ['AQUA:2020-08-16', 'AQUA:2020-08-18']);
     const [cal] = r.calendar;
     assert.equal(cal.harmonizedCellDays, 31 + 56 + 79 + 120 + 289);
+    // All 5 days are VIIRS days, so the raw count is every kept S-NPP detection.
+    const snppDets = readFileSync(join(work, 'a', 'cell_days/2020.csv'), 'utf8')
+      .split('\n').slice(1).filter((l) => l.includes(',SNPP,')).reduce((a, l) => a + +l.split(',')[7], 0);
+    assert.equal(cal.rawDetections, snppDets);
+    assert.equal(cal.unscaledCellDays, cal.harmonizedCellDays); // VIIRS days: no α applied
     assert.equal(cal.complete, false); // 5 of 31 days
     assert.equal(verifyOutputs(join(work, 'a')).ok, true);
   });

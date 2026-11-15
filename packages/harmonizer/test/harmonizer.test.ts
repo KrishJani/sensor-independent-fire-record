@@ -152,7 +152,9 @@ describe('cell-days', () => {
 // ---------- synthetic helpers for calibration / harmonization ----------
 function counts(acqDate: string, c: Partial<Record<H.Satellite, number>>, union?: number): H.DailyCounts {
   const cells = { TERRA: 0, AQUA: 0, SNPP: 0, NOAA20: 0, NOAA21: 0, ...c };
-  return { acqDate, cells, modisUnion: union ?? Math.max(cells.TERRA, cells.AQUA), peakFrpMw: { TERRA: 0, AQUA: 0, SNPP: 0, NOAA20: 0, NOAA21: 0 } };
+  // Synthetic raw detections: 3 dots per VIIRS cell, 1.5 per MODIS cell (only used by raw-calendar tests).
+  const detections = { TERRA: cells.TERRA * 1.5, AQUA: cells.AQUA * 1.5, SNPP: cells.SNPP * 3, NOAA20: cells.NOAA20 * 3, NOAA21: cells.NOAA21 * 3 };
+  return { acqDate, cells, modisUnion: union ?? Math.max(cells.TERRA, cells.AQUA), peakFrpMw: { TERRA: 0, AQUA: 0, SNPP: 0, NOAA20: 0, NOAA21: 0 }, detections };
 }
 function avail(spec: Partial<Record<H.Satellite, [string, string]>>): Map<H.Satellite, Set<string>> {
   const m = new Map<H.Satellite, Set<string>>();
@@ -217,6 +219,9 @@ describe('harmonization (OR-based availability)', () => {
     assert.equal(h[19].harmonizedCellDays, 25);
     const [cal] = H.buildCalendar(h);
     assert.equal(cal.harmonizedCellDays, 19 * 24 + 12 * 25); // never both sensors on one day
+    // Before harmonization: raw dots (Terra+Aqua summed, then VIIRS) and unscaled cell-days.
+    assert.equal(cal.rawDetections, 19 * (15 + 15) + 12 * 75);
+    assert.equal(cal.unscaledCellDays, 19 * 12 + 12 * 25);
     assert.equal(cal.complete, true);
     assert.ok(Math.abs(cal.sourceMix - 12 / 31) < 1e-12);
   });
@@ -288,22 +293,37 @@ describe('validation', () => {
     assert.equal(r.acceptance.noStepAtTransition, true);
   });
 
-  it('flags a non-proportional (saturating) relation via the log-log slope', () => {
+  it('flags a non-proportional (saturating) relation via the within-month log-log slope', () => {
     const s: H.CalibrationSample[] = [];
     for (let y = 2013; y <= 2021; y++)
       for (let m = 1; m <= 12; m++) {
-        const M = 20 * (m + y - 2012);
-        s.push({ acqDate: `${y}-${String(m).padStart(2, '0')}-01`, year: y, month: m, m: M, v: Math.round(10 * Math.sqrt(M) * 3) });
+        const M = 20 * (m + 3 * (y - 2012));
+        s.push({ acqDate: `${y}-${String(m).padStart(2, '0')}-01`, year: y, month: m, m: M, v: 30 * Math.sqrt(M) });
       }
     const lin = H.linearityDiagnostics(s);
-    assert.ok(Math.abs(lin.beta! - 0.5) < 0.02);
+    assert.ok(Math.abs(lin.beta! - 0.5) < 1e-9, `beta ${lin.beta}`);
+    assert.equal(lin.monthsUsed, 12);
+  });
+
+  it('seasonal α alone does not fail proportionality (pooled β < 1, within-month β = 1)', () => {
+    // Quiet months: small M, high α. Busy months: large M, low α. Each month exactly proportional.
+    const s: H.CalibrationSample[] = [];
+    for (let y = 2013; y <= 2021; y++)
+      for (let m = 1; m <= 12; m++) {
+        const busy = m >= 6 && m <= 10;
+        const M = (busy ? 2000 : 100) * (1 + ((y * 7 + m) % 5) / 4);
+        s.push({ acqDate: `${y}-${String(m).padStart(2, '0')}-01`, year: y, month: m, m: M, v: (busy ? 1.4 : 2.5) * M });
+      }
+    const lin = H.linearityDiagnostics(s);
+    assert.ok(Math.abs(lin.beta! - 1) < 1e-9, `within beta ${lin.beta}`);
+    assert.ok(lin.pooledBeta! < 0.95, `pooled beta ${lin.pooledBeta}`);
   });
 });
 
 describe('anomalies', () => {
   const cal = (vals: [number, number][]): H.CalendarCell[] =>
     vals.map(([year, v]) => ({
-      year, month: 8, harmonizedCellDays: v, modisCellDays: 0, viirsCellDays: 0, sourceMix: 1, nDays: 31,
+      year, month: 8, harmonizedCellDays: v, rawDetections: 0, unscaledCellDays: 0, modisScaledCellDays: 0, nModisDays: 0, modisCellDays: 0, viirsCellDays: 0, sourceMix: 1, nDays: 31,
       nViirsDays: 31, nModisScaledDays: 0, nNoneDays: 0, peakFrpMw: null, peakFrpSensor: null, complete: true,
     }));
   it('median, robust z and class against a known baseline (target year excluded)', () => {
@@ -395,5 +415,89 @@ describe('grid-size sensitivity', () => {
     assert.equal(r025.coincidence, 1); // one VIIRS point always sits on the MODIS point
     // Both are perfectly proportional (LOYO 0) → tie → stay on the production grid.
     assert.equal(rep.recommended, 0.05);
+  });
+});
+
+describe('activity-dependent α (Poisson GLM)', () => {
+  // Synthetic month pairs: V = n · e^{a_m} · (M/n)^β exactly (no noise), 9 years × 12 months.
+  const synth = (beta: number, aOf: (m: number) => number) => {
+    const pairs: H.MonthPair[] = [];
+    for (let y = 2013; y <= 2021; y++)
+      for (let m = 1; m <= 12; m++) {
+        const n = 28 + (m % 3);
+        const rate = 2 + ((y * 7 + m * 3) % 40); // MODIS cells/day, varies by year
+        pairs.push({ year: y, month: m, n, m: rate * n, v: n * Math.exp(aOf(m)) * rate ** beta });
+      }
+    return pairs;
+  };
+
+  it('recovers β and the month intercepts exactly on noise-free data', () => {
+    const f = H.fitAlphaGLM(synth(0.8, (m) => 0.3 + m / 20));
+    assert.ok(Math.abs(f.beta - 0.8) < 1e-6, `beta ${f.beta}`);
+    for (let m = 1; m <= 12; m++) assert.ok(Math.abs(f.a[m - 1] - (0.3 + m / 20)) < 1e-6);
+  });
+
+  it('β = 1 nests the constant ratio: a_m = log(ΣV/ΣM)', () => {
+    const pairs = synth(0.8, () => 0.5);
+    const f = H.fitAlphaGLM(pairs, { fixBeta: 1 });
+    for (let m = 1; m <= 12; m++) {
+      const s = pairs.filter((p) => p.month === m);
+      assert.ok(Math.abs(Math.exp(f.a[m - 1]) - s.reduce((x, p) => x + p.v, 0) / s.reduce((x, p) => x + p.m, 0)) < 1e-9);
+    }
+  });
+
+  it('proportional data → β ≈ 1 and the test does not reject β = 1; saturating data → rejects', () => {
+    const prop = H.fitModelConfig(synth(1, () => 0.6), 'TA', { years: [2013, 2021] });
+    assert.ok(Math.abs(prop.beta - 1) < 1e-6);
+    assert.ok(prop.test!.p > 0.5);
+    const sat = H.fitModelConfig(synth(0.8, () => 0.6), 'TA', { years: [2013, 2021] });
+    assert.ok(sat.test!.p < 1e-6);
+    assert.equal(sat.kind, 'glm');
+  });
+
+  it('α_eff falls with activity and never extrapolates beyond the calibration range', () => {
+    const mc = H.fitModelConfig(synth(0.8, () => 0.6), 'TA', { years: [2013, 2021] });
+    const lo = H.alphaAt(mc, 8, mc.rateMin[7]);
+    const hi = H.alphaAt(mc, 8, mc.rateMax[7]);
+    assert.ok(lo > hi, 'busier months get a smaller α');
+    assert.equal(H.alphaAt(mc, 8, mc.rateMax[7] * 100), hi); // clamped at the top
+    assert.equal(H.alphaAt(mc, 8, mc.rateMin[7] / 100), lo); // and at the bottom
+  });
+
+  it('falls back to the constant ratio with fewer than 3 calibration years', () => {
+    const mc = H.fitModelConfig(synth(0.8, () => 0.6).filter((p) => p.year <= 2014), 'TA', { years: [2013, 2014] });
+    assert.equal(mc.kind, 'ratio');
+    assert.equal(mc.beta, 1);
+    assert.match(mc.reason!, /β fixed at 1/);
+  });
+
+  it('end to end: MODIS is scaled on every day it flew; the calendar uses VIIRS when present', () => {
+    const daily: H.DailyCounts[] = [];
+    for (const d of H.dateRange('2013-01-01', '2016-12-31')) {
+      // Activity varies between months and years (not within a month), so the monthly rate identifies β.
+      const m = 2 + ((+d.slice(0, 4) * 7 + +d.slice(5, 7) * 5) % 30);
+      daily.push(counts(d, { TERRA: m, AQUA: m, SNPP: 3 * m ** 0.85 }, m));
+    }
+    const av = avail({ TERRA: ['2010-01-01', '2016-12-31'], AQUA: ['2010-01-01', '2016-12-31'], SNPP: ['2013-01-01', '2016-12-31'] });
+    for (const d of H.dateRange('2010-01-01', '2012-12-31')) daily.push(counts(d, { TERRA: 10, AQUA: 10 }, 10));
+    daily.sort((a, b) => (a.acqDate < b.acqDate ? -1 : 1));
+    const model = H.fitAlphaModel(daily, av, { years: [2013, 2016] });
+    assert.ok(Math.abs(model.TA.beta - 0.85) < 1e-6, `beta ${model.TA.beta}`);
+    const eff = H.effectiveAlphas(model, daily, av, { from: '2010-01-01', to: '2016-12-31' });
+    const h = H.harmonizeDaily(daily, av, H.resolverFromEffective(eff, model), { from: '2010-01-01', to: '2016-12-31' });
+    const pre = h.find((x) => x.acqDate === '2011-06-15')!;
+    const post = h.find((x) => x.acqDate === '2015-06-15')!;
+    assert.equal(pre.basis, 'MODIS_SCALED');
+    assert.equal(pre.harmonizedCellDays, pre.modisScaledCellDays);
+    assert.equal(post.basis, 'VIIRS');
+    assert.equal(post.harmonizedCellDays, post.viirsCellDays); // VIIRS used as observed
+    assert.ok(post.modisScaledCellDays! > 0); // …and MODIS still harmonized alongside
+    // Additivity: the same α_eff applies to every day of a month, so day sums equal the month.
+    const cal = H.buildCalendar(h).find((c) => c.year === 2011 && c.month === 6)!;
+    const a = eff.find((e) => e.year === 2011 && e.month === 6 && e.config === 'TA')!.alpha;
+    assert.ok(Math.abs(cal.harmonizedCellDays - a * cal.modisCellDays) < 1e-9);
+    // Out-of-sample validation runs and the model beats the constant ratio on this data.
+    const v = H.validateModel(daily, av, model, { years: [2013, 2016] });
+    assert.ok(v.configs.TA.loyo.mdape! <= v.configs.TA.loyoConstantRatio.mdape!);
   });
 });

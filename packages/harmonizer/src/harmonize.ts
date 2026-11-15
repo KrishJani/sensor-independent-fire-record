@@ -29,12 +29,12 @@ export function dailySensorCounts(
   cellDays: Iterable<CellDay>,
   opts: { cellFilter?: (cellId: number, gridLat: number, gridLon: number) => boolean } = {},
 ): DailyCounts[] {
-  const byDate = new Map<string, { sets: Map<Satellite, Set<number>>; modis: Set<number>; peak: Record<Satellite, number> }>();
+  const byDate = new Map<string, { sets: Map<Satellite, Set<number>>; modis: Set<number>; peak: Record<Satellite, number>; dets: Record<Satellite, number> }>();
   for (const cd of cellDays) {
     if (opts.cellFilter && !opts.cellFilter(cd.cellId, cd.gridLat, cd.gridLon)) continue;
     let e = byDate.get(cd.acqDate);
     if (!e) {
-      e = { sets: new Map(), modis: new Set(), peak: emptySatRecord() };
+      e = { sets: new Map(), modis: new Set(), peak: emptySatRecord(), dets: emptySatRecord() };
       byDate.set(cd.acqDate, e);
     }
     let s = e.sets.get(cd.satellite);
@@ -42,12 +42,13 @@ export function dailySensorCounts(
     s.add(cd.cellId);
     if (cd.sensor === 'MODIS') e.modis.add(cd.cellId);
     if (cd.peakFrpMw > e.peak[cd.satellite]) e.peak[cd.satellite] = cd.peakFrpMw;
+    e.dets[cd.satellite] += cd.nDetections;
   }
   const out: DailyCounts[] = [];
   for (const [acqDate, e] of byDate) {
     const cells = emptySatRecord();
     for (const sat of ALL_SATELLITES) cells[sat] = e.sets.get(sat)?.size ?? 0;
-    out.push({ acqDate, cells, modisUnion: e.modis.size, peakFrpMw: e.peak });
+    out.push({ acqDate, cells, modisUnion: e.modis.size, peakFrpMw: e.peak, detections: e.dets });
   }
   return out.sort((a, b) => (a.acqDate < b.acqDate ? -1 : a.acqDate > b.acqDate ? 1 : 0));
 }
@@ -73,6 +74,12 @@ export function modisCount(dc: DailyCounts | undefined, config: ModisConfig): nu
   return config === 'TA' ? dc.modisUnion : config === 'T' ? dc.cells.TERRA : dc.cells.AQUA;
 }
 
+/** Naive raw count for a MODIS configuration: Terra + Aqua dots summed (what a map would show). */
+function modisDetections(dc: DailyCounts | undefined, config: ModisConfig): number {
+  if (!dc) return 0;
+  return config === 'TA' ? dc.detections.TERRA + dc.detections.AQUA : config === 'T' ? dc.detections.TERRA : dc.detections.AQUA;
+}
+
 function modisPeak(dc: DailyCounts | undefined, config: ModisConfig): number {
   if (!dc) return 0;
   const t = dc.peakFrpMw.TERRA;
@@ -87,9 +94,11 @@ function modisPeak(dc: DailyCounts | undefined, config: ModisConfig): number {
 export function harmonizeDaily(
   daily: Iterable<DailyCounts>,
   availability: SourceAvailability,
-  alpha: AlphaTable,
+  /** A fixed per-month table (constant ratio) or a resolver (activity-dependent α_eff, model.ts). */
+  alpha: AlphaTable | ((date: string, config: ModisConfig) => number),
   range: { from: string; to: string },
 ): HarmonizedDay[] {
+  const alphaFor = (d: string, c: ModisConfig) => (typeof alpha === 'function' ? alpha(d, c) : alpha[c][monthOf(d) - 1].alpha);
   const byDate = new Map<string, DailyCounts>();
   for (const dc of daily) byDate.set(dc.acqDate, dc);
   const out: HarmonizedDay[] = [];
@@ -98,27 +107,36 @@ export function harmonizeDaily(
     const ref = pickViirsReference(d, availability);
     const cfg = modisConfigFor(d, availability);
     const M = cfg ? modisCount(dc, cfg) : 0;
+    // MODIS harmonized to VIIRS units on EVERY day it exists (parallel series). The calendar itself
+    // uses it only when VIIRS is missing; on VIIRS days it is the cross-check against observed VIIRS.
+    const a = cfg ? alphaFor(d, cfg) : null;
+    const modisScaled = a === null ? null : a * M;
     if (ref) {
       const V = dc ? dc.cells[ref] : 0;
       const p = dc ? dc.peakFrpMw[ref] : 0;
       out.push({
         acqDate: d,
         harmonizedCellDays: V,
+        rawDetections: dc ? dc.detections[ref] : 0,
+        unscaledCellDays: V,
+        modisScaledCellDays: modisScaled,
         modisCellDays: M,
         viirsCellDays: V,
         basis: 'VIIRS',
-        alpha: null,
+        alpha: a,
         modisConfig: cfg,
         viirsReference: ref,
         peakFrpMw: p > 0 ? p : null,
         peakFrpSensor: p > 0 ? 'VIIRS' : null,
       });
     } else if (cfg) {
-      const a = alpha[cfg][monthOf(d) - 1].alpha;
       const p = modisPeak(dc, cfg);
       out.push({
         acqDate: d,
-        harmonizedCellDays: a * M,
+        harmonizedCellDays: modisScaled!,
+        rawDetections: modisDetections(dc, cfg),
+        unscaledCellDays: M,
+        modisScaledCellDays: modisScaled,
         modisCellDays: M,
         viirsCellDays: 0,
         basis: 'MODIS_SCALED',
@@ -132,6 +150,9 @@ export function harmonizeDaily(
       out.push({
         acqDate: d,
         harmonizedCellDays: 0,
+        rawDetections: 0,
+        unscaledCellDays: 0,
+        modisScaledCellDays: null,
         modisCellDays: 0,
         viirsCellDays: 0,
         basis: 'NONE',
