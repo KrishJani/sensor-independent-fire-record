@@ -126,7 +126,7 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region }: Pro
               </span>
             )}
             {data && scope !== 'drawn' && (
-              <a className="text-button" href={api.calendarCsvUrl(scope === 'us' ? { scope: 'us' } : { bbox: viewBox! })}>
+              <a className="text-button" href={api.calendarCsvUrl(scope === 'us' ? { scope: 'us' } : { bbox: scope === 'region' ? region!.bbox : viewBox! })}>
                 CSV
               </a>
             )}
