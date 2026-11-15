@@ -37,7 +37,9 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
         .join(", ")}`
     );
   }
+  let hasHistory = false;
   if (i.history.status === "ok" && "data" in i.history && i.history.data.dataSource === "live") {
+    hasHistory = true;
     facts.push(`Historical context (archival calendar, VIIRS-equivalent 0.05° cell-days): ${String(i.history.data.summary).slice(0, 300)}`);
   }
   return [
@@ -47,7 +49,10 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
         "You write short factual incident briefs for emergency managers. Write 2 or 3 plain sentences in English. " +
         "Use only the facts and numbers given; do not add causes, forecasts, names of fires, or any number not given. " +
         "Lead with the area with detections and its last-24-hour growth, then the weather, then the nearest populated place if one is given (say its type, e.g. the village of X). " +
-        "If historical context is given, write exactly 3 sentences: (1) area with detections and growth, (2) wind, humidity and the single nearest place in one sentence, (3) what the archive says is typical for this month here (the typical month value in active cell-days) and the fire season months. " +
+        // Only when history exists: mentioning it otherwise makes the model say "no historical context was provided".
+        (hasHistory
+          ? "Write exactly 3 sentences: (1) area with detections and growth, (2) wind, humidity and the single nearest place in one sentence, (3) what the archive says is typical for this month here (the typical month value in active cell-days) and the fire season months. "
+          : "") +
         'Always call the size "area with detections". Never call it burned area, never say the fire burned or covers that area. ' +
         "Do not give coordinates or list every number. If a fact (such as a town or the weather) is not given, leave it out without saying it is missing. " +
         "Never give evacuation or safety advice. Do not use dashes as punctuation. No headings, no lists, no preamble."
@@ -68,7 +73,12 @@ export function cleanBrief(raw: string): string {
   const sentences = t.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
   // A reply cut off by max_tokens ends mid-sentence: drop the fragment if a full sentence precedes it.
   if (sentences.length > 1 && !/[.!?]$/.test(sentences.at(-1)!)) sentences.pop();
-  const kept = sentences.filter((x) => !/evacuat|shelter in place|stay safe|leave the area|should (?:avoid|leave)/i.test(x));
+  const kept = sentences.filter(
+    (x) =>
+      !/evacuat|shelter in place|stay safe|leave the area|should (?:avoid|leave)/i.test(x) &&
+      // the model sometimes remarks on facts it was not given ("No historical context was provided ...")
+      !/\b(?:not|no|wasn't|were not|was not)\b[^.]*\b(?:provided|given|available)\b/i.test(x)
+  );
   return kept.slice(0, 3).join(" ").trim();
 }
 
@@ -77,7 +87,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v4"; // v4: archival history sentence (single-account deploy); v2: places within 75 km
+export const BRIEF_CACHE_VERSION = "v6"; // v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
 }

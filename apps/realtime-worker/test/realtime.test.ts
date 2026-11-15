@@ -290,7 +290,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v4/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v6/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
@@ -442,5 +442,13 @@ describe("historical context (api-worker /api/calendar)", () => {
   });
   it("pads a small bbox to at least 0.5 degrees a side", () => {
     expect(historyBbox([-122, 39, -121.9, 39.1])).toEqual([-122.2, 38.8, -121.7, 39.3]);
+  });
+});
+
+import { cleanBrief as clean } from "../src/enrich/brief";
+describe("cleanBrief: remarks about missing facts", () => {
+  it("drops 'No historical context was provided' and keeps the rest", () => {
+    expect(clean("The area with detections is 354.7 km2. Wind is 10.3 km/h from the north. No historical context was provided for typical June fire activity or fire season months."))
+      .toBe("The area with detections is 354.7 km2. Wind is 10.3 km/h from the north.");
   });
 });

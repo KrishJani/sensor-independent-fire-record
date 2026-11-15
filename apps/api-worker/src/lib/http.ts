@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { pointInPolygon, snapBboxOutward, type Bbox, type PolygonGeometry } from '@repo/harmonizer';
 
 export class ApiError extends Error {
-  constructor(public status: 400 | 404 | 413 | 422 | 500 | 503, public code: string, message: string) {
+  constructor(public status: 400 | 404 | 413 | 422 | 500 | 503, public code: string, message: string, public details?: Record<string, unknown>) {
     super(message);
   }
 }
@@ -45,8 +45,8 @@ export function polygonBbox(g: unknown): { geom: PolygonGeometry; bbox: Bbox } {
 }
 export { pointInPolygon };
 
-export function toHttp(err: unknown): { status: number; body: { error: { code: string; message: string } } } {
-  if (err instanceof ApiError) return { status: err.status, body: { error: { code: err.code, message: err.message } } };
+export function toHttp(err: unknown): { status: number; body: { error: { code: string; message: string } & Record<string, unknown> } } {
+  if (err instanceof ApiError) return { status: err.status, body: { error: { ...err.details, code: err.code, message: err.message } } };
   if (err instanceof HTTPException) return { status: err.status, body: { error: { code: 'http_error', message: err.message } } };
   console.log(JSON.stringify({ level: 'error', message: (err as Error)?.message, stack: (err as Error)?.stack?.split('\n').slice(0, 4) }));
   return { status: 500, body: { error: { code: 'internal', message: 'Internal error' } } };

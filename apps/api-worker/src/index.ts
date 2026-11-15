@@ -82,7 +82,7 @@ app.post("/api/calendar", async (c) => {
   let body: CalendarRequest & { mode?: string };
   try { body = await c.req.json(); } catch { throw new ApiError(400, "body_invalid", "body must be JSON"); }
   if (body.mode && body.mode !== "archival") throw new ApiError(400, "mode_unsupported", 'only mode "archival" is served here so far');
-  return cachedJson(c.executionCtx, `calendar|${JSON.stringify(body)}`, await dataVersion(c.env, "archival"), DAY, () => calendar(c.env, c.executionCtx, body));
+  return cachedJson(c.executionCtx, `calendar|v2|${JSON.stringify(body)}`, await dataVersion(c.env, "archival"), DAY, () => calendar(c.env, c.executionCtx, body));
 });
 
 app.get("/api/export/calendar.csv", async (c) => {
