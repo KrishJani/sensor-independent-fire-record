@@ -151,7 +151,7 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
     const brief = await safe<Brief>("brief", { retries: { limit: 1, delay: "5 seconds" }, timeout: "3 minutes" }, async () => {
       if (p.cachedBrief) {
         console.log(JSON.stringify({ msg: "brief_cache_hit", incident: p.incidentId }));
-        return { status: "ok", data: { ...p.cachedBrief, cached: true } };
+        return { status: "ok", data: { ...p.cachedBrief, text: cleanBrief(p.cachedBrief.text) || p.cachedBrief.text, cached: true } };
       }
       const prompt = buildBriefPrompt({ summary: p.summary, stream: p.stream, weather, places, history });
       const models = briefModels(this.env);
