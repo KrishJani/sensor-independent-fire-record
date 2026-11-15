@@ -22,8 +22,8 @@ export async function meta(env: Env, ctx: Ctx) {
     archiveBounds(env, ctx),
     dataVersion(env, 'archival'),
     dataVersion(env, 'realtime'),
-    env.INGEST_STATE.get('ingest:nrt:last_success_at'),
-    Promise.all(['TERRA', 'AQUA', 'SNPP', 'NOAA20', 'NOAA21'].map(async (s) => [s, await env.INGEST_STATE.get(`ingest:sp:latest_date:${s}`)] as const)),
+    env.INGEST_STATE!.get('ingest:nrt:last_success_at'),
+    Promise.all(['TERRA', 'AQUA', 'SNPP', 'NOAA20', 'NOAA21'].map(async (s) => [s, await env.INGEST_STATE!.get(`ingest:sp:latest_date:${s}`)] as const)),
   ]);
   const byId = new Map(bounds.map((b) => [b.region_id, b]));
   const groups = [...new Set(REGIONS.map((r) => r.group).filter(Boolean))] as string[];
@@ -49,8 +49,8 @@ export async function health(env: Env, ctx: Ctx) {
   const [postgres, d1, nrt, sp] = await Promise.all([
     time(() => sql`select 1`),
     time(() => env.NRT_DB.prepare('select 1').first()),
-    env.INGEST_STATE.get('ingest:nrt:last_success_at'),
-    env.INGEST_STATE.get('ingest:sp:last_success_at'),
+    env.INGEST_STATE!.get('ingest:nrt:last_success_at'),
+    env.INGEST_STATE!.get('ingest:sp:last_success_at'),
   ]);
   return { ok: typeof postgres === 'number' && typeof d1 === 'number', postgres, d1, kv: { nrtLastSuccess: nrt, spLastSuccess: sp } };
 }

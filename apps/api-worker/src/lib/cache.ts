@@ -6,7 +6,7 @@ export async function dataVersion(env: Env, tier: 'archival' | 'realtime'): Prom
   const k = `data:version:${tier}`;
   const m = memo.get(k);
   if (m && Date.now() - m.at < 60_000) return m.v;
-  const v = (await env.INGEST_STATE.get(k)) ?? '0';
+  const v = (await env.INGEST_STATE!.get(k)) ?? '0';
   memo.set(k, { v, at: Date.now() });
   return v;
 }

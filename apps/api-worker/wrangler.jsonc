@@ -1,8 +1,7 @@
 {
+  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
-  // Cloudflare account that owns the shared D1 / KV / Hyperdrive (avoids the multi-account prompt)
-  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -11,43 +10,58 @@
   },
   "vars": {
     "AI_GATEWAY_ID": "nasa-fire-copilot",
-    "CALIBRATION_START_YEAR": "2013",
-    "CALIBRATION_END_YEAR": "2021",
-    "BASELINE_START_YEAR": "2001",
-    "BASELINE_END_YEAR": "2025",
-    "D1_RETENTION_DAYS": "92",
-    // Comma-separated browser origins allowed by CORS: local dev + the Cloudflare Pages site
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev"
+    // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
+    // AI Gateway catalog id (<author>/<model>).
+    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    // Tried when CHAT_MODEL fails before producing output. "" disables it (demo setting: the glm
+    // fallback is the model that drifted into Chinese; see CHAT.md).
+    "CHAT_FALLBACK_MODEL": "",
+    // Chat reasoning: "none" = off (demo setting: ~11-15 s per turn instead of 45-140 s, see CHAT.md),
+    // "" = model default (kimi: high).
+    "CHAT_REASONING_EFFORT": "none",
+    // AI Gateway response cache TTL (s) for chat model calls. "0" = off (default).
+    "CHAT_CACHE_TTL": "0",
+    // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
+    "WEB_SEARCH_PROVIDER": "tavily",
+    // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.
+    "FIRE_DATA_SOURCE": "mock",
+    // CORS + agent WebSocket origins. Exact origins, plus "https://*.<suffix>" for exactly one
+    // subdomain label (Pages preview URLs). See src/origins.ts.
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev",
+    "CALIBRATION_START_YEAR": "2012",
+    "CALIBRATION_END_YEAR": "2025"
   },
   "d1_databases": [
     {
       "binding": "NRT_DB",
       "database_name": "firms-nrt-cells",
-      // Shared with ingest-worker (read-only here)
-      "database_id": "42f0df01-e8a9-408c-acdf-b7af2ee19a5b"
+      // Auto-created by the first deploy on account 6584e46c…. Copy this id to ingest-worker.
+      "database_id": "0dc2501f-bc5a-4a41-8a80-eabec4913cc1"
     }
   ],
-  "hyperdrive": [
-    {
-      // "firms-pg" → PlanetScale Postgres (archival tier); shared with ingest-worker
-      "binding": "HYPERDRIVE",
-      "id": "0ff8af0e49994b6b932f34caf78ece73"
-    }
-  ],
-  "kv_namespaces": [
-    {
-      // Namespace title "FIRMS_INGEST_STATE"; read-only here (data versions, SP high-water marks)
-      "binding": "INGEST_STATE",
-      "id": "fbd5a9bf8e124c81b0df1595b5a07566"
-    }
-  ],
+  // TODO(data team): restore once a Hyperdrive config exists and LiveFireData uses it
+  // (FIRE_DATA_SOURCE is "mock" for now; see src/data/fireData.ts).
+  // "hyperdrive": [
+  //   {
+  //     "binding": "HYPERDRIVE",
+  //     "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
+  //   }
+  // ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    // No local implementation: under `wrangler dev` this runs against the logged-in account.
+    "remote": true
   },
+  "services": [
+    // apps/realtime-worker: live/replay fire incidents for the get_live_incidents chat tool.
+    { "binding": "REALTIME", "service": "nasa-fire-realtime" }
+  ],
   "durable_objects": {
     "bindings": [
       {
-        "name": "FIRE_COPILOT",
+        // Binding name MUST equal the class name for routeAgentRequest()
+        // (/agents/fire-copilot-agent/<sessionId>).
+        "name": "FireCopilotAgent",
         "class_name": "FireCopilotAgent"
       }
     ]
@@ -58,4 +72,43 @@
       "new_sqlite_classes": ["FireCopilotAgent"]
     }
   ]
+  ,
+  // ── Archival deployment (account 7d56e968…): the same worker plus the archival endpoints, which need
+  //    PlanetScale (Hyperdrive) and the FIRMS_INGEST_STATE KV. Deploy with:  wrangler deploy -e archive
+  //    Serves https://skywalkers77-fire.pages.dev. Everything above is the default (copilot) deployment.
+  "env": {
+    "archive": {
+      "name": "nasa-fire-api",
+      "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
+      "vars": {
+        "AI_GATEWAY_ID": "nasa-fire-copilot",
+        "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+        "CHAT_FALLBACK_MODEL": "",
+        "CHAT_REASONING_EFFORT": "none",
+        "CHAT_CACHE_TTL": "0",
+        "WEB_SEARCH_PROVIDER": "tavily",
+        "FIRE_DATA_SOURCE": "mock",
+        "CALIBRATION_START_YEAR": "2013",
+        "CALIBRATION_END_YEAR": "2021",
+        "BASELINE_START_YEAR": "2001",
+        "BASELINE_END_YEAR": "2025",
+        "D1_RETENTION_DAYS": "92",
+        "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev"
+      },
+      "d1_databases": [
+        // Shared with ingest-worker (read-only here)
+        { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "42f0df01-e8a9-408c-acdf-b7af2ee19a5b" }
+      ],
+      "hyperdrive": [
+        // "firms-pg" → PlanetScale Postgres (archival tier); shared with ingest-worker. Origin limit 15 (packages/db/README.md)
+        { "binding": "HYPERDRIVE", "id": "0ff8af0e49994b6b932f34caf78ece73" }
+      ],
+      "kv_namespaces": [
+        // Namespace title "FIRMS_INGEST_STATE": data versions, ingest flags
+        { "binding": "INGEST_STATE", "id": "fbd5a9bf8e124c81b0df1595b5a07566" }
+      ],
+      "ai": { "binding": "AI", "remote": true },
+      "durable_objects": { "bindings": [{ "name": "FireCopilotAgent", "class_name": "FireCopilotAgent" }] }
+    }
+  }
 }

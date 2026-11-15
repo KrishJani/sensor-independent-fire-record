@@ -1,0 +1,103 @@
+{
+  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nasa-fire-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // CORS + WebSocket origins (same as api-worker). Exact origins, plus "https://*.<suffix>" for
+    // exactly one subdomain label (Pages preview URLs). See src/origins.ts.
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev",
+    // Default replay speed: stream seconds per real second (see REALTIME.md).
+    "REPLAY_DEFAULT_SPEED": "12000",
+    // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
+    "WATCH_BBOXES": "-170,15,-50,72",
+    // Enrichment briefs: same gateway and models as api-worker (see apps/api-worker/CHAT.md).
+    "AI_GATEWAY_ID": "nasa-fire-copilot",
+    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    "CHAT_FALLBACK_MODEL": "",
+    // "" disables the fallback (demo setting, see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
+    // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
+    "ENRICH_MAX_PER_STREAM": "30",
+    // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count; cached replay briefs don't).
+    "BRIEF_DAILY_MAX": "400",
+    // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).
+    "BRIEF_MIN_AREA_KM2": "200",
+    // kimi-k2.6 supports "high" | "none" ("low" is mapped to "high"). "none": ~2 s per brief instead of ~55 s.
+    "BRIEF_REASONING_EFFORT": "none",
+    "BRIEF_MAX_TOKENS": "120"
+  },
+  "ai": {
+    "binding": "AI",
+    // No local implementation: under `wrangler dev` this runs against the logged-in account.
+    "remote": true
+  },
+  "workflows": [
+    {
+      "name": "nasa-fire-incident-enrich",
+      "binding": "INCIDENT_ENRICH",
+      "class_name": "IncidentEnrichWorkflow"
+    }
+  ],
+  "services": [
+    // api-worker, for the historical calendar in enrichment. Optional: skipped when unavailable.
+    { "binding": "API", "service": "nasa-fire-api" }
+  ],
+  // Live polling: FIRMS NRT every 10 minutes.
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "kv_namespaces": [
+    {
+      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared INGEST_STATE namespace.
+      "binding": "INGEST_STATE",
+      "id": "20402ea73f6d4da0b3599c04df01c887"
+    },
+    {
+      // Replay scenarios when R2 is not bound (scenarios/<id>.json.gz, gzipped JSON; uploaded by
+      // `pnpm fetch-replay-fixture --store=kv`) and the replay brief cache (brief-cache/...).
+      "binding": "REPLAY_KV",
+      "id": "859bd85369ef4c1da04c734d8238671f"
+    }
+  ],
+  "queues": {
+    "producers": [{ "binding": "DETECTIONS_QUEUE", "queue": "nasa-fire-detections" }],
+    "consumers": [
+      {
+        "queue": "nasa-fire-detections",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3
+      }
+    ]
+  },
+  // REPLAY_DATA is optional: comment this out on an account without the bucket and scenarios load
+  // from REPLAY_KV, while the raw NRT CSV archive is skipped. When bound, R2 is read first.
+  "r2_buckets": [
+    {
+      // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
+      "binding": "REPLAY_DATA",
+      "bucket_name": "nasa-fire-realtime"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CLUSTERER", "class_name": "Clusterer" },
+      { "name": "INCIDENT", "class_name": "Incident" },
+      { "name": "LIVE_HUB", "class_name": "LiveHub" },
+      { "name": "REPLAY", "class_name": "Replay" },
+      // Global singleton: one-active-replay slot and the daily brief budget.
+      { "name": "CONTROL", "class_name": "Control" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Clusterer", "Incident", "LiveHub", "Replay"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Control"]
+    }
+  ],
+  "observability": { "enabled": true }
+}

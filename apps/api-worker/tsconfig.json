@@ -2,11 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": [
-      "./worker-configuration.d.ts"
-    ]
+      "./worker-configuration.d.ts",
+      "node"
+    ],
+    "resolveJsonModule": true
   },
   "include": [
     "src",
+    "test",
     "../../config/regions.json"
   ]
 }

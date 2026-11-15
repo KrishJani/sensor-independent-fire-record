@@ -3,17 +3,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "sh -c 'export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(grep ^DATABASE_URL= ../../.env | cut -d= -f2-)\"; wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state'",
+    "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
+    "dev:archive": "sh -c 'export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(grep ^DATABASE_URL= ../../.env | cut -d= -f2-)\"; wrangler dev -e archive --port 8787 --persist-to ../../.wrangler/shared-state'",
     "deploy": "wrangler deploy",
-    "typegen": "wrangler types",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typegen": "wrangler types --strict-vars=false",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "node scripts/build-fixtures.mjs",
+    "smoke": "node scripts/chat-smoke.mjs",
+    "test": "vitest run",
+    "compare-models": "node scripts/compare-models.mjs"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^4.0.38",
+    "@cloudflare/ai-chat": "^0.12.2",
     "@repo/harmonizer": "workspace:*",
-    "hono": "^4.7.0",
-    "postgres": "^3.4.5"
+    "agents": "^0.33.0",
+    "ai": "^7.0.173",
+    "hono": "^4.13.18",
+    "postgres": "^3.4.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260101.0"
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.162.0"
   }
 }

@@ -48,7 +48,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
                           ┌───────────────────────────────┐
   apps/web (Pages) ──────►│  apps/api-worker (Hono)        │──► Postgres via Hyperdrive (archival)
    Map / Calendar / Chat  │  /api/archival/* /api/realtime/*│──► D1 (realtime)
-                          │  /api/calendar /api/chat        │──► AI Gateway + FireCopilotAgent (DO memory)
+                          │  /api/calendar /agents/*        │──► AI Gateway + FireCopilotAgent (DO memory)
                           └───────────────────────────────┘
 ```
 
@@ -60,7 +60,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 | D1 `firms-nrt-cells` | `NRT_DB` | read/write | read-only |
 | KV `INGEST_STATE` | `INGEST_STATE` | read/write (flags, locks) | read-only (data version, SP boundary) |
 | Workers AI / AI Gateway | `AI` | — | yes |
-| Durable Object `FireCopilotAgent` | `FIRE_COPILOT` | — | yes |
+| Durable Object `FireCopilotAgent` | `FireCopilotAgent` (must equal the class name) | — | yes |
 | Secret `FIRMS_MAP_KEY` | secret | yes | — |
 
 Both workers reference the **same Hyperdrive config ID** and the **same D1 `database_id`** and **KV namespace ID**.
@@ -216,7 +216,7 @@ This is React + Vite + Mapbox GL JS (with Mapbox Draw), deployed on Cloudflare P
 - **Calendar box (top-right, on both tabs).** A compact date-range selector that drives every query.
   - *Archival:* year range (2000 → latest SP year) plus optional month filter (for example, "Aug only"), or an explicit from/to date. Bounds come from `GET /api/meta` (`archival.minDate`, `archival.maxDate`).
   - *Realtime:* presets `24h`, `48h`, `7d` (default), `30d`, and custom. Custom is bounded to the D1 window (`realtime.minDate` → now) from `/api/meta`.
-- **Chat (bottom-right).** A floating button that opens a side panel. It sits bottom-right so it never overlaps the calendar box. See the api-worker spec, §6.
+- **Chat (bottom-right).** A floating button that opens a side panel. It sits bottom-right so it never overlaps the calendar box. See the api-worker spec, §4, and `apps/api-worker/CHAT.md`.
 - **Calendar drawer (bottom).**
   - *Archival:* the Year × Month heatmap of harmonized cell-days for the AOI, with a toggle between counts and anomaly. Below it, a monthly climatology chart (median and P10–P90 band) and the annual totals.
   - **Before / after harmonization (§7.1):** a three-way toggle on the heatmap: **Raw detections** → **Gridded cell-days** → **Harmonized**.

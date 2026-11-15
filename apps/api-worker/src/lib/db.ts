@@ -8,7 +8,7 @@ export type Sql = ReturnType<typeof postgres>;
 export type Ctx = { waitUntil(promise: Promise<unknown>): void };
 
 export function db(env: Env, ctx: Ctx): Sql {
-  const u = new URL(env.HYPERDRIVE.connectionString);
+  const u = new URL(env.HYPERDRIVE!.connectionString);
   // Local dev passes the PlanetScale string straight through; postgres.js would forward sslrootcert.
   u.searchParams.delete('sslrootcert');
   const sql = postgres(u.toString(), { max: 5, fetch_types: false, prepare: true, onnotice: () => {} });

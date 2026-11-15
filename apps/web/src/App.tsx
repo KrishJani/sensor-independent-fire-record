@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type mapboxgl from 'mapbox-gl';
 import { api } from './lib/api';
 import { DatePicker } from './components/DatePicker';
 import { MapView } from './components/MapView';
@@ -46,6 +47,10 @@ function readHash() {
     mode: (['activity', 'hotspots', 'raw'] as const).find((p) => p === h.get('m')) ?? null,
   };
 }
+import { ChatDrawer } from './chat/ChatDrawer';
+import { buildContext } from './chat/context';
+import { suggestionsFor } from './chat/suggestions';
+import { RealtimeView, type RealtimeContext } from './realtime/RealtimeView';
 
 export function App() {
   const initial = useMemo(readHash, []);
@@ -58,13 +63,9 @@ export function App() {
   }, [initial, update]);
 
   const [archivalMax, setArchivalMax] = useState<ISODate | null>(null);
-  const [realtime, setRealtime] = useState<{ updatedAt: string | null; version: number } | null>(null);
   // Archival bounds come from the API (what is actually loaded), not from a hardcoded window.
   useEffect(() => {
-    api.meta().then((m) => {
-      if (m.archival.maxDate) setArchivalMax(m.archival.maxDate as ISODate);
-      setRealtime({ updatedAt: m.realtime.updatedAt, version: m.realtime.dataVersion });
-    }).catch(() => {});
+    api.meta().then((m) => m.archival.maxDate && setArchivalMax(m.archival.maxDate as ISODate)).catch(() => {});
   }, []);
   const windows = useMemo(() => {
     const archival = dateWindow('archival');
@@ -77,22 +78,13 @@ export function App() {
     realtime: windows.realtime.max,
   }));
 
-  // Realtime: poll /api/meta every 5 min; a new ingest bumps dataVersion and the map refetches.
-  useEffect(() => {
-    if (tab !== 'realtime') return;
-    const id = setInterval(() => {
-      api.meta().then((m) => setRealtime((p) => (p && p.version === m.realtime.dataVersion && p.updatedAt === m.realtime.updatedAt ? p : { updatedAt: m.realtime.updatedAt, version: m.realtime.dataVersion }))).catch(() => {});
-    }, 5 * 60_000);
-    return () => clearInterval(id);
-  }, [tab]);
-
   const range = windows[tab];
   const selected = dates[tab] > range.max ? range.max : dates[tab] < range.min ? range.min : dates[tab];
-  // The realtime window is 92 days: Season and Year fall back to Month there.
-  const preset = tab === 'realtime' && (settings.rangePreset === 'season' || settings.rangePreset === 'year') ? 'month' : settings.rangePreset;
-  const r = presetRange(selected, preset);
+  const r = presetRange(selected, settings.rangePreset);
   const from = r.from < range.min ? range.min : r.from;
   const to = r.to > range.max ? range.max : r.to;
+  const [map, setMap] = useState<mapboxgl.Map | null>(null);
+  const [realtimeCtx, setRealtimeCtx] = useState<RealtimeContext | null>(null);
 
   return (
     <div className="app">
@@ -106,8 +98,13 @@ export function App() {
         update={update}
         reset={reset}
         initialView={initial.view}
-        realtime={realtime}
+        onMapReady={setMap}
         shareUrl={(v) => `${location.origin}${location.pathname}#c=${v.center[0].toFixed(3)},${v.center[1].toFixed(3)},${v.zoom.toFixed(2)}&d=${selected}&p=${settings.rangePreset}&m=${settings.fireMode}`}
+      />
+      {tab === 'realtime' && map && <RealtimeView map={map} onContextChange={setRealtimeCtx} />}
+      <ChatDrawer
+        getContext={() => buildContext({ map, tab, date: dates[tab], realtime: realtimeCtx })}
+        suggestions={suggestionsFor(tab, realtimeCtx)}
       />
 
       <div className="overlay-top">

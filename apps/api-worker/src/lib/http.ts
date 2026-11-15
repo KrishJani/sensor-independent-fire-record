@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { pointInPolygon, snapBboxOutward, type Bbox, type PolygonGeometry } from '@repo/harmonizer';
 
 export class ApiError extends Error {
-  constructor(public status: 400 | 404 | 413 | 422 | 500, public code: string, message: string) {
+  constructor(public status: 400 | 404 | 413 | 422 | 500 | 503, public code: string, message: string) {
     super(message);
   }
 }

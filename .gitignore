@@ -14,8 +14,11 @@ wrangler.toml.bak
 .env
 .env.*
 !.env.example
+# Public production URLs for the web build (no secrets: VITE_ vars ship in the bundle)
+!apps/web/.env.production
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 
 # Bulk historical downloads (keep sample_api/ and data/harmonized/ tracked)
 data/*
@@ -26,6 +29,9 @@ data/*
 data/harmonized/*/detections/
 data/harmonized/*/cell_days/
 data/harmonized/*.log
+# Nested data/ folders anywhere else stay ignored (main's rule); app fixtures in apps/*/src/data are kept.
+*/**/data/
+!apps/*/src/data/
 *.zip
 *.tar.gz
 
@@ -34,6 +40,9 @@ data/harmonized/*.log
 .DS_Store
 .vscode/
 .idea/
+
+# Model comparison output (apps/api-worker/scripts/compare-models.mjs)
+compare-models.json
 *.tsbuildinfo
 
 # Non-fire layer: derived, regenerable with `backfill industrial-heat` (loaded into Postgres)

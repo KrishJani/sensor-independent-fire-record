@@ -1,7 +1,7 @@
 // Typed client for apps/api-worker. Base URL from VITE_API_BASE (e.g. http://localhost:8787 in dev).
 import type { FeatureCollection } from 'geojson';
 
-const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+const BASE = (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? '').replace(/\/$/, ''); // archive API; falls back to the copilot API URL
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
