@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8789 --persist-to ../../.wrangler/shared-state",
+    "dev": "wrangler dev --port 8789 --test-scheduled --persist-to ../../.wrangler/shared-state",
     "deploy": "wrangler deploy",
     "typegen": "wrangler types --strict-vars=false",
     "typecheck": "tsc --noEmit",

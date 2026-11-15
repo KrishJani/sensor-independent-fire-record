@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseBbox } from "./grid";
+import { consumeDetections, NRT_SOURCES, pollOnce, watchBboxes, type DetectionsMessage, type PollState } from "./live/poll";
 import type { IncidentDetail } from "./do/incident";
 import type { IncidentStatus } from "./incidentModel";
 import { KNOWN_SCENARIOS } from "./replay/scenarios";
@@ -36,7 +37,11 @@ const replay = (env: Env, id: string) => env.REPLAY.get(env.REPLAY.idFromName(id
 
 app.get("/realtime/health", async (c) => {
   const live = await clusterer(c.env, "live").stats();
-  return c.json({ ok: true, live, scenarios: KNOWN_SCENARIOS });
+  const poll: Record<string, PollState | null> = {};
+  for (const bbox of watchBboxes(c.env))
+    for (const source of NRT_SOURCES)
+      poll[`${source}:${bbox.join(",")}`] = await c.env.INGEST_STATE.get<PollState>(`realtime:poll:${source}:${bbox.join(",")}`, "json");
+  return c.json({ ok: true, live, poll, scenarios: KNOWN_SCENARIOS });
 });
 
 app.get("/realtime/incidents", async (c) => {
@@ -112,6 +117,17 @@ app.get("/realtime/ws", async (c) => {
 app.notFound((c) => c.json(err("not_found", "Not found"), 404));
 
 export default {
-  fetch: app.fetch
-} satisfies ExportedHandler<Env>;
+  fetch: app.fetch,
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      pollOnce(env).then(
+        (r) => console.log(JSON.stringify({ job: "realtime_poll_done", sources: r.length, queued: r.reduce((a, x) => a + x.queued, 0) })),
+        (e) => console.error(JSON.stringify({ job: "realtime_poll_failed", error: String(e) }))
+      )
+    );
+  },
+  async queue(batch, env) {
+    await consumeDetections(batch as MessageBatch<DetectionsMessage>, env);
+  }
+} satisfies ExportedHandler<Env, DetectionsMessage>;
 

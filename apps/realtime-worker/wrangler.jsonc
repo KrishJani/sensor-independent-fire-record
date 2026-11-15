@@ -9,7 +9,29 @@
     // Comma-separated list of origins allowed by CORS (same approach as api-worker).
     "ALLOWED_ORIGINS": "http://localhost:5173",
     // Default replay speed: stream seconds per real second (see REALTIME.md).
-    "REPLAY_DEFAULT_SPEED": "12000"
+    "REPLAY_DEFAULT_SPEED": "12000",
+    // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
+    "WATCH_BBOXES": "-170,15,-50,72"
+  },
+  // Live polling: FIRMS NRT every 10 minutes.
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "kv_namespaces": [
+    {
+      // Per-source poll state (keys realtime:poll:<source>:<bbox>). Omit id on first deploy to auto-provision,
+      // or paste the shared INGEST_STATE id from the ingest-worker once it has one.
+      "binding": "INGEST_STATE"
+    }
+  ],
+  "queues": {
+    "producers": [{ "binding": "DETECTIONS_QUEUE", "queue": "nasa-fire-detections" }],
+    "consumers": [
+      {
+        "queue": "nasa-fire-detections",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3
+      }
+    ]
   },
   "r2_buckets": [
     {
