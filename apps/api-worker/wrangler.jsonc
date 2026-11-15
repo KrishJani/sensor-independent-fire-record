@@ -1,6 +1,8 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
+  // Cloudflare account that owns the shared D1 / KV / Hyperdrive (avoids the multi-account prompt)
+  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,15 +17,23 @@
   "d1_databases": [
     {
       "binding": "NRT_DB",
-      "database_name": "firms-nrt-cells"
-      // Omit database_id on first deploy: `wrangler deploy` will auto-create D1
-      // and write the generated UUID here. Copy that UUID to ingest-worker afterward.
+      "database_name": "firms-nrt-cells",
+      // Shared with ingest-worker (read-only here)
+      "database_id": "42f0df01-e8a9-408c-acdf-b7af2ee19a5b"
     }
   ],
   "hyperdrive": [
     {
+      // "firms-pg" → PlanetScale Postgres (archival tier); shared with ingest-worker
       "binding": "HYPERDRIVE",
-      "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
+      "id": "0ff8af0e49994b6b932f34caf78ece73"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // Namespace title "FIRMS_INGEST_STATE"; read-only here (data versions, SP high-water marks)
+      "binding": "INGEST_STATE",
+      "id": "fbd5a9bf8e124c81b0df1595b5a07566"
     }
   ],
   "ai": {

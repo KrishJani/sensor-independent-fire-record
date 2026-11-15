@@ -27,6 +27,7 @@
     "minViirsDays": 30,
     "maxModisFraction": 0.1
   },
+  "flare_inventory": "EOG MYC25Q4 (doi:10.5281/zenodo.23091822)",
   "auto_outages": true,
   "grid_sensitivity": null,
   "inputs": {
@@ -392,6 +393,11 @@
     "cell_days": 2059,
     "static_mask_cells": 56,
     "flare_mask_cells": 0,
+    "inventory_flare_cells_hit": 0,
+    "inventory_flare_detections_removed": {
+      "MODIS": 0,
+      "VIIRS": 0
+    },
     "flare_detections_removed": 0,
     "outage_days_detected": 0
   },
@@ -421,7 +427,7 @@
   "acceptance": {
     "loyoMdapeWithin15pct": false,
     "noStepAtTransition": false,
-    "unbiasedAcrossActivity": false
+    "unbiasedAcrossActivity": true
   },
   "outputs": {
     "alpha_effective.csv": {
@@ -665,8 +671,8 @@
       "rows": 56
     },
     "validation.json": {
-      "sha256": "c0c98d43536a9a7de6a1fcca50db16dfafb56fdf6863c1df6c48b12a66cac28b",
-      "rows": 340
+      "sha256": "e0b3a5c48756bee4b388e76c7782449b84c513903ba47cd868f7af6de0110dd7",
+      "rows": 355
     }
   }
 }

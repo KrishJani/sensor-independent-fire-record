@@ -436,7 +436,8 @@ export function validateModel(
     const inRows = pairs.map((p) => ({ year: p.year, month: p.month, obs: p.v, pred: predict(mc, p) }));
     const lo = loyoRows(pairs, config, opts);
     const loyo = scoreRows(lo, minCells);
-    const sims = config === 'TA' && mc.kind === 'glm' ? opts.noiseSims ?? 0 : 0;
+    // Noise-aware check for whichever model was selected (fitted or constant ratio).
+    const sims = config === 'TA' ? opts.noiseSims ?? 0 : 0;
     configs[config] = {
       nPairs: pairs.length,
       model: { kind: mc.kind, beta: mc.beta, betaCi: mc.betaCi, test: mc.test },

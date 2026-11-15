@@ -282,7 +282,22 @@ gas-flaring volumes, 2012–2025* (MYC25Q4 v1.0), doi:10.5281/zenodo.23091822, C
 `backfill flare-cells` builds `config/flares/eog_myc25q4_cells.csv`: 26,818 active sites
 → 25,814 cells worldwide, 6,150 in the US. Disable with `--no-flare-inventory`.
 
-*Results: §4.4.1 (added after the evaluation run).*
+#### 4.4.1 Results (after the pre-registered run)
+
+- **Southwest:** error 13.2% → **8.9%**, year band ×0.84–1.12 → ×0.94–1.08.
+- **Interior West:** 11.6% → **11.0%** (band ×0.93–1.10).
+- **Great Plains:** 7.7% → 7.3%. **Midwest/NE:** 10.2% → 9.5%.
+- **Pacific NW:** unchanged. **California:** 8.1% → 8.4%. **Southeast:** 5.0% → 5.2%.
+  All still pass.
+- **Cost.** Across the US: 5,426 cells, with 529,705 VIIRS and 35,811 MODIS detections removed
+  (14.8 : 1).
+  - In the oil regions about 50 : 1, so these are flares, not fires.
+  - **Southeast 2.7 : 1 (8.2k MODIS)** and California 5 : 1. Some known-flare cells there also
+    contain real (likely prescribed) burning, which is removed with the flares. This is reported
+    as is, not tuned away.
+- **All 8 data-sufficient regions pass every check.** Hawaii (3 scorable months) is flagged
+  low data.
+- **US:** MODIS × α vs VIIRS within ±2.3% every year 2012–2021. The US year band is −6% / +7%.
 
 ## 5. Validation [`validateModel` → `validation.json`]
 

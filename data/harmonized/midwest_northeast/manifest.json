@@ -34,6 +34,7 @@
     "minViirsDays": 30,
     "maxModisFraction": 0.1
   },
+  "flare_inventory": "EOG MYC25Q4 (doi:10.5281/zenodo.23091822)",
   "auto_outages": true,
   "grid_sensitivity": null,
   "inputs": {
@@ -387,31 +388,36 @@
     "nrt_rows_skipped": 0,
     "rows_outside_region_or_range": 13082549,
     "filter": {
-      "seen": 1337942,
-      "kept": 498714,
+      "seen": 1332927,
+      "kept": 495002,
       "droppedType": 730358,
-      "droppedMask": 88050,
-      "droppedConfidence": 20820,
+      "droppedMask": 86809,
+      "droppedConfidence": 20758,
       "droppedFrpFloor": 0
     },
     "duplicates_removed": 0,
-    "detections": 496264,
-    "cell_days": 339338,
+    "detections": 493151,
+    "cell_days": 336912,
     "static_mask_cells": 779,
-    "flare_mask_cells": 20,
-    "flare_detections_removed": 2450,
-    "outage_days_detected": 615
+    "flare_mask_cells": 14,
+    "inventory_flare_cells_hit": 199,
+    "inventory_flare_detections_removed": {
+      "MODIS": 345,
+      "VIIRS": 4670
+    },
+    "flare_detections_removed": 1851,
+    "outage_days_detected": 595
   },
   "availability": {
     "TERRA": {
       "from": "2000-11-01",
       "to": "2025-12-31",
-      "days": 8894
+      "days": 8906
     },
     "AQUA": {
       "from": "2002-07-04",
       "to": "2025-12-31",
-      "days": 8301
+      "days": 8309
     },
     "SNPP": {
       "from": "2012-01-20",
@@ -432,19 +438,19 @@
   },
   "outputs": {
     "alpha_effective.csv": {
-      "sha256": "ce51c6604763c985b67f786e023ec3e0328f37167d4fcde2f00ea726179e24f7",
+      "sha256": "fc4ae10bdf4718fe19dbeb80ba264b7af25f641b2db64a014bc9e352422c1669",
       "rows": 866
     },
     "alpha_model.json": {
-      "sha256": "000eed2269d7b5a53768597c4693d5f649322d17454e6be72616f7b1c614d928",
+      "sha256": "1091ed68d840018b47936a3d1fb08a6a6c755e442d0e2208956665e69fda755d",
       "rows": 632
     },
     "alpha_monthly.csv": {
-      "sha256": "b224c21c2a4873c26b4504111d43abf0c1e91daf01aa319ab48320897fc27905",
+      "sha256": "e882aa597ccba06612248885e26e493397a11cf6999ad26b38ab15999334405d",
       "rows": 36
     },
     "calendar_monthly.csv": {
-      "sha256": "16516c3c2ea40dc5e8fb3cffd161161cf258adbc2cf815c009723db314484caf",
+      "sha256": "432332467480f5aa9e386a2a17075243adec1f976ab8dba975af2e34ebb54576",
       "rows": 302
     },
     "cell_days/2000.csv": {
@@ -452,107 +458,107 @@
       "rows": 174
     },
     "cell_days/2001.csv": {
-      "sha256": "6cfb7da000b5cdeb099e7489c9607e873f74d1c92df52130c8c690f56284e1dc",
-      "rows": 2069
+      "sha256": "34be5d2319442605109b88202ef91f0aaa0ea25796dd3dbe83b0f944cedaee2e",
+      "rows": 2068
     },
     "cell_days/2002.csv": {
-      "sha256": "e4c63f92d4226e70b3101fcf4678ad4cd02041f93937885a8331c704ec7300da",
-      "rows": 1973
+      "sha256": "7505114a6a4448d9d204e662c8728756c8da3b18baa2a458557efb6acaf57278",
+      "rows": 1963
     },
     "cell_days/2003.csv": {
-      "sha256": "4ee6eee5737d619b6889962cd41a60a7dd047a09d5bae9324d0b6fbff2b6ba3f",
-      "rows": 3349
+      "sha256": "22888ada58d9615fcd991557088c6739c4ce55b752a67f3ebd630249804e0e33",
+      "rows": 3346
     },
     "cell_days/2004.csv": {
-      "sha256": "ccc465e98d51c8bb31e30611ed75f655c37f4aa9a3a3c16c9aa912e0b4b452a2",
-      "rows": 3201
+      "sha256": "f841041064c58a2312610be259f7442fdff10e242086baccb111b97a8f104282",
+      "rows": 3198
     },
     "cell_days/2005.csv": {
-      "sha256": "13aa6eab30b5454101eddc6342ac58f4ca37396d394ff39e4393c7706e6ba667",
-      "rows": 4139
+      "sha256": "a9bb3f5df4353070947a8b2081dfd39c8cf1b5bf55fd1519b6049bd0b40846b1",
+      "rows": 4131
     },
     "cell_days/2006.csv": {
-      "sha256": "b73c4c5f75db80e58f45e838dca0a4b389e975cde357a60fb6aa020570dd417a",
-      "rows": 3833
+      "sha256": "a00eb8c1ad7f3ef721dfe1a6b8214aa9731524cfd7dfafc600901f4a1b5eb38b",
+      "rows": 3828
     },
     "cell_days/2007.csv": {
-      "sha256": "b301c02832cf4f50a48e4a11481da140668b8a93d84e5833234327e95fc02642",
-      "rows": 3605
+      "sha256": "c83210cea3dfe74c3064cb60dd78a86fa275fb94cb9566184e01d631058e9b8d",
+      "rows": 3600
     },
     "cell_days/2008.csv": {
-      "sha256": "f9acd01f2df8aced071bad6c35d7421e8735d720c66232e7e91b7e599c824c9b",
-      "rows": 3406
+      "sha256": "3371f151692688daf2066a511eafb117411714bf14c3fba1f9fd85b680b660fe",
+      "rows": 3396
     },
     "cell_days/2009.csv": {
-      "sha256": "b59faaec678abf9ea9ba61343e99f97d038f5d1d7a2f792185c7ba94872daa49",
-      "rows": 4093
+      "sha256": "85d01b8d7a1527d8542c627da94e91483130e08cb4d0a1073dd16198535ceb02",
+      "rows": 4081
     },
     "cell_days/2010.csv": {
-      "sha256": "67873abda5f79711fdb506403d1a5fc1e413badfe9af2fbddb710ab823ab7a56",
-      "rows": 4163
+      "sha256": "471003e136786290b1528a17cef3e4e2c2e31d15c7cd3c2d0191bb992272d031",
+      "rows": 4159
     },
     "cell_days/2011.csv": {
-      "sha256": "85ab5176b35687da7cbbd298379a1793ca920d310812680e80d62f5bd7c65b54",
-      "rows": 3029
+      "sha256": "9cf298af64e78a80c1b128a173e3e0fb2b37c8e4c51fbf229e43b0bb2720d7d3",
+      "rows": 3028
     },
     "cell_days/2012.csv": {
-      "sha256": "7a45ad49a70c6aceb6298a167ec6a0a10a3369fe0b1d3ce6815643958f716011",
-      "rows": 17540
+      "sha256": "4a0abd8d5740cb01aa30c304fbcb476e52b4cf35b38296aa5efba4c74df894d6",
+      "rows": 17257
     },
     "cell_days/2013.csv": {
-      "sha256": "1eb93259ea89890133a4a8af3628551ea5c0f24f85707974bfb6d29b5cb94865",
-      "rows": 12640
+      "sha256": "b92137e4f303c9902edc9e3a91b7573c0833aca5746ed084ed1bff700a95fff3",
+      "rows": 12390
     },
     "cell_days/2014.csv": {
-      "sha256": "54ace7368ba5b2d2c0f6f72e1743d08fc019d3351323d271de60337eb1581141",
-      "rows": 13676
+      "sha256": "fdf3b1d883a4d57674c73eb654bfd4393ba605790c2ed662401b54a67f0fa140",
+      "rows": 13526
     },
     "cell_days/2015.csv": {
-      "sha256": "61ea589de5f93d92f74eb9df351b4ef23e895170f00a20b578afec63d5edd0e1",
-      "rows": 13911
+      "sha256": "385d63b014d74fc30a0acc7b2665af5effca8e25e507c05efa4c93d8cf1fa258",
+      "rows": 13775
     },
     "cell_days/2016.csv": {
-      "sha256": "ca2df93dfbf1f95816c891a2911aa86e032ce02187a91b23568b8f51c4b32dbe",
-      "rows": 14409
+      "sha256": "d51edfdf62a013f296e372ccb6bd68af040dbe7d4419d539f7a6b82c6f2fe34c",
+      "rows": 14318
     },
     "cell_days/2017.csv": {
-      "sha256": "266405d636475c28538a1a6cef7de4cd822c82d78d1bd73a12e6d5029fcfc9ac",
-      "rows": 14548
+      "sha256": "0d14d1227db54f18404f89e73fa5d76789638f513b7976de9190876aa331ddf9",
+      "rows": 14461
     },
     "cell_days/2018.csv": {
-      "sha256": "c0c8677f9d079e2923f4aa372e67af6db434b7d61884ac19dea11c187729277e",
-      "rows": 21130
+      "sha256": "ecf81d5eba49e33d4bf0c7e3b3b27eaf534fb81157375a658bf54761664db7a1",
+      "rows": 20963
     },
     "cell_days/2019.csv": {
-      "sha256": "556fc5263d96ee82b2da868f4c0bd4a1699b8f90c4d09023489b361d77178e35",
-      "rows": 19154
+      "sha256": "8e80dd3c130c1bfadfa6a70a3cc234e45533e417dd6426f973904d5ed5b321c6",
+      "rows": 19026
     },
     "cell_days/2020.csv": {
-      "sha256": "1bd72afe85e11465c5b4e906fd84891d5eed8c33296c39d9a84f2350acd0f41d",
-      "rows": 24219
+      "sha256": "f242487c999b15988a4c016d5bfbab9fa0d2e2aa574e11d783d7e36d6ca0551c",
+      "rows": 24100
     },
     "cell_days/2021.csv": {
-      "sha256": "b094b925f21afab47d712e57ce202bea7708f9718442558a3b6444cc65afed4b",
-      "rows": 28440
+      "sha256": "d2aa7511a268695376f74be49a156b038841d5ebb01b59898ba74a5b9e42ad2f",
+      "rows": 28259
     },
     "cell_days/2022.csv": {
-      "sha256": "64734cf801604ee65da28488ced58b48dd2027bc16ec518da29f86fefae00280",
-      "rows": 25792
+      "sha256": "c8ffc815088a97da555818439580cbb1ed089dea3b40fed1aaabff37430350f4",
+      "rows": 25613
     },
     "cell_days/2023.csv": {
-      "sha256": "73c0998d4a023ab2b09a9040a673c781c5704204a3d2b7ce788cebfc11e7b100",
-      "rows": 32336
+      "sha256": "7cbbfcf5c3aeebfefba9da4c37a5f68f62c75a8ea6ce2f4bef5b4a419fca5156",
+      "rows": 32128
     },
     "cell_days/2024.csv": {
-      "sha256": "a821f76ae92ac5b957d7c534081b22d2ffe302d4f582248f8f1d4b9880e02ff0",
-      "rows": 33266
+      "sha256": "fd89bf7f5c3b28f122f234f3ef0aa79c38d4aa7238ef0495f653c6e0bbdf63cc",
+      "rows": 33095
     },
     "cell_days/2025.csv": {
-      "sha256": "568c3e784b7a9ac174818fe9841365657b763f2528b0ddf729f58f6093838248",
-      "rows": 31243
+      "sha256": "f2071678291ebc8bd90978df50847b16bd17623aa04e1e7f9710ac9c4684f0e3",
+      "rows": 31029
     },
     "daily_harmonized.csv": {
-      "sha256": "dec677e8ee3f163f7f92662cfab7475ba058d52370e539c9c05b99dba8e68716",
+      "sha256": "0d022dbba9061c5dae6fc50c5ddcfa2e1308e4762294bc3184db789b2d976b31",
       "rows": 9192
     },
     "detections/2000.csv.gz": {
@@ -560,119 +566,119 @@
       "rows": -1
     },
     "detections/2001.csv.gz": {
-      "sha256": "50043f1f4f4ad88e293d253fa415f46c3f985d67752a2cd4af3234d2da15e99b",
+      "sha256": "19dbba53062838343ecf42e3662e9725ce87876d2aa7b4561db15e64b2547528",
       "rows": -1
     },
     "detections/2002.csv.gz": {
-      "sha256": "90ed5ddd40654d426c19b2c61a81553b75ccd9137fa33c36ef8412054ba47ff0",
+      "sha256": "0ba9fe29feba198a9fc57e2c3bcfca659fa84e50e2a0c900bd82d9a3c3b6d8cd",
       "rows": -1
     },
     "detections/2003.csv.gz": {
-      "sha256": "1b8abe39fa496ac7e450f0702628f7d5f46f28d2b5b36d84cafd7264072e8935",
+      "sha256": "c3e45ebdf699c3919f451843b65e71b30e4e9ae5f047a8c8681d91e71e9d0600",
       "rows": -1
     },
     "detections/2004.csv.gz": {
-      "sha256": "d1bd24665c4f3508a9adea31a63e31266e9f8c3f779021b5cb5cfe009deb2aee",
+      "sha256": "b7d62f0527368e269e8f8289b8de9c46216a2bfbf82bbaa2dc5eec8422924d27",
       "rows": -1
     },
     "detections/2005.csv.gz": {
-      "sha256": "e5359404c0b9990c464ad766ed057985dd635fa323d514fdd1f18545d0e4bd78",
+      "sha256": "aba7054fda63c2811672093cb9fa198a880e77d4a3d5d4efaa4d037ce9049b39",
       "rows": -1
     },
     "detections/2006.csv.gz": {
-      "sha256": "e6c5ec48382ecec22106d795f524aa9244bb3b106558f706bc210da4a1371156",
+      "sha256": "4f4c440181e8a8cbf4677dfc9e9dbbeffd6b099a7fc7f3fb6c1aea7aae0c42f8",
       "rows": -1
     },
     "detections/2007.csv.gz": {
-      "sha256": "ca97712431aabac915ae113ff943b2578650cc915a166520c298d136dc5aa7bf",
+      "sha256": "e0077d96b69796a833699afdf2814b8bae5a171f41a6815706868961002d1e8d",
       "rows": -1
     },
     "detections/2008.csv.gz": {
-      "sha256": "cdf6b08c67b5b03e709615ae0b487500bb727faaac75f2fdbb965b66416692a2",
+      "sha256": "ebfcf830b5f4d81f01d3995a428fe741d16af8654fe8b73e67f73f39d4acdea1",
       "rows": -1
     },
     "detections/2009.csv.gz": {
-      "sha256": "0e0b2324f19283b9b67a06a53c8d29a320afdf3e84ced6762db73b724be69f8c",
+      "sha256": "ddad97bd1b40942760ee445b910b60bcc7da13ba3f5999756ff98e5fba9b5eaa",
       "rows": -1
     },
     "detections/2010.csv.gz": {
-      "sha256": "3950924362c172e34c9620794bf86c0ef908ee2768452dcc24c55b02c46bfa4b",
+      "sha256": "9b504e33ee3fdf967146a7766d053e2ee192b39085bd9724f434df93978e61e1",
       "rows": -1
     },
     "detections/2011.csv.gz": {
-      "sha256": "bb8e6456b68e8ae2ee54a21dbd368fc8e3d7f601c80a468aa622bd801918545b",
+      "sha256": "cae3beba3bf8c9c52f5a92adf7c8ecd17aeb2b7a434e38039d444fcdf6fe1a93",
       "rows": -1
     },
     "detections/2012.csv.gz": {
-      "sha256": "ca35754caaf3f1b535d8c44f0282f6d7441b8344adb53347e35d720cddf5e9bd",
+      "sha256": "993ee2f0da48d8d11aac179ac82f764209235e1ad5ebb9f2477fd32030d9c712",
       "rows": -1
     },
     "detections/2013.csv.gz": {
-      "sha256": "8c998adbea9a290ef7fb8d47a2de8c8e535c0672658ab43430cbf09e5235545c",
+      "sha256": "09e5912b5387068b89faa48b9eecfda4ffd79ab8797fe3bbe3a4716514567a31",
       "rows": -1
     },
     "detections/2014.csv.gz": {
-      "sha256": "b60073ab7983d03611622e49944082d285ef8ab1a7b05ac6ea4f2e8f0113513b",
+      "sha256": "2b9721139a54aa17038695b227058c4dca763382795e44f1670c906e456c4031",
       "rows": -1
     },
     "detections/2015.csv.gz": {
-      "sha256": "3ae7d4c98871f2f5ece9742b3ad9fcf232af1a28b68f410abbb90b83bf297fe4",
+      "sha256": "be59f23578dc37b7181feee9af2cf53de47319215c6546196b04c9a88f91d659",
       "rows": -1
     },
     "detections/2016.csv.gz": {
-      "sha256": "18ea5a88c15e74444aad0ede7cb1b2db47941d630dbf2df9b749204db891d536",
+      "sha256": "d65820e3c0d6f5fde71fd804c6b5ce8a454895acd5fe037106aa52d5e8664214",
       "rows": -1
     },
     "detections/2017.csv.gz": {
-      "sha256": "11df1b29d05431345fe2e185706a806d7bf2ad22bb9aea97d9b22e97f7a46fe7",
+      "sha256": "e56cc99f36d097bab8e8196de00dc6d53ede5d787a27cfbb875c8addfd6ffe92",
       "rows": -1
     },
     "detections/2018.csv.gz": {
-      "sha256": "774958df89431e0713b69805e93981bb95adb38ffb31545990a4928e4a28e5e6",
+      "sha256": "6e9018ba4dc22d65b3317180a3b93ed6c4398b05f31fdfcf9871c5eb2e98d29d",
       "rows": -1
     },
     "detections/2019.csv.gz": {
-      "sha256": "bda89b9ed114528cbcaed7e25aa2812b2d6cb3a1bb4e356b34b174aea095f683",
+      "sha256": "9fafd9d4e9ec2ac307f9a79ae0f3f0fee2209a13d6c370a7e6c63ab4e09a34c4",
       "rows": -1
     },
     "detections/2020.csv.gz": {
-      "sha256": "96f45b41350b1291ffd7e161a917747d475ff9c7d810e2fccfa016925fd93e66",
+      "sha256": "694c198bcc6ef7f89e0c19a94c647853ec4d19afdc048e86f5538b8a295c87e0",
       "rows": -1
     },
     "detections/2021.csv.gz": {
-      "sha256": "bb8abc1d16c1973ffc3436618964aaa916b1c234dcb18925bfde3440bfa8fd5a",
+      "sha256": "c4bf3906710ca3f378f7098efcac972ccd31a4429e611a07ead8caf3d95b5f75",
       "rows": -1
     },
     "detections/2022.csv.gz": {
-      "sha256": "a6222b8105df9ab754dc1b20db98b328911ed079a06ff805c4ceb69599704658",
+      "sha256": "1f85cad23c9cdfe938dd3978117129e7234582f292cd115337b6f36e6c0d6aed",
       "rows": -1
     },
     "detections/2023.csv.gz": {
-      "sha256": "acfa332ac8a7ed4d18325b7667cca907c26b7f27fa63cb7e51e01acc8356e046",
+      "sha256": "2b2496cf957ae2505a8f569abb42276a2303e88a8137089e990bebec84e0ce93",
       "rows": -1
     },
     "detections/2024.csv.gz": {
-      "sha256": "58baca1a875ac52dbc0dcfc151e6667ee01cffaf13a2c8927eeab789d6adbf7d",
+      "sha256": "fa5b95f320517d2ac5efa43cfe7ebc84f7d87f476593ef51dd9ceb2b7fb66bc9",
       "rows": -1
     },
     "detections/2025.csv.gz": {
-      "sha256": "47f3c250c99b65dec85c75f9cfd1452d56c2ba4f02603d1388d0c877a4ec2d77",
+      "sha256": "9d9c6d6f5e77ad1cd6970ff81b48aca2812c462739f5855b30c9f18a5a907bee",
       "rows": -1
     },
     "outages_detected.csv": {
-      "sha256": "e65bf318bfaac2a57ad34ced262cff380913e2f2d860d03e3d553acbcbb0bcf0",
-      "rows": 615
+      "sha256": "f63e89380d0acba3de071a8c8459f804e523d056edf91dbfd77fe5f6944e85c6",
+      "rows": 595
     },
     "source_availability.csv": {
-      "sha256": "1762b960059e46b19c940ea50b0eb6f84550aaa8bc5489576ff63bb5b46dfdc6",
-      "rows": 25086
+      "sha256": "2d5c6c135d53fd306e8a65938614464f8e7935b040633944f0a25fcd5bd7f03d",
+      "rows": 25106
     },
     "static_mask.csv": {
-      "sha256": "45dfd89435cde9ee3d4beae71aa38c794171222f3cb88db510b39ddb6c4b3aab",
-      "rows": 799
+      "sha256": "afdcc864c659853bcd5aaf0cdba304beff80ce137c9a42e0c286ec66d52d9a26",
+      "rows": 985
     },
     "validation.json": {
-      "sha256": "0d8579d5dbe5192ae8345d21f7021a43993a51e31f95b2459be9ff67196252c7",
+      "sha256": "f13edefac92a342caf88f2fb64ab7e61dc154aef2a1e68a0ca44aa9fa2f1034b",
       "rows": 397
     }
   }

@@ -8,253 +8,253 @@
       "nPairs": 108,
       "model": {
         "kind": "glm",
-        "beta": 0.762747,
+        "beta": 0.906135,
         "betaCi": [
-          0.753811,
-          1.01369
+          0.883674,
+          1.073907
         ],
         "test": {
-          "deltaDeviance": 769.113575,
+          "deltaDeviance": 158.289917,
           "df": 13,
-          "dispersion": 7.45418,
-          "f": 7.936834,
-          "p": 0
+          "dispersion": 3.020922,
+          "f": 4.030606,
+          "p": 0.000001
         }
       },
       "inSample": {
         "nMonthsScored": 108,
-        "mdape": 0.111877,
-        "p90ape": 0.316657,
-        "totalBias": -0.000696,
-        "topDecileBias": -0.01508,
-        "bottomQuartileBias": 0.178793,
-        "residualBeta": 1.011769,
-        "residualBetaSe": 0.053652
+        "mdape": 0.070747,
+        "p90ape": 0.252205,
+        "totalBias": -0.000085,
+        "topDecileBias": -0.010185,
+        "bottomQuartileBias": 0.067522,
+        "residualBeta": 1.016345,
+        "residualBetaSe": 0.032713
       },
       "loyo": {
         "nMonthsScored": 108,
-        "mdape": 0.132045,
-        "p90ape": 0.399296,
-        "totalBias": 0.002605,
-        "topDecileBias": -0.005552,
-        "bottomQuartileBias": 0.198134,
-        "residualBeta": 0.835186,
-        "residualBetaSe": 0.06244
+        "mdape": 0.089406,
+        "p90ape": 0.299107,
+        "totalBias": 0.002196,
+        "topDecileBias": -0.003884,
+        "bottomQuartileBias": 0.056482,
+        "residualBeta": 0.939256,
+        "residualBetaSe": 0.039885
       },
       "loyoConstantRatio": {
         "nMonthsScored": 108,
-        "mdape": 0.195207,
-        "p90ape": 0.46244,
-        "totalBias": 0.004336,
-        "topDecileBias": 0.081059,
-        "bottomQuartileBias": -0.011049,
-        "residualBeta": 0.622995,
-        "residualBetaSe": 0.038058
+        "mdape": 0.119593,
+        "p90ape": 0.294984,
+        "totalBias": 0.002429,
+        "topDecileBias": 0.024453,
+        "bottomQuartileBias": -0.060632,
+        "residualBeta": 0.801773,
+        "residualBetaSe": 0.030495
       },
       "continuity": {
         "rows": [
           {
             "year": 2013,
-            "modisScaled": 2232.42056,
-            "viirs": 1886,
-            "ratio": 1.18368
+            "modisScaled": 1580.962126,
+            "viirs": 1556,
+            "ratio": 1.016042
           },
           {
             "year": 2014,
-            "modisScaled": 2332.89988,
-            "viirs": 2055,
-            "ratio": 1.135231
+            "modisScaled": 1654.890131,
+            "viirs": 1605,
+            "ratio": 1.031084
           },
           {
             "year": 2015,
-            "modisScaled": 2065.751598,
-            "viirs": 2217,
-            "ratio": 0.931778
+            "modisScaled": 1437.098719,
+            "viirs": 1503,
+            "ratio": 0.956154
           },
           {
             "year": 2016,
-            "modisScaled": 2935.679921,
-            "viirs": 2835,
-            "ratio": 1.035513
+            "modisScaled": 2206.347333,
+            "viirs": 2347,
+            "ratio": 0.940071
           },
           {
             "year": 2017,
-            "modisScaled": 3306.995273,
-            "viirs": 3605,
-            "ratio": 0.917336
+            "modisScaled": 2535.883873,
+            "viirs": 2558,
+            "ratio": 0.991354
           },
           {
             "year": 2018,
-            "modisScaled": 3046.830545,
-            "viirs": 3429,
-            "ratio": 0.888548
+            "modisScaled": 2321.045696,
+            "viirs": 2352,
+            "ratio": 0.986839
           },
           {
             "year": 2019,
-            "modisScaled": 3118.702204,
-            "viirs": 3371,
-            "ratio": 0.925156
+            "modisScaled": 2388.217383,
+            "viirs": 2406,
+            "ratio": 0.992609
           },
           {
             "year": 2020,
-            "modisScaled": 3460.486649,
-            "viirs": 3288,
-            "ratio": 1.052459
+            "modisScaled": 2757.672722,
+            "viirs": 2608,
+            "ratio": 1.05739
           },
           {
             "year": 2021,
-            "modisScaled": 3238.299871,
-            "viirs": 3070,
-            "ratio": 1.054821
+            "modisScaled": 2548.236335,
+            "viirs": 2497,
+            "ratio": 1.020519
           }
         ],
-        "medianStepPct": 0.035513,
-        "worstYearPct": 0.18368
+        "medianStepPct": -0.007391,
+        "worstYearPct": 0.063749
       },
       "uncertainty": {
         "monthly": [
-          0.6629,
-          1.534539
+          0.693852,
+          1.36925
         ],
         "annual": [
-          0.836433,
-          1.123106
+          0.93536,
+          1.077134
         ],
         "nMonths": 108,
         "nYears": 9
       },
       "noise": {
         "sims": 200,
-        "dispersion": 7.493101,
+        "dispersion": 3.042302,
         "residualBeta": [
-          0.742253,
-          0.832277,
-          0.904959
+          0.859812,
+          0.911091,
+          0.963645
         ],
         "mdape": [
-          0.13047,
-          0.155899,
-          0.188408
+          0.105907,
+          0.129839,
+          0.15737
         ],
-        "realResidualBetaPct": 52,
-        "realMdapePct": 7.5
+        "realResidualBetaPct": 80.5,
+        "realMdapePct": 0
       }
     },
     "T": {
       "nPairs": 108,
       "model": {
         "kind": "glm",
-        "beta": 0.727769,
+        "beta": 0.878914,
         "betaCi": [
-          0.705963,
-          0.923936
+          0.826128,
+          1.054217
         ],
         "test": {
-          "deltaDeviance": 1232.469073,
+          "deltaDeviance": 381.406774,
           "df": 13,
-          "dispersion": 9.290507,
-          "f": 10.204536,
+          "dispersion": 5.440102,
+          "f": 5.393094,
           "p": 0
         }
       },
       "inSample": {
         "nMonthsScored": 108,
-        "mdape": 0.119877,
-        "p90ape": 0.320777,
-        "totalBias": -0.006786,
-        "topDecileBias": -0.023431,
-        "bottomQuartileBias": 0.206259,
-        "residualBeta": 1.022009,
-        "residualBetaSe": 0.061799
+        "mdape": 0.104506,
+        "p90ape": 0.367308,
+        "totalBias": -0.002409,
+        "topDecileBias": -0.024969,
+        "bottomQuartileBias": 0.156831,
+        "residualBeta": 1.045701,
+        "residualBetaSe": 0.045869
       },
       "loyo": {
         "nMonthsScored": 108,
-        "mdape": 0.170476,
-        "p90ape": 0.437426,
-        "totalBias": 0.004844,
-        "topDecileBias": -0.010399,
-        "bottomQuartileBias": 0.238907,
-        "residualBeta": 0.841839,
-        "residualBetaSe": 0.066871
+        "mdape": 0.132718,
+        "p90ape": 0.420094,
+        "totalBias": 0.006717,
+        "topDecileBias": -0.015469,
+        "bottomQuartileBias": 0.156905,
+        "residualBeta": 0.934199,
+        "residualBetaSe": 0.052146
       },
       "loyoConstantRatio": {
         "nMonthsScored": 108,
-        "mdape": 0.206949,
-        "p90ape": 0.546621,
-        "totalBias": -0.006907,
-        "topDecileBias": 0.088856,
-        "bottomQuartileBias": 0.00864,
-        "residualBeta": 0.565059,
-        "residualBetaSe": 0.040308
+        "mdape": 0.197811,
+        "p90ape": 0.424299,
+        "totalBias": -0.005285,
+        "topDecileBias": 0.021894,
+        "bottomQuartileBias": -0.021199,
+        "residualBeta": 0.726724,
+        "residualBetaSe": 0.039044
       },
       "continuity": {
         "rows": [
           {
             "year": 2013,
-            "modisScaled": 2293.727584,
-            "viirs": 1886,
-            "ratio": 1.216186
+            "modisScaled": 1659.879767,
+            "viirs": 1556,
+            "ratio": 1.066761
           },
           {
             "year": 2014,
-            "modisScaled": 2317.825623,
-            "viirs": 2055,
-            "ratio": 1.127896
+            "modisScaled": 1655.038665,
+            "viirs": 1605,
+            "ratio": 1.031177
           },
           {
             "year": 2015,
-            "modisScaled": 2038.66763,
-            "viirs": 2217,
-            "ratio": 0.919561
+            "modisScaled": 1417.760637,
+            "viirs": 1503,
+            "ratio": 0.943287
           },
           {
             "year": 2016,
-            "modisScaled": 2754.254939,
-            "viirs": 2835,
-            "ratio": 0.971518
+            "modisScaled": 2063.817768,
+            "viirs": 2347,
+            "ratio": 0.879343
           },
           {
             "year": 2017,
-            "modisScaled": 3277.323318,
-            "viirs": 3631,
-            "ratio": 0.902595
+            "modisScaled": 2516.875638,
+            "viirs": 2581,
+            "ratio": 0.975155
           },
           {
             "year": 2018,
-            "modisScaled": 3065.733382,
-            "viirs": 3449,
-            "ratio": 0.888876
+            "modisScaled": 2341.329368,
+            "viirs": 2368,
+            "ratio": 0.988737
           },
           {
             "year": 2019,
-            "modisScaled": 3062.244971,
-            "viirs": 3371,
-            "ratio": 0.908408
+            "modisScaled": 2316.70129,
+            "viirs": 2406,
+            "ratio": 0.962885
           },
           {
             "year": 2020,
-            "modisScaled": 3573.339333,
-            "viirs": 3288,
-            "ratio": 1.086782
+            "modisScaled": 2875.072397,
+            "viirs": 2608,
+            "ratio": 1.102405
           },
           {
             "year": 2021,
-            "modisScaled": 3243.778465,
-            "viirs": 3070,
-            "ratio": 1.056605
+            "modisScaled": 2577.611292,
+            "viirs": 2497,
+            "ratio": 1.032283
           }
         ],
-        "medianStepPct": -0.028482,
-        "worstYearPct": 0.216186
+        "medianStepPct": -0.011263,
+        "worstYearPct": 0.137213
       },
       "uncertainty": {
         "monthly": [
-          0.666636,
-          1.407637
+          0.655806,
+          1.355118
         ],
         "annual": [
-          0.82224,
-          1.145953
+          0.88818,
+          1.140096
         ],
         "nMonths": 108,
         "nYears": 9
@@ -265,117 +265,117 @@
       "nPairs": 108,
       "model": {
         "kind": "glm",
-        "beta": 0.778857,
+        "beta": 0.888938,
         "betaCi": [
-          0.723948,
-          1.019108
+          0.845876,
+          1.060489
         ],
         "test": {
-          "deltaDeviance": 1625.542541,
+          "deltaDeviance": 526.572729,
           "df": 13,
-          "dispersion": 8.429151,
-          "f": 14.834439,
+          "dispersion": 3.720863,
+          "f": 10.886076,
           "p": 0
         }
       },
       "inSample": {
         "nMonthsScored": 108,
-        "mdape": 0.130803,
-        "p90ape": 0.331063,
-        "totalBias": -0.004179,
-        "topDecileBias": -0.023496,
-        "bottomQuartileBias": 0.144043,
-        "residualBeta": 0.889609,
-        "residualBetaSe": 0.055719
+        "mdape": 0.086951,
+        "p90ape": 0.256572,
+        "totalBias": 0.000052,
+        "topDecileBias": -0.023267,
+        "bottomQuartileBias": 0.055497,
+        "residualBeta": 1.004614,
+        "residualBetaSe": 0.033786
       },
       "loyo": {
         "nMonthsScored": 108,
-        "mdape": 0.167601,
-        "p90ape": 0.413694,
-        "totalBias": 0.002008,
-        "topDecileBias": -0.016909,
-        "bottomQuartileBias": 0.170036,
-        "residualBeta": 0.726535,
-        "residualBetaSe": 0.060483
+        "mdape": 0.133684,
+        "p90ape": 0.305914,
+        "totalBias": 0.004211,
+        "topDecileBias": -0.019325,
+        "bottomQuartileBias": 0.020972,
+        "residualBeta": 0.860458,
+        "residualBetaSe": 0.04185
       },
       "loyoConstantRatio": {
         "nMonthsScored": 108,
-        "mdape": 0.238407,
-        "p90ape": 0.503477,
-        "totalBias": -0.000692,
-        "topDecileBias": 0.106233,
-        "bottomQuartileBias": -0.143336,
-        "residualBeta": 0.517968,
-        "residualBetaSe": 0.03343
+        "mdape": 0.164644,
+        "p90ape": 0.430647,
+        "totalBias": -0.000077,
+        "topDecileBias": 0.036703,
+        "bottomQuartileBias": -0.214526,
+        "residualBeta": 0.662574,
+        "residualBetaSe": 0.026535
       },
       "continuity": {
         "rows": [
           {
             "year": 2013,
-            "modisScaled": 2286.270945,
-            "viirs": 1886,
-            "ratio": 1.212233
+            "modisScaled": 1625.221442,
+            "viirs": 1556,
+            "ratio": 1.044487
           },
           {
             "year": 2014,
-            "modisScaled": 2386.818149,
-            "viirs": 2055,
-            "ratio": 1.161469
+            "modisScaled": 1700.872946,
+            "viirs": 1605,
+            "ratio": 1.059734
           },
           {
             "year": 2015,
-            "modisScaled": 2090.486266,
-            "viirs": 2217,
-            "ratio": 0.942935
+            "modisScaled": 1446.154213,
+            "viirs": 1503,
+            "ratio": 0.962178
           },
           {
             "year": 2016,
-            "modisScaled": 2952.509957,
-            "viirs": 2835,
-            "ratio": 1.04145
+            "modisScaled": 2245.302439,
+            "viirs": 2347,
+            "ratio": 0.956669
           },
           {
             "year": 2017,
-            "modisScaled": 3311.989546,
-            "viirs": 3605,
-            "ratio": 0.918721
+            "modisScaled": 2555.383418,
+            "viirs": 2558,
+            "ratio": 0.998977
           },
           {
             "year": 2018,
-            "modisScaled": 3060.518033,
-            "viirs": 3479,
-            "ratio": 0.879712
+            "modisScaled": 2299.562196,
+            "viirs": 2352,
+            "ratio": 0.977705
           },
           {
             "year": 2019,
-            "modisScaled": 3111.079953,
-            "viirs": 3383,
-            "ratio": 0.919622
+            "modisScaled": 2367.597081,
+            "viirs": 2406,
+            "ratio": 0.984039
           },
           {
             "year": 2020,
-            "modisScaled": 3399.233192,
-            "viirs": 3288,
-            "ratio": 1.03383
+            "modisScaled": 2704.79534,
+            "viirs": 2608,
+            "ratio": 1.037115
           },
           {
             "year": 2021,
-            "modisScaled": 3111.188119,
-            "viirs": 3070,
-            "ratio": 1.013416
+            "modisScaled": 2488.127037,
+            "viirs": 2497,
+            "ratio": 0.996447
           }
         ],
-        "medianStepPct": 0.013416,
-        "worstYearPct": 0.212233
+        "medianStepPct": -0.003553,
+        "worstYearPct": 0.059734
       },
       "uncertainty": {
         "monthly": [
-          0.679882,
-          1.546823
+          0.761208,
+          1.368864
         ],
         "annual": [
-          0.807458,
-          1.131655
+          0.933736,
+          1.072886
         ],
         "nMonths": 108,
         "nYears": 9
@@ -393,6 +393,6 @@
     "level": "ok",
     "reason": null,
     "monthsScored": 108,
-    "medianMonthlyViirs": 187.5
+    "medianMonthlyViirs": 119
   }
 }

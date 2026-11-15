@@ -109,7 +109,22 @@
         "worstYearPct": 1.394293
       },
       "uncertainty": null,
-      "noise": null
+      "noise": {
+        "sims": 200,
+        "dispersion": 3.836386,
+        "residualBeta": [
+          -2.216585,
+          0.302897,
+          3.22919
+        ],
+        "mdape": [
+          1.248611,
+          2.46369,
+          4.568567
+        ],
+        "realResidualBetaPct": 14.772727,
+        "realMdapePct": 0
+      }
     },
     "T": {
       "nPairs": 108,
@@ -329,9 +344,9 @@
   "acceptance": {
     "loyoMdapeWithin15pct": false,
     "noStepAtTransition": false,
-    "unbiasedAcrossActivity": false
+    "unbiasedAcrossActivity": true
   },
-  "biasCheck": "fixed-threshold",
+  "biasCheck": "noise-aware",
   "confidence": {
     "level": "low",
     "reason": "only 3 of 108 overlap months have ≥ 20 VIIRS cell-days (median 3 per month); scores are indicative",
