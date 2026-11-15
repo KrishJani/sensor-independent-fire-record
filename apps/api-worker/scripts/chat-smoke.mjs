@@ -8,14 +8,19 @@
 //      SMOKE_JSON=1 prints a one-line JSON result at the end (used by compare-models).
 // Speaks the same cf_agent_use_chat_request protocol as useAgentChat.
 //
-// Checks (FAIL = exit 1, WARN = reported only):
-//   both turns  FAIL  reply contains CJK characters (language drift)
-//               WARN  reply says "your area" (the user never said it is theirs)
-//   turn 1      FAIL  get_spots_summary was not called
-//               FAIL  mock data was used and the first sentence does not mention demo/synthetic
-//               FAIL  a bracketed source name without a link, e.g. "[Wikipedia; CAL FIRE]" or "[link]"
-//   turn 2      FAIL  neither web_search nor web_fetch was called
-//               FAIL  a page read with web_fetch is not cited (linked) in the reply
+// Checks (all FAIL = exit 1):
+//   both turns  reply contains CJK characters (language drift)
+//               two text parts (model steps) glued without a space ("stillin")
+//               reply says "your area" (the user never said it is theirs)
+//               reply echoes prompt instructions ("You never…", "You do not…")
+//               reply calls fire activity "workload"
+//               a bracketed source name without a link, e.g. "[Wikipedia; CAL FIRE]" or "[link]"
+//               a link to a URL that no web_search/web_fetch call returned in this conversation
+//   turn 1      get_spots_summary was not called
+//               mock data was used and the first sentence does not mention demo/synthetic
+//               no web tool was called but the reply has links or a "Sources" section
+//   turn 2      neither web_search nor web_fetch was called
+//               a page read with web_fetch is not cited (linked) in the reply
 
 import { randomUUID } from "node:crypto";
 import { AgentClient } from "agents/client";
@@ -62,23 +67,45 @@ export function normUrl(u) {
   }
 }
 
-export function citedUrls(text) {
-  return [...text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => normUrl(m[1]));
+/** Raw URLs of markdown links and <autolinks> in the reply. */
+export function linkedUrls(text) {
+  return [
+    ...[...text.matchAll(/\]\(\s*<?(https?:\/\/[^)\s>]+)/g)].map((m) => m[1]),
+    ...[...text.matchAll(/<(https?:\/\/[^>\s]+)>/g)].map((m) => m[1])
+  ];
 }
+
+export function citedUrls(text) {
+  return linkedUrls(text).map(normUrl);
+}
+
+/** Every URL web_search / web_fetch returned in this conversation (normalized). */
+const returnedUrls = new Set();
 
 function checkTurn(turnIndex, t) {
   const fails = [];
   const warns = [];
   if (CJK.test(t.text)) fails.push("reply contains CJK characters");
-  if (/\byour area\b/i.test(t.text)) warns.push('says "your area"');
+  for (const g of t.glued) fails.push(`text parts glued without a space: "${g}"`);
+  if (/\byour area\b/i.test(t.text)) fails.push('says "your area"');
+  const echo = t.text.match(/\bYou (never|do not|don't|must|should never)\b[^.\n]*/);
+  if (echo) fails.push(`echoes prompt instructions: "${echo[0]}"`);
+  if (/\bworkloads?\b/i.test(t.text)) fails.push('calls fire activity "workload"');
   for (const m of t.text.matchAll(/\[([A-Za-z][^\]\n]{1,60})\](?!\()/g))
     fails.push(`source named without a link: "[${m[1]}]"`);
+  for (const u of linkedUrls(t.text))
+    if (!returnedUrls.has(normUrl(u))) fails.push(`links a URL no web tool returned: ${u}`);
+  const usedWeb = t.tools.some((n) => n === "web_search" || n === "web_fetch");
   if (turnIndex === 0) {
     if (!t.tools.includes("get_spots_summary")) fails.push("get_spots_summary not called");
     if (t.usedMock && !/\b(demo|synthetic)\b/i.test(firstSentence(t.text)))
       fails.push(`mock data used but first sentence lacks demo/synthetic: "${firstSentence(t.text)}"`);
+    if (!usedWeb) {
+      if (linkedUrls(t.text).length) fails.push("links in a reply that called no web tool");
+      if (/^\s*(#{1,6}\s*)?\**\s*sources?\b/im.test(t.text)) fails.push('"Sources" section in a reply that called no web tool');
+    }
   } else {
-    if (!t.tools.some((n) => n === "web_search" || n === "web_fetch")) fails.push("no web tool called");
+    if (!usedWeb) fails.push("no web tool called");
     const cited = new Set(citedUrls(t.text));
     for (const u of t.fetched) {
       if (![u.url, u.finalUrl].filter(Boolean).some((x) => cited.has(normUrl(x))))
@@ -117,10 +144,21 @@ client.addEventListener("message", (event) => {
     }
     if (DEBUG) console.error(`[chunk] ${chunk.type}${chunk.finishReason ? " " + chunk.finishReason : ""}${chunk.type === "reasoning-delta" ? " " + JSON.stringify(chunk.delta) : ""}`);
     switch (chunk.type) {
-      case "text-delta":
-        current.text += chunk.delta ?? "";
-        if (!JSON_OUT) process.stdout.write(chunk.delta ?? "");
+      case "text-start":
+        current.newPart = true;
         break;
+      case "text-delta": {
+        const d = chunk.delta ?? "";
+        // A new text part (next model step) must not glue onto the previous word ("stillin").
+        if (current.newPart && d) {
+          if (/\S$/.test(current.text) && /^\S/.test(d))
+            current.glued.push(`${current.text.slice(-15)}|${d.slice(0, 15)}`);
+          current.newPart = false;
+        }
+        current.text += d;
+        if (!JSON_OUT) process.stdout.write(d);
+        break;
+      }
       case "tool-input-available":
         current.tools.push(chunk.toolName);
         current.inputs.set(chunk.toolCallId, { name: chunk.toolName, input: chunk.input });
@@ -130,8 +168,12 @@ client.addEventListener("message", (event) => {
         const call = current.inputs.get(chunk.toolCallId);
         const out = chunk.output;
         if (out && typeof out === "object" && out.dataSource === "mock") current.usedMock = true;
-        if (call?.name === "web_fetch" && out && typeof out === "object" && (out.status ?? 200) < 400)
+        if (call?.name === "web_fetch" && out && typeof out === "object" && (out.status ?? 200) < 400) {
           current.fetched.push({ url: out.url ?? call.input?.url, finalUrl: out.finalUrl });
+          for (const u of [out.url, out.finalUrl]) if (typeof u === "string" && u) returnedUrls.add(normUrl(u));
+        }
+        if (call?.name === "web_search" && Array.isArray(out?.items))
+          for (const it of out.items) if (typeof it?.url === "string") returnedUrls.add(normUrl(it.url));
         if (!JSON_OUT) {
           const s = JSON.stringify(out);
           process.stdout.write(`  ✅ ${s.length > 220 ? s.slice(0, 220) + "…" : s}\n`);
@@ -164,7 +206,7 @@ async function ask(text) {
   const id = randomUUID();
   if (!JSON_OUT) console.log(`\n━━━ USER: ${text}\n━━━ ASSISTANT:`);
   const done = new Promise((resolve, reject) => {
-    current = { id, resolve, reject, text: "", tools: [], inputs: new Map(), fetched: [], usedMock: false };
+    current = { id, resolve, reject, text: "", tools: [], inputs: new Map(), fetched: [], usedMock: false, newPart: false, glued: [] };
     setTimeout(() => reject(new Error(`no answer within ${TURN_TIMEOUT_MS / 1000}s`)), TURN_TIMEOUT_MS);
   });
   client.send(

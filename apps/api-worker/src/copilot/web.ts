@@ -145,7 +145,8 @@ const PUBLISHERS: [string, string][] = [
   ["nbcnews.com", "NBC News"],
   ["abc7news.com", "ABC7 News"],
   ["6abc.com", "6abc"],
-  ["ruralhealthinfo.org", "Rural Health Information Hub"]
+  ["ruralhealthinfo.org", "Rural Health Information Hub"],
+  ["facebook.com", "Facebook"]
 ];
 
 /** The site/publisher a URL belongs to, e.g. "Wikipedia" or "ArcGIS StoryMap". */

@@ -190,7 +190,15 @@ describe("system prompt", async () => {
     expect(p).toMatch(/get_spots_summary FIRST/);
     expect(p).toMatch(/web_fetch/);
     expect(p).toMatch(/arcgis\.com StoryMap/);
-    expect(p).toMatch(/not "your area"/);
+    expect(p).toMatch(/Never write "your area"/);
+  });
+
+  it("words the safety rule so it can be said, and never as 'You never…'", () => {
+    const p = buildSystemPrompt({ ...base, dataSource: "mock" });
+    expect(p).toMatch(/I can't advise on evacuations/);
+    expect(p).not.toMatch(/^- You never/m);
+    expect(p).toMatch(/No outside facts without a web tool result/);
+    expect(p).toMatch(/workload/);
   });
 });
 
@@ -262,11 +270,109 @@ describe("demo disclaimer transform", async () => {
     expect(texts(await run([...tool("1", "get_calendar", { dataSource: "live" }), ...text("t", "x")]))).toEqual(["x"]);
   });
 
+  it("preserves whitespace at delta boundaries when injecting", async () => {
+    const deltas = ["The fire was still ", "in", " August, and ", "detections ", "(4,236) peaked."];
+    const out = await run([
+      ...tool("1", "get_calendar", { dataSource: "mock" }),
+      { type: "text-start", id: "t" } as Chunk,
+      ...deltas.map((delta) => ({ type: "text-delta", id: "t", delta }) as Chunk),
+      { type: "text-end", id: "t" } as Chunk
+    ]);
+    expect(texts(out).join("")).toBe(`${SYNTHETIC_NOTICE}\n\n${deltas.join("")}`);
+    expect(texts(out).slice(1)).toEqual(deltas);
+  });
+
   it("does not attach the notice to narration written before any tool ran", async () => {
     const deltas = texts(
       await run([...text("t0", "Looking…"), ...tool("1", "get_calendar", { dataSource: "mock" }), ...text("t1", "Answer.")])
     );
     expect(deltas[0]).toBe("Looking…");
     expect(deltas[1]).toContain(SYNTHETIC_NOTICE);
+  });
+});
+
+describe("answer post-processor", async () => {
+  const pp = await import("../src/copilot/postprocess");
+  type Chunk = import("ai").UIMessageChunk;
+
+  async function run(chunks: Chunk[], opts?: Parameters<typeof pp.answerPostProcessor>[0]): Promise<string> {
+    const rs = new ReadableStream<Chunk>({
+      start(c) {
+        chunks.forEach((x) => c.enqueue(x));
+        c.close();
+      }
+    }).pipeThrough(pp.answerPostProcessor(opts));
+    let text = "";
+    for await (const ch of rs as unknown as AsyncIterable<Chunk>) if (ch.type === "text-delta") text += ch.delta;
+    return text;
+  }
+  const part = (id: string, ...deltas: string[]): Chunk[] => [
+    { type: "text-start", id } as Chunk,
+    ...deltas.map((delta) => ({ type: "text-delta", id, delta }) as Chunk),
+    { type: "text-end", id } as Chunk
+  ];
+  const tool = (id: string, name: string, output: unknown): Chunk[] => [
+    { type: "tool-input-available", toolCallId: id, toolName: name, input: {} } as Chunk,
+    { type: "tool-output-available", toolCallId: id, output } as Chunk
+  ];
+
+  it("keeps whitespace exactly and spaces text parts that would glue", async () => {
+    const text = await run([
+      ...part("a", "The fire is ", "still"),
+      ...tool("1", "get_spots_summary", {}),
+      ...part("b", "in August, with ", "detections", "(4,236) and\n\n- a  list")
+    ]);
+    expect(text).toBe("The fire is still in August, with detections(4,236) and\n\n- a  list");
+  });
+
+  it("does not add a space when either side already has whitespace", async () => {
+    expect(await run([...part("a", "One.\n"), ...part("b", "Two.")])).toBe("One.\nTwo.");
+    expect(await run([...part("a", "One."), ...part("b", " Two.")])).toBe("One. Two.");
+  });
+
+  it("unlinks URLs no web tool returned and keeps returned ones, even split across deltas", async () => {
+    const text = await run([
+      ...tool("1", "web_search", { items: [{ url: "https://www.fire.ca.gov/incidents/2020/8/16/august-complex/" }] }),
+      ...tool("2", "web_fetch", { url: "https://a.org/x", finalUrl: "https://en.wikipedia.org/wiki/August_Complex_fire", status: 200 }),
+      ...part(
+        "t",
+        "Per [CAL FIRE](https://fire.ca.gov/incidents/2020/8/16/aug",
+        "ust-complex) and [Wiki",
+        "pedia](https://en.wikipedia.org/wiki/August_Complex_fire), not [NIFC](https://nifc.gov/made-up) or <https://x.com/y>."
+      )
+    ]);
+    expect(text).toBe(
+      "Per [CAL FIRE](https://fire.ca.gov/incidents/2020/8/16/august-complex) and [Wikipedia](https://en.wikipedia.org/wiki/August_Complex_fire), not NIFC or ."
+    );
+  });
+
+  it("drops a fetched page that failed, and accepts URLs from earlier turns", async () => {
+    expect(await run([...tool("1", "web_fetch", { url: "https://a.org/p", status: 404 }), ...part("t", "[A](https://a.org/p)")])).toBe("A");
+    expect(await run(part("t", "[A](https://a.org/p)"), { knownUrls: ["https://www.a.org/p/"] })).toBe("[A](https://a.org/p)");
+  });
+
+  it("rewrites 'your area' (also split across deltas) unless the user owns the area", async () => {
+    expect(await run(part("t", "Your area had 3 cell-days; in your", " area it is quiet."))).toBe(
+      "This area had 3 cell-days; in this area it is quiet."
+    );
+    expect(await run(part("t", "In your area."), { rewriteArea: false })).toBe("In your area.");
+  });
+
+  it("collects web URLs and area ownership from the transcript", () => {
+    const messages = [
+      { id: "1", role: "user", parts: [{ type: "text", text: "How is my district doing?" }] },
+      {
+        id: "2",
+        role: "assistant",
+        parts: [
+          { type: "tool-web_search", toolCallId: "a", state: "output-available", input: {}, output: { items: [{ url: "https://n.org/1" }] } },
+          { type: "tool-web_fetch", toolCallId: "b", state: "output-available", input: {}, output: { url: "https://n.org/2", status: 200 } },
+          { type: "tool-get_calendar", toolCallId: "c", state: "output-available", input: {}, output: { url: "https://no.org" } }
+        ]
+      }
+    ] as unknown as import("ai").UIMessage[];
+    expect(pp.collectWebUrls(messages)).toEqual(["https://n.org/1", "https://n.org/2"]);
+    expect(pp.userOwnsArea(messages)).toBe(true);
+    expect(pp.userOwnsArea(messages.slice(1))).toBe(false);
   });
 });

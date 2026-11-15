@@ -1,5 +1,5 @@
 {
-  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
+  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
   "main": "src/index.ts",
@@ -9,7 +9,7 @@
     "mode": "smart"
   },
   "vars": {
-    "AI_GATEWAY_ID": "nasa-fire-copilot",
+    "AI_GATEWAY_ID": "default",
     // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
     // AI Gateway catalog id (<author>/<model>).
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",

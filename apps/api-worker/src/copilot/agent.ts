@@ -12,6 +12,7 @@ import { createFireData } from "../data/fireData";
 import { parseContext, type MapContext } from "./context";
 import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
+import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
 import { buildSystemPrompt } from "./prompt";
 import { createFireTools } from "./tools";
 import { createWebTools } from "./web";
@@ -94,6 +95,13 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
 
     let stream = result.toUIMessageStream({ onError: toUserError });
     if (data.source === "mock") stream = stream.pipeThrough(demoDisclaimerTransform());
+    // Last: spacing between text parts, unlink URLs no web tool returned, "your area" → "this area".
+    stream = stream.pipeThrough(
+      answerPostProcessor({
+        knownUrls: collectWebUrls(this.messages),
+        rewriteArea: !userOwnsArea(this.messages)
+      })
+    );
     return createUIMessageStreamResponse({ stream });
   }
 }

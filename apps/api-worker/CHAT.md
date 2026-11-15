@@ -12,6 +12,8 @@ src/copilot/memory.ts     memories table (aoi | preference | finding), dedupe, c
 src/copilot/tools.ts      get_calendar, get_spots_summary, get_month_to_date, remember, recall
 src/copilot/web.ts        web_fetch (always) + web_search (Tavily or Cloudflare)
 src/copilot/prompt.ts     system prompt (rebuilt every turn)
+src/copilot/disclaimer.ts demo-data notice inserted into the stream
+src/copilot/postprocess.ts final pass: text-part spacing, link verification, "your area" → "this area"
 src/data/fireData.ts      FireData interface + createFireData(env)  ← LiveFireData TODO here
 src/data/mockFireData.ts  demo data source (see "What is mocked")
 src/data/sample-fixture.json  built from sample_api/ by scripts/build-fixtures.mjs
@@ -20,6 +22,8 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 ```
 
 ## Setup (once)
+
+> **Temporary:** `wrangler.jsonc` currently points at Hemanth's account (`account_id` `7d56e968…`) and uses that account's `default` AI Gateway (`AI_GATEWAY_ID: "default"`). Switch both back to the team account and the `nasa-fire-copilot` gateway once it exists there.
 
 1. `pnpm install` at the repo root.
 2. `npx wrangler login`. The `AI` binding has no local implementation, so even under `wrangler dev` it runs against (and bills) the account you are logged in to.
@@ -43,11 +47,11 @@ pnpm typegen             # after editing wrangler.jsonc (wrangler types --strict
 
 `pnpm smoke` respects `HOST` (default `localhost:8787`), `SESSION`, `SMOKE_JSON=1` (one-line JSON result) and `SMOKE_DEBUG=1` (log every stream chunk type). It exits 1 when a check fails:
 
-| Turn | Check |
+| Turn | Check (every one is a FAIL) |
 |---|---|
-| both | FAIL if the reply contains CJK characters (language drift) or names a source in brackets without a link (`[Wikipedia; CAL FIRE]`, `[link]`); WARN on "your area" |
-| 1 ("What happened in this area in August 2020?") | FAIL if `get_spots_summary` is not called, or if mock data was used and the first sentence does not mention demo/synthetic data |
-| 2 ("…what does the news say about the August Complex fire?") | FAIL if neither `web_search` nor `web_fetch` is called, or if a page read with `web_fetch` is not linked in the reply |
+| both | CJK characters (language drift); two text parts glued without a space ("stillin"); "your area"; echoed instructions ("You never…", "You do not…"); "workload"; a source named in brackets without a link (`[Wikipedia; CAL FIRE]`, `[link]`); a link to a URL that no `web_search`/`web_fetch` call returned in the conversation |
+| 1 ("What happened in this area in August 2020?") | `get_spots_summary` not called; mock data used but the first sentence does not mention demo/synthetic data; no web tool called but the reply has links or a "Sources" section |
+| 2 ("…what does the news say about the August Complex fire?") | neither `web_search` nor `web_fetch` called; a page read with `web_fetch` is not linked in the reply |
 
 `pnpm compare-models` takes `MODELS` (comma-separated), `RUNS` (default 2), `PORT` (default 8790) and `OUT` (full replies as JSON, default `compare-models.json`).
 
@@ -104,6 +108,16 @@ The final round was cut short when the account hit the **Workers AI free tier (1
 | `web_fetch` | `url, offset?, format?` | page as Markdown, wrapped as untrusted content |
 
 Both web tools end their model-facing output with a `CITATION:` line giving the exact markdown link to copy. The publisher name comes from the URL (`sourceName()` in `web.ts`: wikipedia.org → Wikipedia, storymaps.arcgis.com → ArcGIS StoryMap, fire.ca.gov → CAL FIRE, …; any other host is named by its hostname). This stops models from citing by name without a link, or relabelling a StoryMap as "InciWeb".
+
+## Final pass on the answer (`postprocess.ts`)
+
+The UI stream goes through `answerPostProcessor` after the demo notice. It holds back only an unfinished link and the last two words, so streaming stays smooth and whitespace is never changed.
+
+- **Spacing between text parts:** each model step starts a new text part ("…is still" → tool call → "in…"). Clients that join parts glued words ("stillin", "complexby"), so a part that would glue onto the previous word gets one leading space.
+- **Link verification:** a markdown link (or `<autolink>`) is kept only if its URL was returned by `web_search` (result URLs) or `web_fetch` (fetched page, status < 400) earlier in the conversation or in this turn. Any other link is unlinked and its label text is kept. URLs are compared by host (without `www`) and path (without the trailing slash).
+- **"your area" → "this area"**, unless a user message called the area theirs ("my district", "our county").
+
+The prompt also forbids outside facts (causes, policies, news) without a web tool result in the conversation, gives the safety rule as a sentence the model can say ("I can't advise on evacuations…"), tells the model never to repeat its instructions, and bans filler such as "workload" in favour of data units.
 
 ## What is mocked
 
