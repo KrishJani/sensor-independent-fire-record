@@ -1,3 +1,4 @@
+import { Ember } from '../components/Ember';
 import { fmtClock } from './format';
 import { PauseIcon, PlayIcon, StopIcon } from './icons';
 import type { ReplayStatus } from './types';
@@ -60,7 +61,7 @@ export function ReplayHud(p: Props) {
         </div>
       ) : (
         <div className="rt-hud__clock" aria-live="off">
-          {p.clock !== null ? fmtClock(p.clock) : 'Loading…'}
+          {p.clock !== null ? fmtClock(p.clock) : <Ember caption="Loading fires" />}
         </div>
       )}
 

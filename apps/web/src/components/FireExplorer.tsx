@@ -1,3 +1,4 @@
+import { Ember } from './Ember';
 // Archival Fire Explorer panel (right side): time presets, fire display (harmonized by default), analysis
 // overlays, notable events, and background. Harmonized modes are sensor-independent; raw detections are
 // the only place sensors and FRP appear (provenance).
@@ -153,7 +154,7 @@ function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string
   return (
     <Section title="Notable events" meta={scopeLabel}>
       {outside && createPortal(<div className="map-raw-label material" role="status">Raw detections (not harmonized)</div>, map.getContainer())}
-      {months === null && <p className="explorer__note">Loading…</p>}
+      {months === null && <p className="explorer__note"><Ember caption="Loading" /></p>}
       {outside && <p className="explorer__note">{OUTSIDE_COVERAGE_TEXT}</p>}
       {months?.length === 0 && !outside && <p className="explorer__note">No months far above normal here.</p>}
       <ul className="explorer__events">

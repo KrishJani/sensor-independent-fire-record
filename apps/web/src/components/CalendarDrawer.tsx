@@ -1,3 +1,4 @@
+import { Ember } from './Ember';
 // Archival burning-activity calendar (SPEC.md §7.1): Year × Month heatmap for the US or the current view,
 // with the before/after-harmonization toggle, 90% bands and anomalies on hover, and CSV export.
 import { useEffect, useMemo, useState } from 'react';
@@ -103,7 +104,7 @@ export function CalendarDrawer({ map, onPickMonth, open, onToggle, drawn }: Prop
       </header>
       {open && (
         <div className="calendar-drawer__body">
-          {loading && <p className="calendar-drawer__note">Loading…</p>}
+          {loading && <p className="calendar-drawer__note"><Ember caption="Loading" /></p>}
           {error && <p className={`calendar-drawer__note${outside ? ' calendar-drawer__note--outside' : ' calendar-drawer__note--error'}`}>{error}</p>}
           {!error && data?.meta && data.meta.coverage < 0.995 && (
             <p className="calendar-drawer__note">Partial coverage: {Math.round(data.meta.coverage * 100)}% of this area is in the harmonized US regions.</p>

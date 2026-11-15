@@ -72,7 +72,7 @@ export function App() {
     return { archival: archivalMax ? { ...archival, max: archivalMax < archival.max ? archivalMax : archival.max } : archival, realtime: dateWindow('realtime') };
   }, [archivalMax]);
 
-  const [tab, setTab] = useState<Tab>('archival');
+  const [tab, setTab] = useState<Tab>('realtime');
   const [dates, setDates] = useState<Record<Tab, ISODate>>(() => ({
     archival: initial.date ?? ('2020-09-15' as ISODate), // a recent big fire year, so the map opens on something to see
     realtime: windows.realtime.max,

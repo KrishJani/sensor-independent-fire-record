@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Ember } from './Ember';
 import mapboxgl from 'mapbox-gl';
 import { applyBasemap, BASEMAPS } from '../lib/basemaps';
 import { resolveLightPreset, type MapSettings } from '../lib/mapSettings';
@@ -221,7 +222,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
           />
           {tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
             <div className="map-status material" role="status">
-              {layers.error ? `Couldn't load fire data: ${layers.error}` : layers.loading ? 'Loading fire data…' : 'Showing the strongest results in view. Zoom in to see all.'}
+              {layers.error ? `Couldn't load fire data: ${layers.error}` : layers.loading ? <Ember caption="Loading fires" /> : 'Showing the strongest results in view. Zoom in to see all.'}
             </div>
           )}
           {tab === 'archival' && (
