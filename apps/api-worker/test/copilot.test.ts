@@ -483,7 +483,7 @@ describe("tool JSON schemas", async () => {
 
   // Workers AI validates tool parameters against JSON Schema 2020-12: array-form `items` (zod tuples) is rejected.
   it.each(Object.keys(tools))("%s has no tuple-style items", (name) => {
-    const schema = z.toJSONSchema((tools as Record<string, { inputSchema: z.ZodType }>)[name].inputSchema, { io: "input" });
+    const schema = z.toJSONSchema((tools as unknown as Record<string, { inputSchema: Parameters<typeof z.toJSONSchema>[0] }>)[name].inputSchema, { io: "input" });
     const walk = (n: unknown): void => {
       if (!n || typeof n !== "object") return;
       const o = n as Record<string, unknown>;
