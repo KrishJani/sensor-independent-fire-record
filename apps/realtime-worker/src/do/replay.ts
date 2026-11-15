@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { fromCompact, withStream, type CompactRow, type Detection } from "../detection";
-import { loadScenario } from "../replay/scenarios";
+import { loadScenario, type ScenarioOrigin } from "../replay/scenarios";
 import { replayStream } from "../streams";
 
 /** Real-time interval between replay ticks. */
@@ -14,7 +14,7 @@ export interface ReplayInfo {
   id: string;
   stream: string;
   scenario: string;
-  origin: "r2" | "bundled";
+  origin: ScenarioOrigin;
   note: string | null;
   speed: number;
   status: ReplayStatus;

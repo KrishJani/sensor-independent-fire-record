@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// Pulls FIRMS archive (SP) detections for the Quebec 2023 replay scenario and uploads it to R2.
+// Pulls FIRMS archive (SP) detections for the Quebec 2023 replay scenario and uploads it.
 //   pnpm --filter realtime-worker fetch-replay-fixture [--no-remote] [--no-local] [--refresh]
+//     [--upload-only] [--store=r2|kv]
+// --upload-only skips FIRMS and uploads the existing data/<scenario>.json.
+// --store: default r2 when wrangler.jsonc has an (uncommented) r2_buckets entry, otherwise kv.
 // Needs FIRMS_MAP_KEY (env or apps/realtime-worker/.dev.vars).
 //
 // - Area API: /api/area/csv/{KEY}/{SOURCE}/{w,s,e,n}/{DAY_RANGE}/{START_DATE}
@@ -8,11 +11,13 @@
 // - Keeps type 0 (vegetation fire) only. VIIRS_SNPP_SP + VIIRS_NOAA20_SP always; MODIS_SP only if
 //   the total stays under MAX_ROWS.
 // - Raw CSVs are cached in apps/realtime-worker/data/raw/ (gitignored); --refresh refetches.
-// - Writes data/<scenario>.json and uploads it to R2 as scenarios/<scenario>.json
-//   (local dev state in ../../.wrangler/shared-state, and the remote bucket).
+// - Writes data/<scenario>.json (+ .json.gz) and uploads it to R2 as scenarios/<scenario>.json, or to
+//   KV (binding REPLAY_KV) as scenarios/<scenario>.json.gz (gzipped; the worker decompresses with
+//   DecompressionStream). Both local dev state (../../.wrangler/shared-state) and remote.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeCsv, toCompact } from "../src/detection.ts";
@@ -34,6 +39,18 @@ const dataDir = join(root, "data");
 const rawDir = join(dataDir, "raw", SCENARIO);
 mkdirSync(rawDir, { recursive: true });
 
+const KV_LIMIT = 25 * 1024 * 1024;
+const r2Configured = () =>
+  /"r2_buckets"\s*:/.test(readFileSync(join(root, "wrangler.jsonc"), "utf8").replace(/^\s*\/\/.*$/gm, ""));
+const storeArg = [...args].find((a) => a.startsWith("--store="))?.slice(8);
+const STORE = storeArg ?? (r2Configured() ? "r2" : "kv");
+if (!["r2", "kv"].includes(STORE)) {
+  console.error(`--store must be r2 or kv, got ${STORE}`);
+  process.exit(1);
+}
+const outFile = join(dataDir, `${SCENARIO}.json`);
+const gzFile = `${outFile}.gz`;
+
 function mapKey() {
   if (process.env.FIRMS_MAP_KEY) return process.env.FIRMS_MAP_KEY.trim();
   const f = join(root, ".dev.vars");
@@ -44,7 +61,7 @@ function mapKey() {
   console.error("FIRMS_MAP_KEY is not set (env or apps/realtime-worker/.dev.vars).");
   process.exit(1);
 }
-const KEY = mapKey();
+const KEY = args.has("--upload-only") ? null : mapKey();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400_000).toISOString().slice(0, 10);
@@ -122,6 +139,7 @@ async function fetchSource(source, dayRange, prefetched) {
   return { source, rows, nonVeg, bad };
 }
 
+async function build() {
 console.log(`FIRMS archive → ${SCENARIO}: bbox ${BBOX.join(",")}, ${FROM} → ${TO}`);
 const { n: dayRange, first } = await probeDayRange();
 console.log(`  using DAY_RANGE=${dayRange}`);
@@ -161,22 +179,39 @@ const scenario = {
   generatedAt: new Date().toISOString(),
   rows: all.map(toCompact)
 };
-const outFile = join(dataDir, `${SCENARIO}.json`);
 writeFileSync(outFile, JSON.stringify(scenario));
 console.log(`\nwrote ${all.length} rows (${(JSON.stringify(scenario).length / 1e6).toFixed(2)} MB) → ${outFile}`);
+}
+
+if (args.has("--upload-only")) {
+  if (!existsSync(outFile)) {
+    console.error(`--upload-only: ${outFile} does not exist; run without --upload-only first.`);
+    process.exit(1);
+  }
+} else {
+  await build();
+}
+writeFileSync(gzFile, gzipSync(readFileSync(outFile), { level: 9 }));
+const gzBytes = statSync(gzFile).size;
+console.log(`gzipped → ${gzFile} (${(gzBytes / 1e6).toFixed(2)} MB, ${((gzBytes / KV_LIMIT) * 100).toFixed(1)}% of the KV value limit)`);
+if (STORE === "kv" && gzBytes >= KV_LIMIT) {
+  console.error("gzipped scenario exceeds KV's 25 MiB value limit");
+  process.exit(4);
+}
 
 function upload(where) {
-  const argv = [
-    "exec", "wrangler", "r2", "object", "put", `${BUCKET}/scenarios/${SCENARIO}.json`,
-    "--file", outFile, "--content-type", "application/json",
-    ...(where === "local" ? ["--local", "--persist-to", "../../.wrangler/shared-state"] : ["--remote"])
-  ];
+  const target = where === "local" ? ["--local", "--persist-to", "../../.wrangler/shared-state"] : ["--remote"];
+  const argv =
+    STORE === "r2"
+      ? ["exec", "wrangler", "r2", "object", "put", `${BUCKET}/scenarios/${SCENARIO}.json`, "--file", outFile, "--content-type", "application/json", ...target]
+      : ["exec", "wrangler", "kv", "key", "put", `scenarios/${SCENARIO}.json.gz`, "--binding", "REPLAY_KV", "--path", gzFile, ...target];
+  const label = STORE === "r2" ? `R2 ${BUCKET}/scenarios/${SCENARIO}.json` : `KV REPLAY_KV scenarios/${SCENARIO}.json.gz`;
   try {
     execFileSync("pnpm", argv, { cwd: root, stdio: "pipe" });
-    console.log(`uploaded to R2 (${where}): ${BUCKET}/scenarios/${SCENARIO}.json`);
+    console.log(`uploaded (${where}): ${label}`);
     return true;
   } catch (e) {
-    console.error(`R2 upload (${where}) failed:\n${String(e.stderr || e.stdout || e.message).trim().split("\n").slice(-6).join("\n")}`);
+    console.error(`upload to ${label} (${where}) failed:\n${String(e.stderr || e.stdout || e.message).trim().split("\n").slice(-6).join("\n")}`);
     return false;
   }
 }

@@ -47,9 +47,15 @@
   "triggers": { "crons": ["*/10 * * * *"] },
   "kv_namespaces": [
     {
-      // Per-source poll state (keys realtime:poll:<source>:<bbox>). Omit id on first deploy to auto-provision,
-      // or paste the shared INGEST_STATE id from the ingest-worker once it has one.
-      "binding": "INGEST_STATE"
+      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared INGEST_STATE namespace.
+      "binding": "INGEST_STATE",
+      "id": "2bda5214db6446c498a62dddf873663b"
+    },
+    {
+      // Replay scenarios while R2 is unavailable: scenarios/<id>.json.gz (gzipped JSON).
+      // Uploaded by `pnpm fetch-replay-fixture`.
+      "binding": "REPLAY_KV",
+      "id": "c3f602b4de0c44ddac9eedfb544cf7c5"
     }
   ],
   "queues": {
@@ -63,13 +69,16 @@
       }
     ]
   },
-  "r2_buckets": [
-    {
-      // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
-      "binding": "REPLAY_DATA",
-      "bucket_name": "nasa-fire-realtime"
-    }
-  ],
+  // re-enable once bucket nasa-fire-realtime exists on the deploy account (our role has no R2
+  // permission there). REPLAY_DATA is optional: without it, scenarios load from REPLAY_KV and the
+  // raw NRT CSV archive is skipped. With it, R2 is read first.
+  // "r2_buckets": [
+  //   {
+  //     // Replay scenarios (scenarios/<id>.json) and the raw NRT CSV archive (raw/nrt/...).
+  //     "binding": "REPLAY_DATA",
+  //     "bucket_name": "nasa-fire-realtime"
+  //   }
+  // ],
   "durable_objects": {
     "bindings": [
       { "name": "CLUSTERER", "class_name": "Clusterer" },

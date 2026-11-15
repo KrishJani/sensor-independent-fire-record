@@ -5,6 +5,7 @@
 
 import { fromCompact, normalizeCsv, toCompact, withStream, type CompactRow, type Detection } from "../detection";
 import { parseBbox, type Bbox } from "../grid";
+import { replayBucket } from "../replay/scenarios";
 
 export const NRT_SOURCES = ["VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "MODIS_NRT"] as const;
 const DEFAULT_WATCH = "-170,15,-50,72"; // North America
@@ -83,10 +84,15 @@ async function pollSource(env: Env, key: string, source: string, bbox: Bbox, now
     const text = await res!.text();
     if (!text.startsWith("latitude,")) throw new Error(`FIRMS ${res!.status}: ${text.slice(0, 200)}`);
 
-    // Archive the raw response.
-    const { date, time } = stamp(now);
-    report.archived = `raw/nrt/${source}/${date}/${time}.csv`;
-    await env.REPLAY_DATA.put(report.archived, text, { httpMetadata: { contentType: "text/csv" } });
+    // Archive the raw response (R2 only; skipped while the bucket is not bound).
+    const bucket = replayBucket(env);
+    if (bucket) {
+      const { date, time } = stamp(now);
+      report.archived = `raw/nrt/${source}/${date}/${time}.csv`;
+      await bucket.put(report.archived, text, { httpMetadata: { contentType: "text/csv" } });
+    } else {
+      console.log(JSON.stringify({ job: "realtime_poll_archive_skipped", source, reason: "REPLAY_DATA R2 bucket not bound" }));
+    }
 
     const { detections } = normalizeCsv(text, source);
     report.fetched = detections.length;

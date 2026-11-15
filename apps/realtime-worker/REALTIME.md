@@ -173,14 +173,14 @@ When the `REPLAY_TOKEN` secret is set (production), the four replay `POST` route
 `ReplayInfo`:
 
 ```ts
-{ id, stream: "replay:<id>", scenario, origin: "r2" | "bundled", note: string | null, speed,
+{ id, stream: "replay:<id>", scenario, origin: "r2" | "kv" | "bundled", note: string | null, speed, reused,
   status: "running" | "paused" | "stopped" | "done" | "error",
   startT, endT, streamT, total, emitted, progress, createdAt, finishedAt, expectedDurationS, error }
 ```
 
 Scenarios:
-- `quebec-2023-06`: R2 `scenarios/quebec-2023-06.json`, 59,968 VIIRS SP detections, bbox -80,45,-60,53.
-- `california-2020-08-sample`: bundled in the worker (4,880 rows from `sample_api/`, LNU Complex area). It is also used automatically when a requested scenario is missing from R2; `origin: "bundled"` and `note` say so.
+- `quebec-2023-06`: 59,968 VIIRS SP detections, bbox -80,45,-60,53. Stored in R2 as `scenarios/quebec-2023-06.json` when the `REPLAY_DATA` bucket is bound, otherwise in KV `REPLAY_KV` as `scenarios/quebec-2023-06.json.gz` (gzipped: 2.7 MB → 0.53 MB, about 2% of KV's 25 MiB value limit; decompressed with `DecompressionStream`). R2 is read first when bound.
+- `california-2020-08-sample`: bundled in the worker (4,880 rows from `sample_api/`, LNU Complex area). It is also used automatically when a requested scenario is in neither store; `origin: "bundled"` and `note` say so.
 
 Starting a replay from the UI:
 
@@ -272,7 +272,7 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `REPLAY_TOKEN` | secret | unset | When set, replay `POST` routes need `x-replay-token`. `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
-Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`); KV `INGEST_STATE`; Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
+Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` (the team's shared namespace) and `REPLAY_KV` (replay scenarios); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`, **optional and currently commented out** in `wrangler.jsonc` because the deploy account has no bucket yet: without it scenarios come from `REPLAY_KV` and the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
 
 ---
 
@@ -282,13 +282,14 @@ Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CON
 cd apps/realtime-worker
 cp .dev.vars.example .dev.vars          # set FIRMS_MAP_KEY
 pnpm dev                                # :8789, --test-scheduled, shared state in ../../.wrangler/shared-state
-pnpm fetch-replay-fixture               # once: Quebec archive → data/quebec-2023-06.json → R2 (local + remote)
+pnpm fetch-replay-fixture               # once: Quebec archive → data/quebec-2023-06.json(.gz) → KV, or R2 if bound (local + remote)
+pnpm fetch-replay-fixture --upload-only # re-upload the existing data file without calling FIRMS
 pnpm replay-smoke                       # replay + WebSocket checks (SCENARIO, SPEED, HOST, WAIT_BRIEFS_S=120)
 curl "http://localhost:8789/__scheduled?cron=*/10+*+*+*+*"   # one live poll (or /cdn-cgi/local/scheduled)
 pnpm test && pnpm typecheck
 pnpm typegen                            # after editing wrangler.jsonc
 ```
 
-- If Quebec is not in local R2 (you skipped `fetch-replay-fixture`), replays play the bundled California sample.
+- If Quebec is not in local KV/R2 (you skipped `fetch-replay-fixture`), replays play the bundled California sample.
 - `AI` runs remotely even in dev, so briefs use your account's Workers AI quota (about 35 neurons per brief with the defaults, capped by `ENRICH_MAX_PER_STREAM` and `BRIEF_DAILY_MAX`).
 - To use the history step, run api-worker (`pnpm dev:api`) at the same time. The service binding connects through the local dev registry.
