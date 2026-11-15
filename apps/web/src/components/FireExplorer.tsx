@@ -6,7 +6,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type mapboxgl from 'mapbox-gl';
 import { api, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth } from '../lib/api';
-import { BASEMAPS, BASEMAP_ORDER, type BasemapId } from '../lib/basemaps';
 import { flameRamp, INDUSTRIAL_COLOR, PRONE_COLORS, SENSOR_COLORS } from '../lib/fireLayers';
 import type { FireColoring, FireMode, MapSettings, RangePreset } from '../lib/mapSettings';
 import { Segmented, type SegmentedOption } from './Segmented';
@@ -94,10 +93,6 @@ export function FireExplorer({ map, tier, settings: s, onChange, rangeLabel, onJ
       </Section>
 
       {tier === 'archival' && <NotableEvents map={map} onJump={onJump} />}
-
-      <Section title="Background">
-        <Segmented<BasemapId> options={BASEMAP_ORDER.map((id) => ({ id, label: BASEMAPS[id].label }))} value={s.basemap} onChange={(basemap) => onChange({ basemap })} label="Map type" className="segmented--fill" />
-      </Section>
     </aside>
   );
 }

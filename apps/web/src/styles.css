@@ -692,7 +692,7 @@ button:focus-visible {
 .calendar-drawer {
   position: absolute;
   left: max(var(--inset), env(safe-area-inset-left));
-  bottom: max(calc(var(--inset) + 28px), env(safe-area-inset-bottom));
+  bottom: calc(max(24px, env(safe-area-inset-bottom)) + var(--control-h) + 10px);
   width: min(760px, calc(100vw - 2 * var(--inset)));
   max-height: 46vh;
   display: flex;
@@ -765,7 +765,8 @@ button:focus-visible {
 /* ---------- Bottom toolbar, toast, method ---------- */
 .toolbar {
   position: absolute;
-  bottom: max(calc(var(--inset) + 28px), env(safe-area-inset-bottom));
+  /* Sits above the basemap switcher (.overlay-bottom), which is in the same place on both tabs. */
+  bottom: calc(max(24px, env(safe-area-inset-bottom)) + var(--control-h) + 10px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;

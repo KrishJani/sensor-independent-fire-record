@@ -214,7 +214,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             onLayersOpenChange={setLayersOpen}
             layersPanel={<LayersPanel settings={settings} onChange={update} onReset={reset} />}
           />
-          {tab !== 'archival' && <BasemapSwitcher value={settings.basemap} onChange={(basemap) => update({ basemap })} />}
+          {<BasemapSwitcher value={settings.basemap} onChange={(basemap) => update({ basemap })} />}
           <StatusBar
             map={map}
             showCoordinates={settings.coordinates}
