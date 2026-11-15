@@ -9,7 +9,7 @@ import { Legend } from './Legend';
 import { ReplayHud } from './ReplayHud';
 import { SCENARIOS, SPEEDS, scenarioById, type Scenario, type SpeedId } from './scenarios';
 import { SourceBadge, StatusChip } from './StatusChip';
-import type { Bbox, StreamId } from './types';
+import { titlePlace, type Bbox, type StreamId } from './types';
 import { useIncidentDetail } from './useIncidentDetail';
 import { useRealtimeLayers } from './useRealtimeLayers';
 import { usePresenter } from './presenter';
@@ -99,9 +99,10 @@ export function RealtimeView({ map, onContextChange }: Props) {
     void replay.start(s.id, presenter ? Number(speed) : undefined);
   };
 
-  const nearestName = detail?.summary.id === selectedId && detail?.enrichment?.places?.status === 'ok'
-    ? detail.enrichment.places.data[0]?.name
-    : undefined;
+  const nearestName =
+    detail?.summary.id === selectedId && detail?.enrichment?.places?.status === 'ok'
+      ? titlePlace(detail.enrichment.places.data)?.name
+      : undefined;
   const contextLabel = selected
     ? `${nearestName ? `Fire near ${nearestName}` : `Fire at ${fmtLatLon(selected.centroid)}`} (${selected.id})`
     : (scenario?.title ?? null);

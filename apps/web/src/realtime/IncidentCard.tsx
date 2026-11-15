@@ -3,7 +3,7 @@ import { fmtAgo, fmtClock, fmtInt, fmtKm2, fmtMw, fmtShort } from './format';
 import { ArrowIcon, BackIcon, InfoIcon } from './icons';
 import { fmtLatLon, frpColor } from './IncidentList';
 import { SourceBadge } from './StatusChip';
-import { briefTime, type Brief, type IncidentDetail, type IncidentSummary } from './types';
+import { briefTime, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
 
 interface Props {
   incident: IncidentSummary;
@@ -51,7 +51,7 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
     ? candidates.reduce((a, b) => (briefTime(b) > briefTime(a) ? b : a))
     : null;
   const briefFailed = !shownBrief && enrichment?.brief?.status === 'failed';
-  const nearest = places?.[0];
+  const nearest = titlePlace(places);
   const title = nearest ? `Near ${nearest.name}` : fmtLatLon(i.centroid);
 
   return (

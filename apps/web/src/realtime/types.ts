@@ -126,3 +126,19 @@ export function briefTime(b: Brief): number {
   const parsed = b.asOf ? Date.parse(b.asOf) : NaN;
   return Number.isFinite(parsed) ? parsed : b.streamT;
 }
+
+/** OSM `place` values, most significant first; hamlet and locality rank the same. */
+const PLACE_RANK: Record<string, number> = { city: 0, town: 1, village: 2, hamlet: 3, locality: 3 };
+
+/**
+ * The place to name an incident after: the highest-ranked place the worker returned (they are
+ * all within its search radius), nearest first among equals. "Near Senneterre" reads better
+ * than "Near Signai" when Signai is a railway hamlet a few km closer.
+ */
+export function titlePlace(places: Place[] | null | undefined): Place | null {
+  if (!places?.length) return null;
+  const rank = (p: Place) => PLACE_RANK[p.place] ?? 4;
+  return places.reduce((best, p) =>
+    rank(p) < rank(best) || (rank(p) === rank(best) && p.distanceKm < best.distanceKm) ? p : best,
+  );
+}
