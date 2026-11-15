@@ -116,12 +116,12 @@ validation, and the better one was kept (`scripts/backfill/experiments/`):
 |---|---|---|
 | v1.0 | Constant ratio | Biased: busiest months +7%, quietest −9% |
 | v1.1 | Exponent only | Bias left in 6 of 9 US regions |
-| v1.2 | Background + exponent | Passes the noise-aware bias check in all 8 modelled US regions; Hawaii keeps the constant ratio (§8) |
+| v1.2 | Background + exponent, plus the gas-flare mask (§4.3) | All 8 US regions with enough data pass every check; Hawaii keeps the constant ratio (§8) |
 
 Explanations that were tested and **rejected**:
 
 - Counting noise. The regions have 280–2,700 cells/month, so noise alone gives about 2–7% error.
-- Gas flares. The static-source mask already removes them.
+- Gas flares, at first: the test looked for cells **MODIS** sees persistently, and found none. That was the wrong sensor. Flares are what **VIIRS** sees and MODIS doesn't. The correct test found them (§4.3), and they were the main cause of the Southwest and Interior West failures.
 - MODIS-visible fire size (FRP and isolation). It did not explain the year-to-year swings.
 
 ### 3.4 Applying it: α_eff per month, additive by construction [`effectiveAlphas`]
@@ -202,6 +202,58 @@ Physically, VIIRS cannot see nothing while MODIS sees 20 cells. Example: the fix
 Terra and VIIRS data but no Aqua rows on 08-16 and 08-18. Both days are detected, and they
 fall back to config `T`. Detected days are listed in `outages_detected.csv`. Disable with
 `--no-auto-outages`.
+
+### 4.3 Gas flares and other persistent VIIRS-only heat [`createPersistenceAccumulator`]
+
+FIRMS `type = 2` (static land source) misses many oil and gas flares. A flare is small, hot and
+continuous, so **VIIRS flags its cell on many days a year while MODIS almost never does**. A
+long-burning wildfire is flagged by both sensors.
+
+**Rule:** mask a 0.05° cell if, in any year, VIIRS flags it on ≥ 30 days while MODIS (Terra or
+Aqua) flags it on ≤ 10% of those days (`config/regions.json → flareMask`).
+
+- Masked cells are removed for **both sensors and all years**, like the static mask.
+- They are written to `static_mask.csv` with `reason = persistent_viirs_only`, so the
+  near-real-time filter removes them too.
+- The thresholds were fixed **before** the evaluation, not tuned on it.
+
+**What it finds.** On the US run: 676 cells and 155,368 detections. They are concentrated in:
+
+- the **Permian Basin** (Delaware and Midland basins, TX/NM)
+- the **Eagle Ford** shale (TX)
+- the **Bakken** (ND)
+
+In the Southwest and Interior West, flares were **about a quarter of all VIIRS cell-days** in
+2013–2021, against about 0% of MODIS. They followed the oil cycle: they peaked in 2015–2019 and
+dropped in 2020. That was exactly the year-to-year swing in the VIIRS/MODIS ratio that no fire
+model could explain.
+
+**California for contrast:** its VIIRS-persistent cells are long wildfires near Yosemite, which
+MODIS sees just as often, so only 4 cells are masked there.
+
+**Effect** (held-out error / transition step):
+
+| Region | Without mask | With mask |
+|---|---|---|
+| Southwest | 23.3% / −8.8% | **13.2% / +3.6%** |
+| Interior West | 15.2% / +2.3% | **11.6% / +2.2%** |
+| Great Plains | 7.3% / +0.2% | 7.7% / +0.9% (flares removed; slightly less to fit) |
+| California, Southeast, Pacific NW, Midwest/NE | — | unchanged within ±0.2 pt |
+
+**Threshold sensitivity** (Southwest · Interior West · Great Plains · California, error):
+
+| VIIRS days | MODIS ≤ 5% | MODIS ≤ 10% | MODIS ≤ 20% |
+|---|---|---|---|
+| ≥ 20 | 10.2 · 9.9 · 8.1 · 8.2 | 10.2 · 10.0 · 8.2 · 8.6 | 10.5 · 10.0 · 8.3 · 8.4 |
+| **≥ 30** | 14.2 · 11.0 · 8.4 · 8.2 | **14.2 · 10.8 · 8.3 · 8.2** | 14.2 · 10.8 · 8.3 · 8.6 |
+| ≥ 40 | 17.9 · 12.8 · 7.8 · 8.2 | 17.9 · 12.1 · 7.9 · 8.2 | 17.9 · 11.3 · 7.9 · 8.6 |
+
+(Experiment script, pre-shrinkage fit; the production run gives the "with mask" numbers above.)
+
+- Every setting fixes the Southwest's step, and California is essentially unaffected.
+- 20 days would score best, but 30 was the value chosen beforehand. It is kept to avoid tuning
+  on the outcome.
+- Disable with `--no-flare-mask`.
 
 ## 5. Validation [`validateModel` → `validation.json`]
 
@@ -332,7 +384,7 @@ Aleutians, across the date line).
 - `backfill aggregate --group us` sums them into `data/harmonized/us/`. Harmonized counts are
   additive, so the US total is exactly the sum of the regions.
 - **Cross-check:** where both sensors flew, the US-wide MODIS × α matches observed VIIRS within
-  ±1.4% every year 2012–2021. After that it drifts low (−4% to −12% by 2025) with Terra/Aqua
+  ±2.1% every year 2012–2021. After that it drifts low (−5% to −11% by 2025) with Terra/Aqua
   orbit drift. That is why calibration stops in 2021, and the calendar uses VIIRS for those
   years.
 
@@ -342,20 +394,23 @@ score at that region's own noise (§5.1).
 
 | Region | Error | Correct-model range | Bias check | Background | Year band (90%) | Status |
 |---|---|---|---|---|---|---|
-| Southeast | 5.2% (6.1%) | 4.5–6.8% | p57 ✓ | 16% | −5% / +5% | ✓ |
-| Great Plains | 7.3% (8.6%) | 6.2–8.7% | p69 ✓ | 20% | −4% / +11% | ✓ |
-| California | 8.2% (9.8%) | 7.6–11.1% | p76 ✓ | 11% | −6% / +7% | ✓ |
-| Pacific Northwest | 8.5% (10.1%) | 8.0–12.2% | p78 ✓ | 5% | −7% / +3% | ✓ |
-| Midwest/Northeast | 10.0% (11.2%) | 9.2–13.6% | p24 ✓ | 17% | −8% / +12% | ✓ |
-| Interior West | 15.2% (29.8%) | 13.3–18.9% | p7 ✓ | 36% | −20% / +21% | error 0.2 pt over 15%, at the noise floor |
-| Southwest | 23.3% (23.4%) | 17.8–25.9% | p15 ✓ | 18% | −32% / +26% | error and step fail, at the noise floor |
-| Alaska | 13.7% (14.4%) | — | p85 ✓ | 6% | −7% / +23% | low data |
-| Hawaii | 26.8% (constant ratio used) | — | — | — | — | low data; constant ratio not rejected |
+| Southeast | 5.0% (6.1%) | 4.3–6.4% | p60 ✓ | 15% | −5% / +5% | ✓ |
+| Great Plains | 7.7% (8.2%) | 6.1–8.7% | p85 ✓ | 18% | −4% / +12% | ✓ |
+| California | 8.1% (10.1%) | 7.5–10.9% | p77 ✓ | 11% | −6% / +6% | ✓ |
+| Pacific Northwest | 8.4% (10.1%) | 7.9–12.1% | p83 ✓ | 5% | −7% / +3% | ✓ |
+| Midwest/Northeast | 10.2% (11.4%) | 9.2–13.8% | p22 ✓ | 18% | −8% / +12% | ✓ |
+| Interior West | 11.6% (24.9%) | 10.4–14.8% | p37 ✓ | 33% | −13% / +15% | ✓ |
+| Southwest | 13.2% (19.5%) | 13.0–18.8% | p52 ✓ | 9% | −16% / +12% | ✓ |
+| Alaska | 11.6% (11.1%) | — | p58 ✓ | 5% | −7% / +20% | ✓, low data |
+| Hawaii | 26.8% (constant ratio used) | — | — | — | — | low data; 3 scorable months in 9 years |
 
-- In the Interior West and Southwest the remaining error is **inside what a correct model would
-  score**. Their VIIRS/MODIS ratio swings between years for reasons that MODIS cannot observe
-  (2.3–4.6 in the Interior West; none of activity, FRP or clustering explains it). No MODIS-based
-  formula can remove that, so their bands are wide by design.
-- The **US-wide year band is −7% / +9%** in the MODIS-only years (e.g. 2001: 93.5k–109.4k around
-  100.7k cell-days). It is the sum of the region bands, so it is conservative.
+(Errors are held-out, with the constant ratio in brackets, all with the flare mask on.)
+
+- **All 8 regions with enough data pass every check.** Hawaii cannot be validated: 3 months
+  in 9 years had ≥ 20 VIIRS cell-days, and most of its detections are volcanic and removed.
+  It uses the constant ratio and is flagged.
+- The **US-wide year band is −6% / +8%** in the MODIS-only years (e.g. 2001: 91.4k–104.8k
+  around 97.2k cell-days). It is the sum of the region bands, so it is conservative.
+- Where both sensors flew, the US-wide MODIS × α matches VIIRS **within ±2.1% every year
+  2012–2021**.
 

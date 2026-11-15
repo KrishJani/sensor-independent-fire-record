@@ -1,0 +1,335 @@
+<title>Southwest Fire Calendar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of explanation, then three heatmap panels side by side (stacked on phones), then the indexed annual chart. */
+:root {
+  --bg: #f7f6f2; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983; --rule: #e3e1da;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --q1: #cde2fb; --q2: #9ec5f4; --q3: #6da7ec; --q4: #3987e5; --q5: #256abf; --q6: #184f95; --q7: #0d366b;
+  --empty: #ecebe6; --viirs-line: #0b0b0b;
+  --f-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --f-body: "Inter", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --rule: #2e2e2b;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --q1: #0d366b; --q2: #184f95; --q3: #256abf; --q4: #3987e5; --q5: #6da7ec; --q6: #9ec5f4; --q7: #cde2fb;
+  --empty: #242422; --viirs-line: #f0efec; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121211; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --rule: #2e2e2b;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --q1: #0d366b; --q2: #184f95; --q3: #256abf; --q4: #3987e5; --q5: #6da7ec; --q6: #9ec5f4; --q7: #cde2fb;
+  --empty: #242422; --viirs-line: #f0efec; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 32px; }
+header { display: grid; gap: 10px; max-width: 70ch; }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+h1 { font: 600 clamp(28px, 4vw, 40px)/1.1 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 600 20px/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; color: var(--ink-2); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.fact b { font: 600 26px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--ink-2); }
+.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 820px) { .panels { grid-template-columns: 1fr; } }
+.panel { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.panel h3 { font: 600 15px/1.2 var(--f-display); margin: 0; display: flex; align-items: center; gap: 8px; }
+.panel h3 i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.panel .sub { font-size: 12.5px; color: var(--ink-2); min-height: 3.2em; }
+.grid { display: grid; grid-template-columns: 34px repeat(12, minmax(0, 1fr)); gap: 2px; font: 400 10.5px/1 var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.grid .yl { text-align: right; padding-right: 4px; align-self: center; }
+.grid .ml { text-align: center; padding-bottom: 2px; }
+.cell { height: 14px; border-radius: 2px; background: var(--empty); cursor: crosshair; }
+.cell.partial { background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--bg) 70%, transparent) 3px 5px); }
+.cell:hover, .cell:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
+.viirs { grid-column: 1 / -1; height: 0; border-top: 1.5px dashed var(--viirs-line); margin: 3px 0; position: relative; }
+.viirs span { position: absolute; right: 0; top: -9px; background: var(--bg); padding-left: 4px; font: 500 10px/1 var(--f-mono); color: var(--ink-2); letter-spacing: .04em; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; font: 400 10.5px/1 var(--f-mono); color: var(--ink-3); }
+.legend i { width: 18px; height: 8px; border-radius: 2px; display: inline-block; }
+.legend .lab { margin: 0 6px; }
+.chart-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+.keyrow { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-2); }
+.keyrow span { display: inline-flex; align-items: center; gap: 6px; }
+.keyrow i { width: 16px; height: 2px; display: inline-block; border-radius: 1px; }
+.svgbox { overflow-x: auto; }
+svg text { font-family: var(--f-mono); font-size: 11px; fill: var(--ink-3); }
+.tip { position: fixed; pointer-events: none; z-index: 20; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font: 400 12px/1.45 var(--f-body); box-shadow: 0 4px 16px rgb(0 0 0 / .12); min-width: 190px; font-variant-numeric: tabular-nums; }
+.tip b { font-family: var(--f-display); }
+.tip .row { display: flex; justify-content: space-between; gap: 12px; }
+.tip .row em { font-style: normal; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.tip .row em i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.notes { display: grid; gap: 10px; max-width: 75ch; font-size: 14px; }
+.notes h2 { margin-bottom: 2px; }
+table.alpha { border-collapse: collapse; font: 400 12px/1.3 var(--f-mono); font-variant-numeric: tabular-nums; }
+table.alpha th, table.alpha td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--rule); }
+table.alpha th { color: var(--ink-3); font-weight: 500; }
+table.regions td, table.regions th { padding: 6px 10px; }
+.dim { color: var(--ink-3); }
+.chk { display: inline-block; font: 500 11px/1 var(--f-mono); padding: 3px 6px; border-radius: 4px; border: 1px solid var(--rule); }
+.chk.ok { color: var(--ink); }
+.chk.no { color: var(--ink); border-color: var(--s2); background: color-mix(in srgb, var(--s2) 14%, transparent); }
+.chk.na { color: var(--ink-3); }
+.tablebox { overflow-x: auto; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">NASA FIRMS · MODIS + VIIRS · Southwest · 2000-11 → 2025-12</div>
+    <h1>Before and after harmonization</h1>
+    <p>The same Southwest fire record, three ways. Each day uses one sensor family: MODIS before VIIRS existed, VIIRS from 20 January 2012. The panels differ only in what we do to those numbers. Hover any month for the values.</p>
+  </header>
+
+  <section class="facts" id="facts" aria-label="Key numbers"></section>
+
+  <section class="panels" id="panels" aria-label="Year by month calendars"></section>
+
+  <section class="chart-card" aria-labelledby="ann-h">
+    <h2 id="ann-h">Annual totals, indexed to their 2013–2021 average = 100</h2>
+    <p style="font-size:13px">Indexing puts the three series on one scale. A sensor artifact shows up as a cliff at 2012; real fire years show up in all three. The shaded band is the 90% range of the harmonized series in MODIS-only years, from held-out validation.</p>
+    <div class="keyrow" id="annkey"></div>
+    <div class="svgbox"><svg id="ann" role="img" aria-label="Annual totals for raw detections, gridded cell-days and harmonized cell-days, indexed to 2013 to 2021"></svg></div>
+  </section>
+
+  <section class="chart-card" aria-labelledby="ov-h">
+    <h2 id="ov-h">MODIS harmonized to VIIRS units, against observed VIIRS</h2>
+    <p style="font-size:13px">Where both sensors flew, MODIS × α should land on VIIRS. Same units, one axis. The model was calibrated on 2013–2021; 2012 and 2022–2025 are outside that window.</p>
+    <div class="keyrow"><span><i style="background:var(--s1)"></i>VIIRS, as observed</span><span><i style="background:var(--s2)"></i>MODIS × α (harmonized)</span></div>
+    <div class="svgbox"><svg id="ov" role="img" aria-label="Annual VIIRS cell-days and MODIS harmonized cell-days, 2012 to 2025"></svg></div>
+  </section>
+
+  <section class="chart-card" id="regions-card" aria-labelledby="rg-h" hidden>
+    <h2 id="rg-h">Region by region</h2>
+    <p style="font-size:13px">Each region has its own α model, fitted on its own 2013–2021 overlap. The total is the sum of the regions. Errors are out of sample (each year predicted from a model fitted without it), shown for the model and, in grey, for a single constant ratio per month. The bias check compares each region with simulations of a correct model at that region's own noise level (pN = percentile of the real score; below 5 fails). "Low data" marks regions with too few fire months to validate tightly.</p>
+    <div class="tablebox"><table class="alpha regions" id="regions"></table></div>
+  </section>
+
+  <section class="notes">
+    <h2>How to read it</h2>
+    <p><b>Raw detections</b> count every filtered hotspot. VIIRS pixels are about 1/7 the area of MODIS pixels, so one fire produces many more VIIRS dots, and the record jumps when VIIRS takes over.</p>
+    <p><b>Gridded</b> counts each 0.05° cell (about 5.5 km) once per day. This removes the pixel-size effect. A smaller jump remains, because VIIRS also sees smaller and cooler fires.</p>
+    <p><b>Harmonized</b> uses VIIRS as observed whenever it flew, and MODIS × α otherwise. α is learned from 2013–2021, when both sensors flew. It depends on the calendar month and on how active the region is that month, because VIIRS adds relatively fewer cells in a big fire month: both sensors already flag nearly every cell inside large fires. The result is in VIIRS-equivalent cell-days.</p>
+    <p id="caveat"></p>
+    <h2 style="margin-top:8px" id="alpha-h">α by month (Terra + Aqua): a typical month, and the quietest and busiest months seen in calibration</h2>
+    <div class="tablebox"><table class="alpha" id="alpha"></table></div>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = {"rows":[[2000,11,25,18,124.9,0,1,124.9,30,0,30,82.8,191.7],[2000,12,41,27,117.8,0,1,117.8,31,0,31,78.1,180.7],[2001,1,14,9,48.5,0,1,48.5,31,0,31,32.2,74.5],[2001,2,39,32,134,0,1,134,28,0,28,88.8,205.6],[2001,3,49,30,160.4,0,1,160.4,31,0,31,106.4,246.2],[2001,4,48,25,134.4,0,1,134.4,30,0,30,89.1,206.2],[2001,5,102,69,266.6,0,1,266.6,31,0,31,176.7,409.1],[2001,6,63,40,119.7,0,1,119.7,30,0,30,79.3,183.6],[2001,7,93,50,240.6,0,1,240.6,31,0,31,159.5,369.1],[2001,8,19,16,103.5,0,1,103.5,31,0,31,68.6,158.8],[2001,9,142,89,323.2,0,1,323.2,30,0,30,214.3,496],[2001,10,217,143,468.7,0,1,468.7,31,0,31,310.7,719.2],[2001,11,97,71,282.1,0,1,282.1,30,0,30,187,432.9],[2001,12,30,20,109.5,0,1,109.5,31,0,31,72.6,168],[2002,1,35,29,127.9,0,1,127.9,31,0,31,84.8,196.2],[2002,2,61,40,156.7,0,1,156.7,28,0,28,103.9,240.5],[2002,3,59,49,236.3,0,1,236.3,31,0,31,156.6,362.5],[2002,4,86,39,170.2,0,1,170.2,30,0,30,112.8,261.1],[2002,5,225,90,312.9,0,1,312.9,31,0,31,207.4,480.1],[2002,6,2153,470,916.2,0,1,916.2,30,0,30,607.3,1405.9],[2002,7,177,80,307.4,0,1,307.4,31,0,31,203.8,471.7],[2002,8,261,76,248.3,0,1,248.3,31,0,31,164.6,381],[2002,9,104,57,191.3,0,1,191.3,30,0,30,126.8,293.5],[2002,10,278,134,308.3,0,1,308.3,31,0,31,204.4,473.1],[2002,11,253,142,282.7,0,1,282.7,30,0,30,187.4,433.8],[2002,12,56,40,114.7,0,1,114.7,31,0,31,76,176],[2003,1,93,59,132.7,0,1,132.7,31,0,31,87.9,203.6],[2003,2,72,46,109.4,0,1,109.4,28,0,28,72.5,167.9],[2003,3,107,64,173.8,0,1,173.8,31,0,31,115.2,266.7],[2003,4,140,69,174.7,0,1,174.7,30,0,30,115.8,268.1],[2003,5,270,136,308.6,0,1,308.6,31,0,31,204.6,473.5],[2003,6,1559,387,640.7,0,1,640.7,30,0,30,424.8,983.2],[2003,7,993,318,754.5,0,1,754.5,31,0,31,500.1,1157.7],[2003,8,24,20,91.9,0,1,91.9,31,0,31,60.9,141],[2003,9,242,80,234.3,0,1,234.3,30,0,30,155.3,359.6],[2003,10,349,171,371.2,0,1,371.2,31,0,31,246.1,569.6],[2003,11,164,94,207.9,0,1,207.9,30,0,30,137.8,319.1],[2003,12,205,108,260.3,0,1,260.3,31,0,31,172.5,399.4],[2004,1,71,49,115.5,0,1,115.5,31,0,31,76.5,177.2],[2004,2,79,48,114,0,1,114,29,0,29,75.5,174.9],[2004,3,212,96,237.3,0,1,237.3,31,0,31,157.3,364.1],[2004,4,92,52,148.5,0,1,148.5,30,0,30,98.5,227.9],[2004,5,518,152,331.3,0,1,331.3,31,0,31,219.6,508.3],[2004,6,908,232,433.8,0,1,433.8,30,0,30,287.5,665.6],[2004,7,1238,245,581.3,0,1,581.3,31,0,31,385.3,892],[2004,8,116,73,241.3,0,1,241.3,31,0,31,160,370.3],[2004,9,237,109,284.6,0,1,284.6,30,0,30,188.7,436.8],[2004,10,241,133,306.6,0,1,306.6,31,0,31,203.2,470.4],[2004,11,110,75,175.9,0,1,175.9,30,0,30,116.6,270],[2004,12,71,48,126.6,0,1,126.6,31,0,31,83.9,194.2],[2005,1,62,47,111.9,0,1,111.9,31,0,31,74.2,171.8],[2005,2,60,34,84.2,0,1,84.2,28,0,28,55.8,129.3],[2005,3,171,114,281.7,0,1,281.7,31,0,31,186.8,432.3],[2005,4,279,129,257.4,0,1,257.4,30,0,30,170.6,395],[2005,5,278,110,270.3,0,1,270.3,31,0,31,179.2,414.8],[2005,6,1688,403,660.8,0,1,660.8,30,0,30,438.1,1014.1],[2005,7,1408,428,1015.4,0,1,1015.4,31,0,31,673.1,1558.2],[2005,8,66,39,156.3,0,1,156.3,31,0,31,103.6,239.9],[2005,9,190,101,271.1,0,1,271.1,30,0,30,179.7,416],[2005,10,315,141,320.5,0,1,320.5,31,0,31,212.5,491.8],[2005,11,426,210,385.1,0,1,385.1,30,0,30,255.3,591],[2005,12,161,102,245.8,0,1,245.8,31,0,31,162.9,377.2],[2006,1,158,99,196.1,0,1,196.1,31,0,31,130,301],[2006,2,188,90,186.4,0,1,186.4,28,0,28,123.6,286.1],[2006,3,128,63,171.9,0,1,171.9,31,0,31,114,263.8],[2006,4,223,81,192.3,0,1,192.3,30,0,30,127.5,295.1],[2006,5,302,104,261.2,0,1,261.2,31,0,31,173.1,400.8],[2006,6,1262,307,556.3,0,1,556.3,30,0,30,368.7,853.6],[2006,7,102,58,197.8,0,1,197.8,31,0,31,131.1,303.5],[2006,8,19,17,78.1,0,1,78.1,31,0,31,51.8,119.8],[2006,9,163,83,239.7,0,1,239.7,30,0,30,158.9,367.9],[2006,10,138,87,222,0,1,222,31,0,31,147.2,340.7],[2006,11,395,212,388.8,0,1,388.8,30,0,30,257.7,596.6],[2006,12,211,106,255.4,0,1,255.4,31,0,31,169.3,392],[2007,1,106,72,154,0,1,154,31,0,31,102.1,236.3],[2007,2,98,60,133.7,0,1,133.7,28,0,28,88.6,205.2],[2007,3,176,103,254.6,0,1,254.6,31,0,31,168.7,390.6],[2007,4,101,64,167.2,0,1,167.2,30,0,30,110.8,256.6],[2007,5,138,65,198.3,0,1,198.3,31,0,31,131.4,304.2],[2007,6,243,115,242,0,1,242,30,0,30,160.4,371.4],[2007,7,563,151,373.1,0,1,373.1,31,0,31,247.3,572.6],[2007,8,68,32,136.9,0,1,136.9,31,0,31,90.8,210.1],[2007,9,168,91,253.8,0,1,253.8,30,0,30,168.3,389.5],[2007,10,524,251,521.1,0,1,521.1,31,0,31,345.5,799.7],[2007,11,358,160,309.1,0,1,309.1,30,0,30,204.9,474.3],[2007,12,89,54,135.2,0,1,135.2,31,0,31,89.6,207.4],[2008,1,111,67,145.9,0,1,145.9,31,0,31,96.7,223.9],[2008,2,129,69,149.9,0,1,149.9,29,0,29,99.4,230],[2008,3,201,112,276.8,0,1,276.8,31,0,31,183.5,424.8],[2008,4,321,132,261.3,0,1,261.3,30,0,30,173.2,400.9],[2008,5,194,63,194.8,0,1,194.8,31,0,31,129.1,298.9],[2008,6,690,208,399.1,0,1,399.1,30,0,30,264.6,612.5],[2008,7,201,77,237.1,0,1,237.1,31,0,31,157.2,363.9],[2008,8,113,52,190.3,0,1,190.3,31,0,31,126.2,292.1],[2008,9,186,103,274.5,0,1,274.5,30,0,30,182,421.3],[2008,10,459,204,424.6,0,1,424.6,31,0,31,281.4,651.5],[2008,11,297,173,327.7,0,1,327.7,30,0,30,217.3,502.9],[2008,12,138,72,173.5,0,1,173.5,31,0,31,115,266.3],[2009,1,164,103,204.1,0,1,204.1,31,0,31,135.3,313.1],[2009,2,134,81,167.8,0,1,167.8,28,0,28,111.2,257.5],[2009,3,231,105,259.5,0,1,259.5,31,0,31,172,398.2],[2009,4,347,159,295.1,0,1,295.1,30,0,30,195.6,452.8],[2009,5,143,63,194.8,0,1,194.8,31,0,31,129.1,298.9],[2009,6,596,210,402,0,1,402,30,0,30,266.5,617],[2009,7,338,150,371.4,0,1,371.4,31,0,31,246.2,570],[2009,8,863,309,740.7,0,1,740.7,31,0,31,491,1136.6],[2009,9,166,73,221.6,0,1,221.6,30,0,30,146.9,340],[2009,10,290,140,318.8,0,1,318.8,31,0,31,211.3,489.2],[2009,11,497,219,401.6,0,1,401.6,30,0,30,266.2,616.3],[2009,12,94,60,144.6,0,1,144.6,31,0,31,95.8,221.9],[2010,1,109,74,157.2,0,1,157.2,31,0,31,104.2,241.2],[2010,2,85,49,114.8,0,1,114.8,28,0,28,76.1,176.1],[2010,3,173,95,234.8,0,1,234.8,31,0,31,155.6,360.3],[2010,4,89,57,156.4,0,1,156.4,30,0,30,103.7,240],[2010,5,358,131,301.4,0,1,301.4,31,0,31,199.8,462.4],[2010,6,805,229,429.5,0,1,429.5,30,0,30,284.7,659.1],[2010,7,139,58,197.8,0,1,197.8,31,0,31,131.1,303.5],[2010,8,126,73,241.3,0,1,241.3,31,0,31,160,370.3],[2010,9,292,128,315.8,0,1,315.8,30,0,30,209.4,484.6],[2010,10,116,78,204.3,0,1,204.3,31,0,31,135.4,313.5],[2010,11,264,137,275.2,0,1,275.2,30,0,30,182.5,422.4],[2010,12,86,59,142.2,0,1,142.2,31,0,31,94.3,218.2],[2011,1,126,84,172.9,0,1,172.9,31,0,31,114.6,265.3],[2011,2,122,70,150.2,0,1,150.2,28,0,28,99.6,230.6],[2011,3,285,141,348.5,0,1,348.5,31,0,31,231,534.7],[2011,4,1727,384,655.3,0,1,655.3,30,0,30,434.4,1005.5],[2011,5,2195,487,987.1,0,1,987.1,31,0,31,654.4,1514.8],[2011,6,6895,1106,1592.4,0,1,1592.4,30,0,30,1055.6,2443.6],[2011,7,927,226,536.2,0,1,536.2,31,0,31,355.4,822.8],[2011,8,402,177,457.2,0,1,457.2,31,0,31,303.1,701.6],[2011,9,244,91,253.8,0,1,253.8,30,0,30,168.3,389.5],[2011,10,191,99,244.9,0,1,244.9,31,0,31,162.3,375.8],[2011,11,196,113,238.4,0,1,238.4,30,0,30,158.1,365.9],[2011,12,32,24,89,0,1,89,31,0,31,59,136.5],[2012,1,227,129,203.6,0.387,1,215.9,31,53,31,152.8,284.1],[2012,2,197,93,93,1,1,138.3,29,93,29,93,93],[2012,3,476,156,156,1,1,257,31,156,31,156,156],[2012,4,781,145,145,1,1,174.7,30,145,30,145,145],[2012,5,12516,594,594,1,1,914.1,31,594,31,594,594],[2012,6,8431,668,668,1,1,686.9,30,668,30,668,668],[2012,7,482,89,89,1,1,169.9,31,89,31,89,89],[2012,8,443,107,107,1,1,148.1,31,107,31,107,107],[2012,9,178,90,90,1,1,105.9,30,90,30,90,90],[2012,10,1792,323,323,1,1,354.5,31,323,31,323,323],[2012,11,975,235,235,1,1,276.7,30,235,30,235,235],[2012,12,333,112,112,1,1,133.8,31,112,31,112,112],[2013,1,260,118,118,1,1,139.3,31,118,31,118,118],[2013,2,213,107,107,1,1,156.7,28,107,28,107,107],[2013,3,262,126,126,1,1,186.9,31,126,31,126,126],[2013,4,230,103,103,1,1,109.4,30,103,30,103,103],[2013,5,958,153,153,1,1,175.4,31,153,31,153,153],[2013,6,8707,514,514,1,1,545,30,514,30,514,514],[2013,7,651,115,115,1,1,173.6,31,115,31,115,115],[2013,8,504,223,223,1,1,212.7,31,223,31,223,223],[2013,9,163,77,77,1,1,141.5,30,77,30,77,77],[2013,10,274,132,132,1,1,171.6,31,132,31,132,132],[2013,11,357,127,127,1,1,140.1,30,127,30,127,127],[2013,12,168,91,91,1,1,80.2,31,91,31,91,91],[2014,1,243,129,129,1,1,163.5,31,129,31,129,129],[2014,2,150,82,82,1,1,96.6,28,82,28,82,82],[2014,3,181,97,97,1,1,117.4,31,97,31,97,97],[2014,4,400,120,120,1,1,130.4,30,120,30,120,120],[2014,5,3581,318,318,1,1,345.2,31,318,31,318,318],[2014,6,2637,248,248,1,1,296.8,30,248,30,248,248],[2014,7,1254,246,246,1,1,274.3,31,246,31,246,246],[2014,8,725,170,170,1,1,172.3,31,170,31,170,170],[2014,9,392,105,105,1,1,150.3,30,105,30,105,105],[2014,10,876,248,248,1,1,259.8,31,248,31,248,248],[2014,11,576,215,215,1,1,228.9,30,215,30,215,215],[2014,12,134,77,77,1,1,97.4,31,77,31,77,77],[2015,1,196,116,116,1,1,95.6,31,116,31,116,116],[2015,2,250,134,134,1,1,153.5,28,134,28,134,134],[2015,3,384,177,177,1,1,177.6,31,177,31,177,177],[2015,4,428,159,159,1,1,165.7,30,159,30,159,159],[2015,5,451,155,155,1,1,133.2,31,155,31,155,155],[2015,6,3147,428,428,1,1,390.3,30,428,30,428,428],[2015,7,927,292,292,1,1,202.1,31,292,31,292,292],[2015,8,810,212,212,1,1,207.8,31,212,31,212,212],[2015,9,391,161,161,1,1,148.1,30,161,30,161,161],[2015,10,414,152,152,1,1,154.5,31,152,31,152,152],[2015,11,218,123,123,1,1,105,30,123,30,123,123],[2015,12,259,108,108,1,1,132.3,31,108,31,108,108],[2016,1,175,99,99,1,1,110.2,31,99,31,99,99],[2016,2,319,149,149,1,1,156.4,29,149,29,149,149],[2016,3,790,230,230,1,1,217.5,31,230,31,230,230],[2016,4,386,130,130,1,1,158,30,130,30,130,130],[2016,5,2588,366,366,1,1,373.7,31,366,31,366,366],[2016,6,7470,582,582,1,1,615.3,30,582,30,582,582],[2016,7,2391,395,395,1,1,366.3,31,395,31,395,395],[2016,8,170,109,109,1,1,139.7,31,109,31,109,109],[2016,9,871,221,221,1,1,217.9,30,221,30,221,221],[2016,10,1055,296,296,1,1,281.7,31,296,31,296,296],[2016,11,425,150,150,1,1,172.5,30,150,30,150,150],[2016,12,171,108,108,1,1,126.6,31,108,31,108,108],[2017,1,99,59,59,1,1,86.1,31,59,31,59,59],[2017,2,193,124,124,1,1,111.2,28,124,28,124,124],[2017,3,552,209,209,1,1,215.7,31,209,31,209,209],[2017,4,855,188,188,1,1,209.3,30,188,30,188,188],[2017,5,2228,401,401,1,1,377.7,31,401,31,401,401],[2017,6,8091,802,802,1,1,749.1,30,802,30,802,802],[2017,7,3097,403,403,1,1,406,31,403,31,403,403],[2017,8,334,173,173,1,1,134,31,173,31,173,173],[2017,9,375,214,214,1,1,141.5,30,214,30,214,214],[2017,10,2519,431,431,1,1,382.7,31,431,31,431,431],[2017,11,1748,407,407,1,1,361.3,30,407,30,407,407],[2017,12,601,220,220,1,1,142.2,31,220,31,220,220],[2018,1,535,212,212,1,1,194.2,31,212,31,212,212],[2018,2,571,180,180,1,1,167.8,28,180,28,180,180],[2018,3,626,236,236,1,1,179.5,31,236,31,236,236],[2018,4,3286,384,384,1,1,374.3,30,384,30,384,384],[2018,5,2758,365,365,1,1,324.2,31,365,31,365,365],[2018,6,3601,373,373,1,1,345.3,30,373,30,373,373],[2018,7,1427,382,382,1,1,276.6,31,382,31,382,382],[2018,8,2202,432,432,1,1,395.2,31,432,31,432,432],[2018,9,1796,348,348,1,1,359.5,30,348,30,348,348],[2018,10,394,188,188,1,1,158.9,31,188,31,188,188],[2018,11,699,269,269,1,1,241.9,30,269,30,269,269],[2018,12,202,130,130,1,1,100.6,31,130,31,130,130],[2019,1,117,77,77,1,1,88,31,77,31,77,77],[2019,2,141,97,97,1,1,111.2,28,97,28,97,97],[2019,3,420,187,187,1,1,144.6,31,187,31,187,187],[2019,4,502,189,189,1,1,125.3,30,189,30,189,189],[2019,5,690,240,240,1,1,223.3,31,240,31,240,240],[2019,6,5387,618,618,1,1,574,30,618,30,618,618],[2019,7,2520,443,443,1,1,398.5,31,443,31,443,443],[2019,8,2969,524,524,1,1,462.9,31,524,31,524,524],[2019,9,1314,340,340,1,1,316.2,30,340,30,340,340],[2019,10,2023,399,399,1,1,427.7,31,399,31,399,399],[2019,11,670,184,184,1,1,193,30,184,30,184,184],[2019,12,147,85,85,1,1,94,31,85,31,85,85],[2020,1,319,142,142,1,1,106.6,31,142,31,142,142],[2020,2,237,145,145,1,1,136.6,29,145,29,145,145],[2020,3,183,103,103,1,1,106.4,31,103,31,103,103],[2020,4,134,96,96,1,1,103.8,30,96,30,96,96],[2020,5,446,149,149,1,1,168.1,31,149,31,149,149],[2020,6,13907,973,973,1,1,999.1,30,973,30,973,973],[2020,7,2723,362,362,1,1,396.8,31,362,31,362,362],[2020,8,3450,491,491,1,1,563.3,31,491,31,491,491],[2020,9,853,195,195,1,1,204.8,30,195,30,195,195],[2020,10,3959,389,389,1,1,398.9,31,389,31,389,389],[2020,11,285,144,144,1,1,143.8,30,144,30,144,144],[2020,12,189,99,99,1,1,132.3,31,99,31,99,99],[2021,1,224,117,117,1,1,113.7,31,117,31,117,117],[2021,2,444,198,198,1,1,148.6,28,198,28,198,198],[2021,3,417,172,172,1,1,192.4,31,172,31,172,172],[2021,4,1241,237,237,1,1,249.6,30,237,30,237,237],[2021,5,2751,359,359,1,1,379,31,359,31,359,359],[2021,6,13429,981,981,1,1,1003.5,30,981,30,981,981],[2021,7,909,201,201,1,1,293.1,31,201,31,201,201],[2021,8,254,108,108,1,1,119.4,31,108,31,108,108],[2021,9,157,108,108,1,1,89.8,30,108,30,108,108],[2021,10,540,202,202,1,1,196.3,31,202,31,202,202],[2021,11,1274,268,268,1,1,312,30,268,30,268,268],[2021,12,432,119,119,1,1,140.8,31,119,31,119,119],[2022,1,314,160,160,1,1,158.8,31,160,31,160,160],[2022,2,336,130,130,1,1,135.4,28,130,28,130,130],[2022,3,505,170,170,1,1,190.6,31,170,31,170,170],[2022,4,6264,467,467,1,1,489.7,30,467,30,467,467],[2022,5,24791,1271,1271,1,1,1939.8,31,1271,31,1271,1271],[2022,6,6849,580,580,1,1,553,30,580,30,580,580],[2022,7,517,150,150,1,1,183.3,31,150,31,150,150],[2022,8,70,50,50,1,1,64.3,31,50,31,50,50],[2022,9,255,107,107,1,1,115.9,30,107,30,107,107],[2022,10,155,98,98,1,1,68.7,31,98,31,98,98],[2022,11,223,102,102,1,1,102.2,30,102,30,102,102],[2022,12,190,101,101,1,1,76,31,101,31,101,101],[2023,1,100,66,66,1,1,62.6,31,66,31,66,66],[2023,2,213,98,98,1,1,91.7,28,98,28,98,98],[2023,3,239,103,103,1,1,142.5,31,103,31,103,103],[2023,4,422,169,169,1,1,156.4,30,169,30,169,169],[2023,5,1531,250,250,1,1,311.4,31,250,31,250,250],[2023,6,2619,451,451,1,1,351.4,30,451,30,451,451],[2023,7,3382,482,482,1,1,548,31,482,31,482,482],[2023,8,1752,300,300,1,1,352.7,31,300,31,300,300],[2023,9,1226,241,241,1,1,241.5,30,241,30,241,241],[2023,10,2275,427,427,1,1,418.2,31,427,31,427,427],[2023,11,1159,233,233,1,1,282.7,30,233,30,233,233],[2023,12,384,152,152,1,1,157.9,31,152,31,152,152],[2024,1,278,114,114,1,1,97.4,31,114,31,114,114],[2024,2,290,139,139,1,1,128,29,139,29,139,139],[2024,3,278,137,137,1,1,126,31,137,31,137,137],[2024,4,746,212,212,1,1,173.2,30,212,30,212,212],[2024,5,1862,318,318,1,1,329.9,31,318,31,318,318],[2024,6,2126,213,213,1,1,279.9,30,213,30,213,213],[2024,7,1537,296,296,1,1,443.7,31,296,31,296,296],[2024,8,413,186,186,1,1,145.3,31,186,31,186,186],[2024,9,1501,202,202,1,1,286.3,30,202,30,202,202],[2024,10,1172,277,277,1,1,241.1,31,277,31,277,277],[2024,11,637,156,156,1,1,187.9,30,156,30,156,156],[2024,12,337,124,124,1,1,117.7,31,124,31,124,124],[2025,1,493,131,131,1,1,119,31,131,31,131,131],[2025,2,212,107,107,1,1,121.8,28,107,28,107,107],[2025,3,283,174,174,1,1,117.4,31,174,31,174,174],[2025,4,289,135,135,1,1,113,30,135,30,135,135],[2025,5,1390,202,202,1,1,218.4,31,202,31,202,202],[2025,6,2657,240,240,1,1,263.1,30,240,30,240,240],[2025,7,9697,557,557,1,1,998.8,31,557,31,557,557],[2025,8,5069,424,424,1,1,613.6,31,424,31,424,424],[2025,9,156,113,113,1,1,103.3,30,113,30,113,113],[2025,10,566,187,187,1,1,171.6,31,187,31,187,187],[2025,11,1371,250,250,1,1,261.6,30,250,30,250,250],[2025,12,296,146,146,1,1,113.2,31,146,31,146,146]],"alpha":[[2.394802,2.069469,2.621069,2.5314262687951743,1.95529778438842],[2.153845,1.847335,2.364639,2.4454803107712744,2.056152016971421],[2.678709,2.368892,2.972047,2.9466236810615536,2.3004900098850305],[2.723632,2.42696,2.992378,2.4691822259414633,1.5131292037662485],[2.205722,2.087988,2.320754,2.696815056491212,1.7470341103973435],[1.713392,1.616107,1.775189,2.103019464194249,1.4394164763946442],[2.764704,2.39864,3.17447,2.9569629237542676,2.1718576955167284],[3.522087,3.233394,3.792622,3.91448782464599,2.3218742578416114],[4.0618,3.280499,4.819753,3.7057724480099523,2.0222257600486455],[2.428193,2.27654,2.546556,2.847457241664827,2.0725301838818],[2.270557,2.069684,2.372033,2.6837316667611795,1.804806413859671],[2.637016,2.1515,3.077859,2.3765619215565925,1.8163404787781587]],"model":{"beta":0.762747,"betaCi":[0.753811,1.01369],"f":7.936834,"p":0,"bg":0.08713,"df":13},"val":{"loyo":0.132045,"loyo1":0.195207,"top":-0.005552,"top1":0.081059,"bot":0.198134,"bot1":-0.011049,"rb":0.835186,"rb1":0.622995,"step":0.035513},"n":{"det":543726,"cd":109667},"noise":{"pct":52,"rb":[0.742253,0.832277,0.904959],"md":[0.13047,0.155899,0.188408]},"confidence":{"level":"ok","reason":null,"monthsScored":108,"medianMonthlyViirs":187.5},"annualBand":[{"y":2000,"h":242.71,"lo":203.01065343,"hi":272.58905726},{"y":2001,"h":2391.19,"lo":2000.07022527,"hi":2685.55983614},{"y":2002,"h":3372.7000000000003,"lo":2821.0375791,"hi":3787.8996062},{"y":2003,"h":3459.9999999999995,"lo":2894.0581799999995,"hi":3885.9467599999994},{"y":2004,"h":3096.56,"lo":2590.06497048,"hi":3477.76511536},{"y":2005,"h":4060.7400000000002,"lo":3396.53694042,"hi":4560.64145844},{"y":2006,"h":2946.04,"lo":2464.16507532,"hi":3308.71520024},{"y":2007,"h":2879.0699999999997,"lo":2408.1491573099997,"hi":3233.5007914199996},{"y":2008,"h":3055.58,"lo":2555.78794614,"hi":3431.7402314799997},{"y":2009,"h":3721.92,"lo":3113.13671136,"hi":4180.11068352},{"y":2010,"h":2770.6699999999996,"lo":2317.4798201099998,"hi":3111.7561010199993},{"y":2011,"h":5725.88,"lo":4789.31498604,"hi":6430.770183279999},{"y":2012,"h":2815.5699999999997,"lo":2790.94171681,"hi":2834.10607042},{"y":2013,"h":1886,"lo":1886,"hi":1886},{"y":2014,"h":2055,"lo":2055,"hi":2055},{"y":2015,"h":2217,"lo":2217,"hi":2217},{"y":2016,"h":2835,"lo":2835,"hi":2835},{"y":2017,"h":3631,"lo":3631,"hi":3631},{"y":2018,"h":3499,"lo":3499,"hi":3499},{"y":2019,"h":3383,"lo":3383,"hi":3383},{"y":2020,"h":3288,"lo":3288,"hi":3288},{"y":2021,"h":3070,"lo":3070,"hi":3070},{"y":2022,"h":3386,"lo":3386,"hi":3386},{"y":2023,"h":2972,"lo":2972,"hi":2972},{"y":2024,"h":2374,"lo":2374,"hi":2374},{"y":2025,"h":2666,"lo":2666,"hi":2666}],"bandYear":[0.836433,1.123106]};
+const MONTHS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SERIES = [
+  { key: 2, name: 'Raw detections', unit: 'dots', color: '--s2', sub: 'Filtered hotspot dots. The jump at 2012 is the sensor change.' },
+  { key: 3, name: 'Gridded', unit: 'cell-days', color: '--s3', sub: '5.5 km cell-days, no α. Pixel size removed; sensitivity gap remains.' },
+  { key: 4, name: 'Harmonized', unit: 'VIIRS-eq. cell-days', color: '--s1', sub: 'Cell-days × α on MODIS-only days. Comparable across 2012.' },
+];
+const fmt = (x, d = 0) => x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const rows = DATA.rows.map(r => ({ y: r[0], m: r[1], raw: r[2], grid: r[3], unscaled: r[3], harm: r[4], mix: r[5], complete: !!r[6], mscaled: r[7], nModis: r[8], viirs: r[9], nDays: r[10], lo: r[11], hi: r[12], vals: r }));
+const byKey = new Map(rows.map(r => [r.y + '-' + r.m, r]));
+const years = [...new Set(rows.map(r => r.y))].sort((a, b) => a - b);
+const tip = document.getElementById('tip');
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - pad;
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+}
+function hideTip() { tip.hidden = true; }
+function monthTip(r) {
+  const basis = r.mix >= 0.999 ? 'VIIRS (as observed)' : r.mix <= 0.001 ? (r.unscaled > 0 ? `MODIS × α (${(r.harm / r.grid).toFixed(2)})` : 'MODIS × α') : `mixed: ${Math.round(r.mix * 100)}% VIIRS days`;
+  return `<b>${MONTH_NAMES[r.m - 1]} ${r.y}</b>${r.complete ? '' : ' <span style="color:var(--ink-3)">· partial</span>'}
+  ${SERIES.map(s => `<div class="row"><em><i style="background:var(${s.color})"></i>${s.name}</em><span>${fmt(r.vals[s.key], s.key === 4 ? 0 : 0)}</span></div>`).join('')}
+  <div class="row" style="margin-top:4px"><em>Basis</em><span>${basis}</span></div>${r.lo !== null && r.hi !== null && r.hi - r.lo > 0.5 ? `<div class="row"><em>Harmonized, 90% range</em><span>${fmt(r.lo)}–${fmt(r.hi)}</span></div>` : ''}`;
+}
+
+// ---------- key numbers ----------
+const ann = {};
+for (const r of rows) { if (!r.complete) continue; (ann[r.y] ??= [0, 0, 0]); ann[r.y][0] += r.raw; ann[r.y][1] += r.grid; ann[r.y][2] += r.harm; }
+const avg = (a, b, i) => { let s = 0, n = 0; for (let y = a; y <= b; y++) if (ann[y]) { s += ann[y][i]; n++; } return s / n; };
+const jump = i => avg(2012, 2014, i) / avg(2009, 2011, i);
+// Overlap cross-check: months where VIIRS and MODIS both flew every day.
+const ov = {};
+for (const r of rows) { if (r.y < 2012 || r.y > 2025 || !r.complete || r.mix < 0.999 || r.nModis !== r.nDays) continue; (ov[r.y] ??= { vi: 0, mod: 0 }); ov[r.y].vi += r.viirs; ov[r.y].mod += r.mscaled; }
+const overlapYears = DATA.overlap ?? Object.entries(ov).map(([y, v]) => ({ y: +y, ...v })).sort((a, b) => a.y - b.y);
+const pct1 = x => (x === null || x === undefined ? '—' : `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
+const regionFacts = () => {
+  const R = DATA.regions, pass = R.filter(r => r.acc.every(a => a !== false)).length;
+  const better = R.filter(r => r.loyo !== null && r.loyo1 !== null && r.loyo <= r.loyo1).length;
+  return [
+    [`${pass} of ${R.length}`, 'Regions passing every check (held-out error ≤ 15%, no step, no activity bias)'],
+    [`${better} of ${R.length}`, 'Regions where activity-dependent α beats a constant ratio out of sample'],
+  ];
+};
+document.getElementById('facts').innerHTML = [
+  [`${jump(0).toFixed(1)}×`, 'Jump in raw detections, 2012–14 vs 2009–11'],
+  [`${jump(1).toFixed(1)}×`, 'Same jump after gridding to 5.5 km cells'],
+  [`${jump(2).toFixed(1)}×`, 'Same jump after harmonization (2010 was a quiet year)'],
+  [`±${(Math.max(...overlapYears.map(d => Math.abs(d.mod / d.vi - 1))) * 100).toFixed(0)}%`, 'Largest yearly gap between MODIS × α and observed VIIRS, 2012–2025'],
+  ...(DATA.val ? [[`${(DATA.val.loyo * 100).toFixed(1)}%`, `Median error predicting a held-out year from MODIS (constant ratio: ${(DATA.val.loyo1 * 100).toFixed(1)}%)`]] : regionFacts()),
+].map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join('');
+
+// ---------- heatmaps ----------
+function quantileBreaks(vals, n = 7) {
+  const xs = vals.filter(v => v > 0).sort((a, b) => a - b);
+  const q = p => { const h = (xs.length - 1) * p, lo = Math.floor(h), hi = Math.ceil(h); return xs[lo] + (h - lo) * (xs[hi] - xs[lo]); };
+  return Array.from({ length: n - 1 }, (_, i) => q((i + 1) / n));
+}
+const panels = document.getElementById('panels');
+for (const s of SERIES) {
+  const vals = rows.filter(r => r.complete).map(r => r.vals[s.key]);
+  const br = quantileBreaks(vals);
+  const cls = v => (v <= 0 ? 0 : 1 + br.filter(b => v > b).length);
+  const el = document.createElement('div');
+  el.className = 'panel';
+  let g = `<div class="grid" role="grid" aria-label="${s.name} by year and month"><div></div>${MONTHS.map(m => `<div class="ml">${m}</div>`).join('')}`;
+  for (const y of years) {
+    if (y === 2012) g += `<div class="viirs"><span>VIIRS starts</span></div>`;
+    g += `<div class="yl">${y}</div>`;
+    for (let m = 1; m <= 12; m++) {
+      const r = byKey.get(y + '-' + m);
+      if (!r) { g += `<div></div>`; continue; }
+      const c = cls(r.vals[s.key]);
+      g += `<div class="cell${r.complete ? '' : ' partial'}" tabindex="0" data-k="${y}-${m}" style="${c ? `background-color:var(--q${c})` : ''}" aria-label="${MONTH_NAMES[m - 1]} ${y}: ${fmt(r.vals[s.key])} ${s.unit}"></div>`;
+    }
+  }
+  g += `</div>`;
+  const lo = Math.min(...vals.filter(v => v > 0)), hi = Math.max(...vals);
+  const legend = `<div class="legend"><span class="lab">${fmt(lo)}</span>${[1,2,3,4,5,6,7].map(i => `<i style="background:var(--q${i})"></i>`).join('')}<span class="lab">${fmt(hi)} ${s.unit}</span></div>`;
+  el.innerHTML = `<h3><i style="background:var(${s.color})"></i>${s.name}</h3><div class="sub">${s.sub}</div>${g}${legend}`;
+  panels.appendChild(el);
+}
+panels.addEventListener('pointermove', e => { const c = e.target.closest('.cell'); if (!c) return hideTip(); showTip(monthTip(byKey.get(c.dataset.k)), e); });
+panels.addEventListener('pointerleave', hideTip);
+panels.addEventListener('focusin', e => { const c = e.target.closest('.cell'); if (!c) return; const b = c.getBoundingClientRect(); showTip(monthTip(byKey.get(c.dataset.k)), { clientX: b.right, clientY: b.bottom }); });
+panels.addEventListener('focusout', hideTip);
+
+// ---------- indexed annual chart ----------
+const ay = years.filter(y => ann[y] && y >= 2001 && y <= 2025);
+const base = [0, 1, 2].map(i => avg(2013, 2021, i));
+const idx = ay.map(y => ({ y, v: [0, 1, 2].map(i => (ann[y][i] / base[i]) * 100) }));
+const LINES = [{ i: 0, s: SERIES[0] }, { i: 1, s: SERIES[1] }, { i: 2, s: SERIES[2] }];
+document.getElementById('annkey').innerHTML = LINES.map(l => `<span><i style="background:var(${l.s.color})"></i>${l.s.name}</span>`).join('');
+function drawAnnual() {
+  const svg = document.getElementById('ann');
+  const W = Math.max(640, svg.parentElement.clientWidth), H = 300, m = { l: 44, r: 92, t: 12, b: 28 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const maxV = Math.max(...idx.flatMap(d => d.v));
+  const yMax = Math.ceil(maxV / 50) * 50;
+  const x = y => m.l + ((y - ay[0]) / (ay[ay.length - 1] - ay[0])) * (W - m.l - m.r);
+  const yy = v => H - m.b - (v / yMax) * (H - m.t - m.b);
+  const rule = cssVar('--rule'), ink3 = cssVar('--ink-3');
+  let s = '';
+  for (let v = 0; v <= yMax; v += 50) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(v)}" y2="${yy(v)}" stroke="${rule}" stroke-width="1"/><text x="${m.l - 8}" y="${yy(v) + 4}" text-anchor="end">${v}</text>`;
+  for (const y of ay) if (y % 5 === 0 || y === ay[0]) s += `<text x="${x(y)}" y="${H - 8}" text-anchor="middle">${y}</text>`;
+  s += `<line x1="${x(2012) - (x(2012) - x(2011)) / 2}" x2="${x(2012) - (x(2012) - x(2011)) / 2}" y1="${m.t}" y2="${H - m.b}" stroke="${cssVar('--viirs-line')}" stroke-dasharray="4 3" stroke-width="1.2"/>`;
+  s += `<text x="${x(2012) - (x(2012) - x(2011)) / 2 + 6}" y="${m.t + 10}">VIIRS starts</text>`;
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(100)}" y2="${yy(100)}" stroke="${ink3}" stroke-width="1" stroke-dasharray="1 3"/>`;
+  if (DATA.annualBand) {
+    const bb = DATA.annualBand.filter(b => idx.some(d => d.y === b.y) && b.hi - b.lo > 0.01 * b.h);
+    if (bb.length > 1) {
+      const top = bb.map(b => `${x(b.y)},${yy((b.hi / base[2]) * 100)}`), bot = bb.slice().reverse().map(b => `${x(b.y)},${yy((b.lo / base[2]) * 100)}`);
+      s += `<polygon points="${[...top, ...bot].join(' ')}" fill="${cssVar('--s1')}" opacity="0.18"/>`;
+    }
+  }
+  for (const l of LINES) {
+    const col = cssVar(l.s.color);
+    s += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${idx.map(d => `${x(d.y)},${yy(d.v[l.i])}`).join(' ')}"/>`;
+    const last = idx[idx.length - 1];
+    s += `<circle cx="${x(last.y)}" cy="${yy(last.v[l.i])}" r="4" fill="${col}" stroke="${cssVar('--surface')}" stroke-width="2"/>`;
+  }
+  // direct labels at the right edge, nudged apart
+  const ends = LINES.map(l => ({ l, y: yy(idx[idx.length - 1].v[l.i]) })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 14) ends[k].y = ends[k - 1].y + 14;
+  for (const e of ends) s += `<text x="${W - m.r + 10}" y="${e.y + 4}" style="fill:${cssVar('--ink-2')}">${e.l.s.name.split(' ')[0]}</text>`;
+  s += `<line id="xh" y1="${m.t}" y2="${H - m.b}" stroke="${ink3}" stroke-width="1" visibility="hidden"/><rect id="hit" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  svg.innerHTML = s;
+  const xh = svg.querySelector('#xh');
+  svg.querySelector('#hit').addEventListener('pointermove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const d = idx.reduce((a, b) => Math.abs(x(b.y) - p.x) < Math.abs(x(a.y) - p.x) ? b : a);
+    xh.setAttribute('x1', x(d.y)); xh.setAttribute('x2', x(d.y)); xh.setAttribute('visibility', 'visible');
+    const band = DATA.annualBand?.find(b => b.y === d.y);
+    showTip(`<b>${d.y}</b>${LINES.map(l => `<div class="row"><em><i style="background:var(${l.s.color})"></i>${l.s.name}</em><span>${fmt(d.v[l.i])} · ${fmt(ann[d.y][l.i])}</span></div>`).join('')}${band && band.hi - band.lo > 0.01 * band.h ? `<div class="row"><em>Harmonized, 90% range</em><span>${fmt(band.lo)}–${fmt(band.hi)}</span></div>` : ''}<div class="row" style="margin-top:4px"><em>index · annual total</em><span></span></div>`, e);
+  });
+  svg.querySelector('#hit').addEventListener('pointerleave', () => { xh.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+function drawOverlap() {
+  const svg = document.getElementById('ov');
+  const W = Math.max(640, svg.parentElement.clientWidth), H = 260, m = { l: 56, r: 20, t: 12, b: 28 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const ys = overlapYears; if (!ys.length) return;
+  const maxV = Math.max(...ys.flatMap(d => [d.vi, d.mod]));
+  const step = maxV > 10000 ? 5000 : 2000, yMax = Math.ceil(maxV / step) * step;
+  const x = y => m.l + ((y - ys[0].y) / (ys[ys.length - 1].y - ys[0].y)) * (W - m.l - m.r);
+  const yy = v => H - m.b - (v / yMax) * (H - m.t - m.b);
+  const rule = cssVar('--rule'), ink3 = cssVar('--ink-3');
+  let s = '';
+  for (let v = 0; v <= yMax; v += step) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy(v)}" y2="${yy(v)}" stroke="${rule}"/><text x="${m.l - 8}" y="${yy(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  for (const d of ys) if (d.y % 2 === 0) s += `<text x="${x(d.y)}" y="${H - 8}" text-anchor="middle">${d.y}</text>`;
+  const band = (a, b) => `<rect x="${x(a)}" y="${m.t}" width="${x(b) - x(a)}" height="${H - m.t - m.b}" fill="${cssVar('--ink')}" opacity="0.04"/>`;
+  s += band(2013, 2021) + `<text x="${(x(2013) + x(2021)) / 2}" y="${m.t + 12}" text-anchor="middle">calibration years</text>`;
+  for (const [key, col] of [['vi', '--s1'], ['mod', '--s2']]) {
+    const c = cssVar(col);
+    s += `<polyline fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" points="${ys.map(d => `${x(d.y)},${yy(d[key])}`).join(' ')}"/>`;
+    for (const d of ys) s += `<circle cx="${x(d.y)}" cy="${yy(d[key])}" r="3.5" fill="${c}" stroke="${cssVar('--surface')}" stroke-width="2"/>`;
+  }
+  s += `<line id="xo" y1="${m.t}" y2="${H - m.b}" stroke="${ink3}" visibility="hidden"/><rect id="ho" x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+  svg.innerHTML = s;
+  const xo = svg.querySelector('#xo');
+  svg.querySelector('#ho').addEventListener('pointermove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const d = ys.reduce((a, b) => Math.abs(x(b.y) - p.x) < Math.abs(x(a.y) - p.x) ? b : a);
+    xo.setAttribute('x1', x(d.y)); xo.setAttribute('x2', x(d.y)); xo.setAttribute('visibility', 'visible');
+    showTip(`<b>${d.y}</b><div class="row"><em><i style="background:var(--s1)"></i>VIIRS</em><span>${fmt(d.vi)}</span></div><div class="row"><em><i style="background:var(--s2)"></i>MODIS × α</em><span>${fmt(d.mod)}</span></div><div class="row" style="margin-top:4px"><em>difference</em><span>${(d.mod / d.vi - 1 >= 0 ? '+' : '') + ((d.mod / d.vi - 1) * 100).toFixed(1)}%</span></div>`, e);
+  });
+  svg.querySelector('#ho').addEventListener('pointerleave', () => { xo.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+function drawAll() { drawAnnual(); drawOverlap(); }
+drawAll();
+addEventListener('resize', drawAll);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- per-region panel (groups) ----------
+if (DATA.regions) {
+  document.getElementById('regions-card').hidden = false;
+  const chk = (ok, label) => `<span class="chk ${ok === null ? 'na' : ok ? 'ok' : 'no'}" title="${label}">${ok === null ? '–' : ok ? '✓' : '✗'} ${label}</span>`;
+  document.getElementById('regions').innerHTML =
+    `<tr><th style="text-align:left">Region</th><th>Detections</th><th>VIIRS-only background</th><th>β (90% CI)</th><th>Held-out error</th><th>Busiest 10%</th><th>Quietest 25%</th><th>Step</th><th>Year band (90%)</th><th style="text-align:left">Checks</th></tr>` +
+    DATA.regions.map(r => `<tr>
+      <td style="text-align:left">${r.name}</td>
+      <td>${(r.share * 100).toFixed(1)}%</td>
+      <td>${r.bg === null ? '—' : (r.bg * 100).toFixed(0) + '%'}</td>
+      <td>${r.kind === 'glm' ? `${r.beta.toFixed(2)} <span class="dim">(${r.ci ? r.ci[0].toFixed(2) + '–' + r.ci[1].toFixed(2) : '—'})</span>` : '<span class="dim">1 (ratio)</span>'}</td>
+      <td>${r.loyo === null ? '—' : (r.loyo * 100).toFixed(1) + '%'} <span class="dim">${r.loyo1 === null ? '' : (r.loyo1 * 100).toFixed(1) + '%'}</span></td>
+      <td>${pct1(r.top)} <span class="dim">${pct1(r.top1)}</span></td>
+      <td>${pct1(r.bot)} <span class="dim">${pct1(r.bot1)}</span></td>
+      <td>${pct1(r.step)}</td>
+      <td>${r.band ? `${pct1(r.band[0] - 1)} / ${pct1(r.band[1] - 1)}` : '—'}</td>
+      <td style="text-align:left;white-space:nowrap">${chk(r.acc[0], 'error')} ${chk(r.acc[1], 'step')} ${chk(r.acc[2], 'bias' + (r.noisePct !== null ? ` (p${Math.round(r.noisePct)})` : ''))} ${r.confidence === 'low' ? `<span class="chk no" title="${r.confidenceReason}">low data</span>` : ''}</td></tr>`).join('');
+}
+
+// ---------- α table + caveat (single region) ----------
+if (DATA.alpha) document.getElementById('alpha').innerHTML =
+  `<tr><th style="text-align:left">Month</th>${MONTH_NAMES.map(m => `<th>${m}</th>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α typical</td>${DATA.alpha.map(a => `<td>${a[0].toFixed(2)}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">90% CI</td>${DATA.alpha.map(a => `<td>${a[1] ? a[1].toFixed(2) + '–' + a[2].toFixed(2) : '—'}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α quiet month</td>${DATA.alpha.map(a => `<td>${a[3].toFixed(2)}</td>`).join('')}</tr>` +
+  `<tr><td style="text-align:left">α busy month</td>${DATA.alpha.map(a => `<td>${a[4].toFixed(2)}</td>`).join('')}</tr>`;
+if (!DATA.alpha) { document.getElementById('alpha').closest('.tablebox').hidden = true; document.getElementById('alpha-h').hidden = true; }
+document.getElementById('caveat').innerHTML = DATA.caveat ?? `<b>How α is built.</b> α has two parts: a background of small, cool fires that only VIIRS detects (${(DATA.model.bg * 100).toFixed(0)}% of VIIRS cell-days here, which do not grow with large-fire activity), and the MODIS-visible fires scaled with an activity exponent β = ${DATA.model.beta.toFixed(2)} (90% CI ${DATA.model.betaCi[0].toFixed(2)}–${DATA.model.betaCi[1].toFixed(2)}). The overlap data reject a single constant ratio (F(${DATA.model.df}) = ${DATA.model.f.toFixed(1)}, p ${DATA.model.p < 1e-4 ? '< 0.0001' : '= ' + DATA.model.p.toFixed(4)}).${DATA.bandYear ? ` A MODIS-only year is within ${pct1(DATA.bandYear[0] - 1)} / ${pct1(DATA.bandYear[1] - 1)} of its harmonized value (90%, held-out years).` : ''} Held out year by year, the constant ratio overstated the busiest 10% of months by ${(DATA.val.top1 * 100).toFixed(1)}% and understated the quietest quarter by ${(-DATA.val.bot1 * 100).toFixed(1)}%. With α depending on activity, those errors are ${(DATA.val.top * 100).toFixed(1)}% and ${(DATA.val.bot * 100).toFixed(1)}%. Data: ${fmt(DATA.n.det)} filtered detections, ${fmt(DATA.n.cd)} cell-days.`;
+</script>

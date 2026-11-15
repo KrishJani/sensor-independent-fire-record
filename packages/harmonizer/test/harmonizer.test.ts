@@ -586,3 +586,24 @@ describe('model selection (v1.2)', () => {
     assert.ok(mc.test!.p > 0.05);
   });
 });
+
+describe('persistent VIIRS-only heat mask (gas flares)', () => {
+  const det = (lat: number, lon: number, acqDate: string, satellite: H.Satellite): H.Detection => ({
+    lat, lon, acqDate, acqTime: 900, satellite, sensor: H.sensorOf(satellite), confidence: 90, frpMw: 5, dayNight: 'N', type: 0, tier: 'SP', version: '2',
+  });
+  it('masks a flare (VIIRS 40 days, MODIS 1) but not a long wildfire (both sensors 40 days) or a short fire', () => {
+    const acc = H.createPersistenceAccumulator();
+    const days = [...H.dateRange('2019-03-01', '2019-04-09')]; // 40 days
+    for (const d of days) {
+      acc.add(det(31.92, -104.07, d, 'SNPP')); // flare: VIIRS every day
+      acc.add(det(37.87, -119.62, d, 'SNPP')); // long wildfire: both sensors
+      acc.add(det(37.87, -119.62, d, 'AQUA'));
+    }
+    acc.add(det(31.92, -104.07, days[0], 'TERRA')); // MODIS once on the flare (2.5% ≤ 10%)
+    for (const d of days.slice(0, 10)) acc.add(det(40.0, -100.0, d, 'SNPP')); // short fire: 10 days
+    const f = acc.flagged({ minViirsDays: 30, maxModisFraction: 0.1 });
+    assert.deepEqual(f.map((e) => e.cellId), [H.toCellId(31.92, -104.07)]);
+    assert.equal(f[0].reason, 'persistent_viirs_only');
+    assert.equal(f[0].nStaticDetections, 40);
+  });
+});

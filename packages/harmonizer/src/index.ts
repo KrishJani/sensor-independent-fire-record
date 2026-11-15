@@ -15,6 +15,7 @@ export {
   keepDetection,
   buildStaticMask,
   createStaticMaskAccumulator,
+  createPersistenceAccumulator,
   maskSet,
   newFilterStats,
   type FilterOptions,

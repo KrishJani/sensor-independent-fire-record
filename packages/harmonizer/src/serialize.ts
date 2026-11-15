@@ -140,10 +140,10 @@ export function dailyRow(d: HarmonizedDay): string {
   ]);
 }
 
-export const STATIC_MASK_HEADER = 'cell_id,grid_lat,grid_lon,n_static_detections';
+export const STATIC_MASK_HEADER = 'cell_id,grid_lat,grid_lon,n_static_detections,reason';
 
 export function staticMaskRow(e: StaticMaskEntry): string {
-  return line([e.cellId, fmt(e.gridLat, 4), fmt(e.gridLon, 4), e.nStaticDetections]);
+  return line([e.cellId, fmt(e.gridLat, 4), fmt(e.gridLon, 4), e.nStaticDetections, e.reason ?? 'static_type']);
 }
 
 export const AVAILABILITY_HEADER = 'satellite,acq_date';

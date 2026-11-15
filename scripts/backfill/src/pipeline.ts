@@ -19,6 +19,7 @@ import {
   HARMONIZER_VERSION,
   STATIC_MASK_HEADER,
   addDays,
+  toCellId,
   fmt,
   alphaRow,
   buildCalendar,
@@ -33,6 +34,7 @@ import {
   modelAsTable,
   createFirmsLineParser,
   createStaticMaskAccumulator,
+  createPersistenceAccumulator,
   dailyRow,
   dailySensorCounts,
   dateRange,
@@ -85,6 +87,8 @@ export interface RunOptions {
   bootstrapReps: number;
   /** Parametric-bootstrap simulations for the noise-aware bias check (0 = fixed threshold). */
   noiseSims?: number;
+  /** Persistent VIIRS-only heat mask (gas flares); null = off. */
+  flareMask?: { minViirsDays: number; maxModisFraction: number } | null;
   /** Grid sizes (degrees) for the sensitivity diagnostic; empty = off. */
   gridSensitivity: number[];
   dryRun: boolean;
@@ -201,6 +205,7 @@ export async function runBackfill(o: RunOptions) {
 
   // ---------------- pass 2 ----------------
   const filterStats = newFilterStats();
+  const persist = createPersistenceAccumulator();
   const app = createAppenders();
   rmSync(o.tmpDir, { recursive: true, force: true });
   for (const f of used) {
@@ -208,11 +213,19 @@ export async function runBackfill(o: RunOptions) {
     await forEachLine(f.path, (line) => {
       const d = p.line(line);
       if (!d || isNrtRow(d) || !inside(d)) return;
-      if (keepDetection(d, { staticMask: maskCells, stats: filterStats })) app.write(join(o.tmpDir, `det_${d.acqDate.slice(0, 4)}.tsv`), toTsv(d));
+      if (keepDetection(d, { staticMask: maskCells, stats: filterStats })) {
+        app.write(join(o.tmpDir, `det_${d.acqDate.slice(0, 4)}.tsv`), toTsv(d));
+        persist.add(d);
+      }
     });
   }
   await app.closeAll();
   log(`pass 2: kept ${filterStats.kept}/${filterStats.seen} (type ${filterStats.droppedType}, mask ${filterStats.droppedMask}, confidence ${filterStats.droppedConfidence})`);
+  // Persistent VIIRS-only heat (gas flares): cells VIIRS flags on many days a year and MODIS almost never.
+  const flares = o.flareMask ? persist.flagged(o.flareMask).filter((e) => !maskCells.has(e.cellId)) : [];
+  const flareCells = new Set(flares.map((e) => e.cellId));
+  let flareRemoved = 0;
+  if (o.flareMask) log(`flare mask: ${flares.length} cells (VIIRS ≥ ${o.flareMask.minViirsDays} days/yr, MODIS ≤ ${o.flareMask.maxModisFraction * 100}%)`);
 
   // ---------------- pass 3 ----------------
   const outputs = new Map<string, string | Buffer>(); // relative path → content
@@ -225,7 +238,9 @@ export async function runBackfill(o: RunOptions) {
   const yearFiles = existsSync(o.tmpDir) ? readdirSync(o.tmpDir).filter((n) => /^det_\d{4}\.tsv$/.test(n)).sort() : [];
   for (const yf of yearFiles) {
     const year = yf.slice(4, 8);
-    const rows = readFileSync(join(o.tmpDir, yf), 'utf8').split('\n').filter(Boolean).map(fromTsv);
+    const all = readFileSync(join(o.tmpDir, yf), 'utf8').split('\n').filter(Boolean).map(fromTsv);
+    const rows = flareCells.size ? all.filter((d) => !flareCells.has(toCellId(d.lat, d.lon))) : all;
+    flareRemoved += all.length - rows.length;
     rows.sort((a, b) => compareDetections(a, b) || (a.version < b.version ? -1 : a.version > b.version ? 1 : 0));
     const uniq: Detection[] = [];
     let prev = '';
@@ -333,7 +348,7 @@ export async function runBackfill(o: RunOptions) {
     'alpha_effective.csv',
     'year,month,modis_config,modis_cells_per_day,alpha_eff\n' + effective.map((e) => `${e.year},${e.month},${e.config},${fmt(e.rate, 3)},${fmt(e.alpha, 4)}\n`).join(''),
   );
-  outputs.set('static_mask.csv', STATIC_MASK_HEADER + '\n' + mask.map(staticMaskRow).join(''));
+  outputs.set('static_mask.csv', STATIC_MASK_HEADER + '\n' + [...mask, ...flares].sort((a, b) => a.cellId - b.cellId).map(staticMaskRow).join(''));
   let avCsv = AVAILABILITY_HEADER + '\n';
   for (const sat of ALL_SATELLITES) for (const d of [...(availability.get(sat) ?? [])].sort()) avCsv += `${sat},${d}\n`;
   outputs.set('source_availability.csv', avCsv);
@@ -370,6 +385,7 @@ export async function runBackfill(o: RunOptions) {
     calibration_years: o.calibrationYears,
     alpha_shrinkage_k: o.k,
     static_mask_min_detections: o.minStaticDetections,
+    flare_mask: o.flareMask ?? null,
     auto_outages: o.autoOutages,
     grid_sensitivity: o.gridSensitivity.length ? o.gridSensitivity : null,
     inputs: {
@@ -386,6 +402,8 @@ export async function runBackfill(o: RunOptions) {
       detections: nDetections,
       cell_days: nCellDays,
       static_mask_cells: mask.length,
+      flare_mask_cells: flares.length,
+      flare_detections_removed: flareRemoved,
       outage_days_detected: detected.length,
     },
     availability: satRanges,

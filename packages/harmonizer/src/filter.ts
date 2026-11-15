@@ -63,7 +63,10 @@ export interface StaticMaskEntry {
   cellId: number;
   gridLat: number;
   gridLon: number;
+  /** type 1/2 detections, or (reason = persistent_viirs_only) VIIRS days in the worst year. */
   nStaticDetections: number;
+  /** Why the cell is masked. Absent = 'static_type'. */
+  reason?: 'static_type' | 'persistent_viirs_only';
 }
 
 /**
@@ -108,4 +111,38 @@ export function maskSet(entries: Iterable<StaticMaskEntry>): Set<number> {
   const s = new Set<number>();
   for (const e of entries) s.add(e.cellId);
   return s;
+}
+
+/**
+ * Persistent VIIRS-only heat (gas flares and other industrial sources). FIRMS `type = 2` misses
+ * many of them. A flare is small, hot and continuous: VIIRS flags its cell on many days a year,
+ * MODIS almost never. A long-burning wildfire is flagged by both. Rule: mask a cell if in ANY
+ * year VIIRS flags it on ≥ minViirsDays days while MODIS flags it on ≤ maxModisFraction of
+ * them. Feed it the detections that survived the other filters. Masked cells are removed for
+ * both sensors and all years, like the static mask, so SP and NRT stay consistent.
+ */
+export function createPersistenceAccumulator() {
+  const acc = new Map<string, { v: Set<string>; m: Set<string> }>();
+  return {
+    add(d: Detection) {
+      const k = `${toCellId(d.lat, d.lon)}|${d.acqDate.slice(0, 4)}`;
+      let e = acc.get(k);
+      if (!e) acc.set(k, (e = { v: new Set(), m: new Set() }));
+      (d.sensor === 'VIIRS' ? e.v : e.m).add(d.acqDate);
+    },
+    flagged(opts: { minViirsDays?: number; maxModisFraction?: number } = {}): StaticMaskEntry[] {
+      const minV = opts.minViirsDays ?? 30;
+      const frac = opts.maxModisFraction ?? 0.1;
+      const worst = new Map<number, number>();
+      for (const [k, e] of acc) {
+        if (e.v.size < minV || e.m.size > frac * e.v.size) continue;
+        const c = +k.split('|')[0];
+        worst.set(c, Math.max(worst.get(c) ?? 0, e.v.size));
+      }
+      return [...worst.entries()].sort((a, b) => a[0] - b[0]).map(([cellId, n]) => {
+        const { lat, lon } = cellCenter(cellId);
+        return { cellId, gridLat: lat, gridLon: lon, nStaticDetections: n, reason: 'persistent_viirs_only' as const };
+      });
+    },
+  };
 }

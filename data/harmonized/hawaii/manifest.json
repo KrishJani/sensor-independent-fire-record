@@ -22,6 +22,11 @@
   ],
   "alpha_shrinkage_k": 50,
   "static_mask_min_detections": 3,
+  "flare_mask": {
+    "$comment": "Persistent VIIRS-only heat (gas flares). Mask a cell if in any year VIIRS flags it on >= minViirsDays days while MODIS flags it on <= maxModisFraction of them. Thresholds fixed before evaluation; sensitivity in docs/HARMONIZATION.md §4.3.",
+    "minViirsDays": 30,
+    "maxModisFraction": 0.1
+  },
   "auto_outages": true,
   "grid_sensitivity": null,
   "inputs": {
@@ -386,6 +391,8 @@
     "detections": 9797,
     "cell_days": 2059,
     "static_mask_cells": 56,
+    "flare_mask_cells": 0,
+    "flare_detections_removed": 0,
     "outage_days_detected": 0
   },
   "availability": {
@@ -654,7 +661,7 @@
       "rows": 25701
     },
     "static_mask.csv": {
-      "sha256": "f3a05667be31eb9a5a2db72204fd3a6e5605c81e4d57c0e124607072fe87d498",
+      "sha256": "5e06ef84817a5c2e087311f57dcb35c431a6dc85b767d3d37b0782c8677e4569",
       "rows": 56
     },
     "validation.json": {

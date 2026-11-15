@@ -34,6 +34,7 @@ export interface RegionsConfig {
   alphaShrinkageK: number;
   staticMaskMinDetections: number;
   minMonthlyCellsForValidation: number;
+  flareMask?: { minViirsDays: number; maxModisFraction: number };
 }
 
 export interface SensorsConfig {

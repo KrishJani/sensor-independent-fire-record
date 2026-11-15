@@ -5,7 +5,7 @@ Spec: [`SPEC.md`](SPEC.md). Method and validation: [`docs/HARMONIZATION.md`](../
 
 ## Pipeline
 1. **Parse** FIRMS CSV (MODIS/VIIRS, SP/NRT, API or archive) → normalized `Detection` (`parse.ts`).
-2. **Filter**: drop `type` 1/2/3, static-source mask, MODIS confidence ≥ 30, VIIRS `n`/`h` (`filter.ts`). No FRP floor by default.
+2. **Filter**: drop `type` 1/2/3, static-source mask, MODIS confidence ≥ 30, VIIRS `n`/`h`, and the gas-flare mask (cells VIIRS flags ≥ 30 days/yr while MODIS flags ≤ 10% of them) (`filter.ts`). No FRP floor by default.
 3. **Grid** onto the global `0.05°` grid, integer `cellId = row·7200 + col` (`grid.ts`).
 4. **Cell-days**: one unit per (satellite, date, cell); passes split at 30-min gaps; `peak_frp = MAX(pass SUM(frp))` (`celldays.ts`).
 5. **Calibrate** α per calendar month and MODIS configuration (Terra∪Aqua / Terra / Aqua):
