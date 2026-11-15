@@ -34,6 +34,7 @@ export {
   cellsInBbox,
   snapBboxOutward,
   inBbox,
+  cellInRegion,
   coarseBin,
   pointInPolygon,
   type Bbox,
@@ -110,6 +111,22 @@ export {
   type GridSensitivityRow,
   type ResolutionDaily,
 } from './sensitivity.ts';
+export {
+  analyseProne,
+  getisOrdGiStar,
+  benjaminiHochberg,
+  trendTest,
+  seasonOf,
+  twoSidedP,
+  tileOfCell,
+  tileCenter,
+  tileRowCol,
+  tileNeighbours,
+  TILE_CELLS,
+  type TileInput,
+  type TileResult,
+  type ProneClass,
+} from './prone.ts';
 export * from './serialize.ts';
 export { addDays, dateRange, daysInMonth } from './dates.ts';
 

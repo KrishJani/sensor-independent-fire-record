@@ -87,3 +87,14 @@ export function pointInPolygon(lon: number, lat: number, geom: PolygonGeometry):
   }
   return false;
 }
+
+/**
+ * Region membership is decided by the CELL CENTER, never by the raw point. Region edges lie on 0.05°
+ * grid lines and cell centers never do, so every cell belongs to exactly one region of a tiling and
+ * no cell-day can be counted twice. (A point exactly on an edge, e.g. lat 42.1000, falls in the cell
+ * above the line; testing the point itself would give that cell to two regions.)
+ */
+export function cellInRegion(cellId: number, bbox: Bbox, excluded: readonly Bbox[] = []): boolean {
+  const { lat, lon } = cellCenter(cellId);
+  return inBbox(lat, lon, bbox) && !excluded.some((b) => inBbox(lat, lon, b));
+}

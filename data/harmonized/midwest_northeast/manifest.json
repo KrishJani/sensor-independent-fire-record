@@ -386,18 +386,18 @@
   },
   "counts": {
     "nrt_rows_skipped": 0,
-    "rows_outside_region_or_range": 13082549,
+    "rows_outside_region_or_range": 13082543,
     "filter": {
-      "seen": 1332927,
-      "kept": 495002,
+      "seen": 1332933,
+      "kept": 495008,
       "droppedType": 730358,
       "droppedMask": 86809,
       "droppedConfidence": 20758,
       "droppedFrpFloor": 0
     },
     "duplicates_removed": 0,
-    "detections": 493151,
-    "cell_days": 336912,
+    "detections": 493157,
+    "cell_days": 336916,
     "static_mask_cells": 779,
     "flare_mask_cells": 14,
     "inventory_flare_cells_hit": 199,
@@ -438,7 +438,7 @@
   },
   "outputs": {
     "alpha_effective.csv": {
-      "sha256": "fc4ae10bdf4718fe19dbeb80ba264b7af25f641b2db64a014bc9e352422c1669",
+      "sha256": "829dd539cad9499929e1096445bd496c5cbd09ee7ad0dd8658fcdf8dc17e7e90",
       "rows": 866
     },
     "alpha_model.json": {
@@ -450,20 +450,20 @@
       "rows": 36
     },
     "calendar_monthly.csv": {
-      "sha256": "432332467480f5aa9e386a2a17075243adec1f976ab8dba975af2e34ebb54576",
+      "sha256": "bc37c537d21a3d3aafa9c04e354fc938c215261d7160c63457a80b4d92944707",
       "rows": 302
     },
     "cell_days/2000.csv": {
-      "sha256": "33645698a23260c32b735b75fc3567f2f188139cba2642e6dcd490dbcb3310ca",
-      "rows": 174
+      "sha256": "31b485c95d6e544c8bbdfe7532b3c3226597d316110e6746f8534cadf066e7aa",
+      "rows": 175
     },
     "cell_days/2001.csv": {
       "sha256": "34be5d2319442605109b88202ef91f0aaa0ea25796dd3dbe83b0f944cedaee2e",
       "rows": 2068
     },
     "cell_days/2002.csv": {
-      "sha256": "7505114a6a4448d9d204e662c8728756c8da3b18baa2a458557efb6acaf57278",
-      "rows": 1963
+      "sha256": "0751d1c8f98f7183a06d69dd9322526d07173a1c524d50f97242496bff22f529",
+      "rows": 1964
     },
     "cell_days/2003.csv": {
       "sha256": "22888ada58d9615fcd991557088c6739c4ce55b752a67f3ebd630249804e0e33",
@@ -526,8 +526,8 @@
       "rows": 14461
     },
     "cell_days/2018.csv": {
-      "sha256": "ecf81d5eba49e33d4bf0c7e3b3b27eaf534fb81157375a658bf54761664db7a1",
-      "rows": 20963
+      "sha256": "df0f2b65a5c9de4c786012a207605142806e5f4ad0d6eb0615614d4fdbe80170",
+      "rows": 20964
     },
     "cell_days/2019.csv": {
       "sha256": "8e80dd3c130c1bfadfa6a70a3cc234e45533e417dd6426f973904d5ed5b321c6",
@@ -550,19 +550,19 @@
       "rows": 32128
     },
     "cell_days/2024.csv": {
-      "sha256": "fd89bf7f5c3b28f122f234f3ef0aa79c38d4aa7238ef0495f653c6e0bbdf63cc",
-      "rows": 33095
+      "sha256": "f5c2ad0fd3ede0bd47f3dd1e578f5d8e1e811db561beb90996ad2846d007788f",
+      "rows": 33096
     },
     "cell_days/2025.csv": {
-      "sha256": "f2071678291ebc8bd90978df50847b16bd17623aa04e1e7f9710ac9c4684f0e3",
+      "sha256": "03ca1f95c4777b5c6e018ff412515aed819304b73311b463967292d9f8143972",
       "rows": 31029
     },
     "daily_harmonized.csv": {
-      "sha256": "0d022dbba9061c5dae6fc50c5ddcfa2e1308e4762294bc3184db789b2d976b31",
+      "sha256": "c03742f35e35acefb87d5766bea810f229f8541066f1803bed7af135d342c435",
       "rows": 9192
     },
     "detections/2000.csv.gz": {
-      "sha256": "b4a619609e684dfe926bfe3a6aa156fb3cd696f8f5387ce81efbb4554582d2b1",
+      "sha256": "e4cd394749e419fead73c32ad88c90721b46fbad321f82e24866437df94df2ca",
       "rows": -1
     },
     "detections/2001.csv.gz": {
@@ -570,7 +570,7 @@
       "rows": -1
     },
     "detections/2002.csv.gz": {
-      "sha256": "0ba9fe29feba198a9fc57e2c3bcfca659fa84e50e2a0c900bd82d9a3c3b6d8cd",
+      "sha256": "34652430d0c3d6487ac72885b10263b6d3fb752792b2c4db49311b6482d7ea42",
       "rows": -1
     },
     "detections/2003.csv.gz": {
@@ -634,7 +634,7 @@
       "rows": -1
     },
     "detections/2018.csv.gz": {
-      "sha256": "6e9018ba4dc22d65b3317180a3b93ed6c4398b05f31fdfcf9871c5eb2e98d29d",
+      "sha256": "3faf06caf10087289da32cd11b1cb5a4995f59d7d213cc88912090dbc2ec0c92",
       "rows": -1
     },
     "detections/2019.csv.gz": {
@@ -658,11 +658,11 @@
       "rows": -1
     },
     "detections/2024.csv.gz": {
-      "sha256": "fa5b95f320517d2ac5efa43cfe7ebc84f7d87f476593ef51dd9ceb2b7fb66bc9",
+      "sha256": "2c0099b2fe40dc76b0b670b60dd63dd27cf0282ffe3339b496db89c4ff5d9acc",
       "rows": -1
     },
     "detections/2025.csv.gz": {
-      "sha256": "9d9c6d6f5e77ad1cd6970ff81b48aca2812c462739f5855b30c9f18a5a907bee",
+      "sha256": "13a048c0a40c0e883018680bb2adc1d55db460910c2717e5d3e0de618ecb901d",
       "rows": -1
     },
     "outages_detected.csv": {

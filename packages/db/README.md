@@ -1,7 +1,20 @@
-# `@repo/db` — Database Schemas & Migrations
+# `@repo/db`: database schemas
 
-Contains DDL schemas and typed query builders for both storage tiers.
+## Storage tiers
+- **`postgres/`** (PlanetScale Postgres, reached through Hyperdrive in Workers): the archival tier.
+  `0001_archive.sql` defines the tables. The harmonized record covers 2000–2025 for the US regions
+  and California. It includes:
+  - `detections`, where `heat_class` is `fire` or `industrial` (the industrial-heat layer)
+  - `cell_days` and `cell_months`
+  - `source_availability`
+  - α models and the α applied each month
+  - daily, monthly and annual calendars with 90% bands
+  - masks, the flare-inventory cells, and the global 0.5° map layer
+- **`d1/`** (Cloudflare D1): the realtime tier, the last 92 days of NRT data. `0001_nrt_cells.sql`
+  defines `nrt_detections`, `nrt_cell_days` and `nrt_availability`.
 
-## Storage Tiers
-- **`d1/` (Cloudflare D1 / SQLite)**: Holds a rolling window of exactly the last 92 days (`D1_RETENTION_DAYS`) of `_NRT` detections and cell-days; older dates are handed over to Postgres (see `apps/ingest-worker/SPEC.md` §3.3). Primary key: `(acq_date, grid_lat, grid_lon, sensor)`.
-- **`postgres/` (PlanetScale Postgres)**: Holds the authoritative `2000–2026` `_SP` archive, plus provisional `tier = 'NRT'` rows for dates older than 92 days that SP has not published yet (replaced when SP arrives). Indexed on `(grid_lat, grid_lon, acq_date)` for fast bounding-box and polygon filtering via Hyperdrive.
+## Applying the migrations
+- **Postgres:** `node scripts/backfill/src/cli.ts load …` applies them automatically. Applied
+  versions are tracked in `schema_migrations`.
+- **D1 (local):** `cd apps/ingest-worker && npx wrangler d1 migrations apply firms-nrt-cells --local`
+- **D1 (remote):** the same command with `--remote`.

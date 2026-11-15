@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { applyBasemap, BASEMAPS } from '../lib/basemaps';
-import { resolveLightPreset, useMapSettings, type MapSettings } from '../lib/mapSettings';
+import { resolveLightPreset, type MapSettings } from '../lib/mapSettings';
 import { applyOverlays } from '../lib/overlays';
 import { useColorScheme, type ColorScheme } from '../lib/useColorScheme';
 import { useGlobeSpin } from '../lib/useGlobeSpin';
@@ -9,6 +9,15 @@ import { BasemapSwitcher } from './BasemapSwitcher';
 import { LayersPanel } from './LayersPanel';
 import { MapControls } from './MapControls';
 import { StatusBar } from './StatusBar';
+import { CalendarDrawer } from './CalendarDrawer';
+import { useArchivalLayers } from '../lib/useArchivalLayers';
+import { FIRE, FIRE_POINTS, flameRamp, PRONE, drawRegions } from '../lib/fireLayers';
+import { useMeasure, fmtArea, fmtKm } from '../lib/measure';
+import { captureMap } from '../lib/capture';
+import { FireExplorer } from './FireExplorer';
+import { Toolbar } from './Toolbar';
+import { api } from '../lib/api';
+import type { Tab } from '../lib/dataWindows';
 
 const INITIAL_CENTER: [number, number] = [-40, 22];
 const TERMINATOR_REFRESH_MS = 60_000;
@@ -32,11 +41,25 @@ function tryApplyAll(map: mapboxgl.Map, settings: MapSettings, scheme: ColorSche
   }
 }
 
-export function MapView() {
+interface Props {
+  tab: Tab;
+  from: string;
+  to: string;
+  rangeLabel: string;
+  onPickDate(date: string): void;
+  settings: MapSettings;
+  update(patch: Partial<MapSettings>): void;
+  reset(): void;
+  initialView?: { center: [number, number]; zoom: number } | null;
+  shareUrl(view: { center: [number, number]; zoom: number }): string;
+}
+
+export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
-  const { settings, update, reset } = useMapSettings();
+  const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 900);
+  const [timelineOpen, setTimelineOpen] = useState(() => window.innerWidth >= 700);
   const scheme = useColorScheme();
 
   const latest = useRef({ settings, scheme });
@@ -49,8 +72,8 @@ export function MapView() {
       container: containerRef.current!,
       style: BASEMAPS[initial.basemap].style,
       projection: initial.projection,
-      center: INITIAL_CENTER,
-      zoom: initialZoom(),
+      center: initialView?.center ?? INITIAL_CENTER,
+      zoom: initialView?.zoom ?? initialZoom(),
       attributionControl: false,
     });
     instance.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
@@ -58,6 +81,7 @@ export function MapView() {
       applyAll(instance, latest.current.settings, latest.current.scheme),
     );
     setMap(instance);
+    if (import.meta.env.DEV) (window as unknown as { __map: mapboxgl.Map }).__map = instance; // dev-only debugging handle
 
     return () => {
       instance.remove();
@@ -91,6 +115,82 @@ export function MapView() {
 
   useGlobeSpin(map, settings.spin && settings.projection === 'globe');
 
+  const measure = useMeasure(map);
+  const measuring = useRef(false);
+  measuring.current = measure.mode !== 'off';
+  const [analysed, setAnalysed] = useState<GeoJSON.Polygon | null>(null);
+  const measureText = measure.mode === 'distance' ? (measure.points.length >= 2 ? fmtKm(measure.distance) : '')
+    : measure.mode === 'area' ? (measure.points.length >= 3 ? `${fmtArea(measure.area)} · perimeter ${fmtKm(measure.distance)}` : '') : '';
+  // The API rebuilds a polygon's calendar from an explicit cell list, capped at 25 deg² of bounding box.
+  const polyDeg2 = (() => {
+    const ring = measure.polygon?.coordinates[0];
+    if (!ring) return 0;
+    const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+    return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  })();
+
+  const layers = useArchivalLayers(map, {
+    enabled: tab === 'archival',
+    from,
+    to,
+    activity: settings.fireActivity,
+    mode: settings.fireMode,
+    sensor: settings.showViirs && settings.showModis ? 'all' : settings.showViirs ? 'viirs' : settings.showModis ? 'modis' : 'none',
+    coloring: settings.fireColoring,
+    prone: settings.proneAreas,
+    industrial: settings.industrialHeat,
+    // satellite imagery and night/dusk light are dark backgrounds
+    dark: settings.basemap === 'satellite' || ['night', 'dusk'].includes(resolveLightPreset(settings.light, scheme)),
+  });
+
+  // Harmonized region outlines (from /api/meta), redrawn after style changes.
+  const [regions, setRegions] = useState<{ id: string; name: string; bbox: [number, number, number, number] }[] | null>(null);
+  useEffect(() => { api.meta().then((m) => setRegions(m.regions)).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!map) return;
+    const draw = () => { try { drawRegions(map, tab === 'archival' && settings.regionOutlines ? regions : null); } catch { /* style loading */ } };
+    draw();
+    map.on('style.load', draw);
+    return () => { map.off('style.load', draw); };
+  }, [map, regions, settings.regionOutlines, tab]);
+
+  // Click popups: prone tiles explain WHY; points show the detection.
+  useEffect(() => {
+    if (!map) return;
+    const popup = new mapboxgl.Popup({ closeButton: true, maxWidth: '300px' });
+    const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const esc = (s: unknown) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+    const onProne = (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.GeoJSONFeature[] }) => {
+      if (measuring.current) return;
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      popup.setLngLat(e.lngLat).setHTML(
+        `<b>${esc(String(p.prone_class).replace('_', ' '))} fire-prone area</b><br>${esc(p.why)}<br><span style="opacity:.7">0.25° tile · 2001–2025 · ${Math.round(Number(p.mean_annual_cell_days))} harmonized cell-days/yr${p.peak_month ? ` · peak ${MONTH[Number(p.peak_month) - 1]}` : ''}</span>`,
+      ).addTo(map);
+    };
+    const onPoint = (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.GeoJSONFeature[] }) => {
+      if (measuring.current) return;
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      if (p.harmonized_cell_days != null) {
+        popup.setLngLat(e.lngLat).setHTML(`<b>Burning 5.5 km cell</b><br>${esc(Math.round(Number(p.harmonized_cell_days) * 10) / 10)} harmonized cell-days · ${esc(p.active_days)} active day${Number(p.active_days) === 1 ? '' : 's'}<br>last burned ${esc(p.last_seen)}`).addTo(map);
+        return;
+      }
+      popup.setLngLat(e.lngLat).setHTML(`<b>${esc(p.satellite)} ${esc(p.sensor)}</b> · ${esc(p.acq_date)} ${String(p.acq_time).padStart(4, '0')} UTC<br>FRP ${esc(p.frp_mw)} MW · confidence ${esc(p.confidence)}${p.heat_reason ? `<br>industrial heat: ${esc(String(p.heat_reason).replace(/_/g, ' '))}` : ''}`).addTo(map);
+    };
+    const onCell = (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.GeoJSONFeature[] }) => {
+      if (measuring.current) return;
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      const v = p.harmonized_cell_days ?? p.cell_days;
+      popup.setLngLat(e.lngLat).setHTML(`<b>${esc(Math.round(Number(v) * 10) / 10)}</b> ${p.harmonized_cell_days != null ? 'harmonized cell-days (VIIRS-equivalent)' : 'active cell-days'}${p.last_seen ? `<br>last burned ${esc(p.last_seen)}` : ''}${p.source === 'global' ? '<br><span style="opacity:.7">outside harmonized regions: raw sensor activity</span>' : ''}`).addTo(map);
+    };
+    map.on('click', PRONE, onProne);
+    map.on('click', FIRE_POINTS, onPoint);
+    map.on('click', FIRE, onCell);
+    return () => { map.off('click', PRONE, onProne); map.off('click', FIRE_POINTS, onPoint); map.off('click', FIRE, onCell); popup.remove(); };
+  }, [map]);
+
   return (
     <>
       <div ref={containerRef} className="map" />
@@ -102,12 +202,63 @@ export function MapView() {
             onLayersOpenChange={setLayersOpen}
             layersPanel={<LayersPanel settings={settings} onChange={update} onReset={reset} />}
           />
-          <BasemapSwitcher value={settings.basemap} onChange={(basemap) => update({ basemap })} />
+          {tab !== 'archival' && <BasemapSwitcher value={settings.basemap} onChange={(basemap) => update({ basemap })} />}
           <StatusBar
             map={map}
             showCoordinates={settings.coordinates}
             showScale={settings.scale}
           />
+          {tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
+            <div className="map-status material" role="status">
+              {layers.error ? `Couldn't load fire data: ${layers.error}` : layers.loading ? 'Loading fire data…' : 'Showing the strongest results in view. Zoom in to see all.'}
+            </div>
+          )}
+          {tab === 'archival' && (
+            <>
+              <FireExplorer
+                map={map}
+                settings={settings}
+                onChange={update}
+                rangeLabel={rangeLabel}
+                open={explorerOpen}
+                onClose={() => setExplorerOpen(false)}
+                onJump={(date, center, zoom) => { if (date) onPickDate(date); if (center) map.flyTo({ center, zoom: zoom ?? map.getZoom() }); }}
+              />
+              <CalendarDrawer map={map} onPickMonth={onPickDate} open={timelineOpen} onToggle={() => setTimelineOpen(!timelineOpen)} drawn={analysed} />
+              {measure.mode !== 'off' && (
+                <div className="measure material" role="status" aria-label="Measurement">
+                  <div className="measure__modes">
+                    <button type="button" aria-pressed={measure.mode === 'distance'} onClick={() => measure.start('distance')}>Distance</button>
+                    <button type="button" aria-pressed={measure.mode === 'area'} onClick={() => measure.start('area')}>Area</button>
+                  </div>
+                  <p className="measure__value">{measureText || (measure.mode === 'distance' ? 'Click points on the map' : 'Click at least 3 corners')}</p>
+                  <p className="measure__hint">{measure.done ? 'Finished.' : 'Double-click or Enter to finish · Esc to cancel'}</p>
+                  {measure.polygon && (
+                    polyDeg2 <= 25
+                      ? <button type="button" className="measure__analyse" onClick={() => { setAnalysed(measure.polygon); setTimelineOpen(true); }}>Analyse this area</button>
+                      : <p className="measure__hint">Too large to analyse (max about 5° × 5°). Draw a smaller area.</p>
+                  )}
+                  <button type="button" className="text-button" onClick={() => { measure.stop(); setAnalysed(null); }}>Clear</button>
+                </div>
+              )}
+              <Toolbar
+                map={map}
+                explorerOpen={explorerOpen}
+                onExplorer={() => setExplorerOpen(!explorerOpen)}
+                timelineOpen={timelineOpen}
+                onTimeline={() => setTimelineOpen(!timelineOpen)}
+                shareUrl={() => shareUrl({ center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() })}
+                measuring={measure.mode !== 'off'}
+                onMeasure={() => (measure.mode === 'off' ? measure.start('distance') : (measure.stop(), setAnalysed(null)))}
+                onCapture={() => captureMap(map, {
+                  title: `Fire activity · ${rangeLabel}`,
+                  subtitle: `${settings.fireMode === 'raw' ? 'Raw satellite detections (sensor-dependent)' : settings.fireMode === 'hotspots' ? 'Harmonized burning cells' : 'Harmonized activity (VIIRS-equivalent cell-days)'} · ${from} → ${to}`,
+                  legend: settings.fireActivity && settings.fireColoring !== 'sensor' ? { colors: flameRamp(), low: settings.fireMode === 'activity' || settings.fireColoring === 'amount' ? 'less' : settings.fireColoring === 'intensity' ? 'low FRP' : 'oldest', high: settings.fireMode === 'activity' || settings.fireColoring === 'amount' ? 'more' : settings.fireColoring === 'intensity' ? 'high FRP' : 'newest' } : null,
+                  extra: measureText ? `${measure.mode === 'area' ? 'Area' : 'Distance'}: ${measureText}` : undefined,
+                })}
+              />
+            </>
+          )}
         </>
       )}
     </>

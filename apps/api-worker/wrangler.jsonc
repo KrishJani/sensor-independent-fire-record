@@ -11,8 +11,13 @@
   },
   "vars": {
     "AI_GATEWAY_ID": "nasa-fire-copilot",
-    "CALIBRATION_START_YEAR": "2012",
-    "CALIBRATION_END_YEAR": "2025"
+    "CALIBRATION_START_YEAR": "2013",
+    "CALIBRATION_END_YEAR": "2021",
+    "BASELINE_START_YEAR": "2001",
+    "BASELINE_END_YEAR": "2025",
+    "D1_RETENTION_DAYS": "92",
+    // Comma-separated browser origins allowed by CORS (add the Pages domain at deploy)
+    "ALLOWED_ORIGINS": "http://localhost:5173"
   },
   "d1_databases": [
     {

@@ -607,3 +607,61 @@ describe('persistent VIIRS-only heat mask (gas flares)', () => {
     assert.equal(f[0].nStaticDetections, 40);
   });
 });
+
+describe('region membership by cell center', () => {
+  it('a point exactly on a shared edge goes to ONE region (the one holding its cell)', () => {
+    const ca: H.Bbox = [-124.5, 32.5, -114.0, 42.1];
+    const pnw: H.Bbox = [-125.0, 42.1, -111.0, 49.5];
+    const c = H.toCellId(42.1, -118.3); // on CA's north edge → cell 42.10–42.15
+    assert.equal(H.cellInRegion(c, ca), false);
+    assert.equal(H.cellInRegion(c, pnw, [ca]), true);
+    // and every cell of a tiled strip lands in exactly one of the two
+    for (let lat = 41.9; lat <= 42.3; lat += 0.0125) {
+      const id = H.toCellId(lat, -118.3);
+      assert.equal(Number(H.cellInRegion(id, ca)) + Number(H.cellInRegion(id, pnw, [ca])), 1, `lat ${lat}`);
+    }
+  });
+});
+
+describe('prone areas (Gi*, FDR, trend, season)', () => {
+  const grid = (f: (r: number, c: number) => number) => {
+    const m = new Map<number, number>();
+    for (let r = 500; r < 530; r++) for (let c = 200; c < 230; c++) m.set(r * 1440 + c, f(r, c));
+    return m;
+  };
+  it('finds a hot block and nothing in uniform data', () => {
+    const hot = H.getisOrdGiStar(grid((r, c) => (r >= 510 && r < 514 && c >= 210 && c < 214 ? 10 : 1)));
+    assert.ok(hot.get(511 * 1440 + 211)! > 5, `z ${hot.get(511 * 1440 + 211)}`);
+    assert.ok(Math.abs(hot.get(500 * 1440 + 200)!) < 2);
+    const flat = H.getisOrdGiStar(grid(() => 3));
+    assert.ok([...flat.values()].every((z) => z === 0));
+  });
+  it('Benjamini–Hochberg matches a hand-computed example', () => {
+    assert.deepEqual(H.benjaminiHochberg([0.01, 0.04, 0.03, 0.2]).map((x) => +x.toFixed(4)), [0.04, 0.0533, 0.0533, 0.2]);
+  });
+  it('Theil–Sen recovers a linear slope; Mann–Kendall detects it, not noise-free flat data', () => {
+    const t = H.trendTest(Array.from({ length: 25 }, (_, i) => 10 + 2 * i));
+    assert.equal(t.slope, 2);
+    assert.ok(t.p < 1e-6);
+    assert.equal(H.trendTest(Array(25).fill(7)).p, 1);
+  });
+  it('season = smallest month set holding 80%', () => {
+    const s = H.seasonOf([0, 0, 0, 0, 1, 2, 10, 30, 40, 10, 1, 0]);
+    assert.equal(s.peakMonth, 9);
+    assert.deepEqual(s.months, [7, 8, 9]); // 40+30+10 = 80 of 94 → 85%
+  });
+  it('classes follow the pre-specified rules and "why" explains them', () => {
+    const tiles: H.TileInput[] = [];
+    for (let r = 500; r < 530; r++) for (let c = 200; c < 230; c++) {
+      const inHot = r >= 510 && r < 514 && c >= 210 && c < 214;
+      tiles.push({ tileId: r * 1440 + c, nCells: 25, annual: Array.from({ length: 25 }, (_, y) => (inHot ? 50 + y : y % 5 === 0 ? 1 : 0)), monthly: inHot ? [0, 0, 0, 0, 0, 10, 50, 80, 40, 5, 0, 0] : [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], modisFrp: inHot ? Array.from({ length: 40 }, (_, i) => 10 + i) : [] });
+    }
+    const res = H.analyseProne(tiles, Array.from({ length: 25 }, (_, i) => 2001 + i));
+    const core = res.find((t) => t.tileId === 511 * 1440 + 211)!;
+    assert.equal(core.proneClass, 'very_high');
+    assert.equal(core.hotspot, 'hot99');
+    assert.match(core.why, /burns in 25 of 25 years; peak Aug/);
+    assert.match(core.why, /increasing/);
+    assert.equal(res.find((t) => t.tileId === 500 * 1440 + 200)!.proneClass, 'low');
+  });
+});

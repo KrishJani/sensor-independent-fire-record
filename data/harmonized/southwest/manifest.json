@@ -382,23 +382,23 @@
   },
   "counts": {
     "nrt_rows_skipped": 0,
-    "rows_outside_region_or_range": 13662819,
+    "rows_outside_region_or_range": 13662822,
     "filter": {
-      "seen": 630245,
-      "kept": 522344,
+      "seen": 630243,
+      "kept": 522342,
       "droppedType": 60269,
       "droppedMask": 6918,
       "droppedConfidence": 40714,
       "droppedFrpFloor": 0
     },
     "duplicates_removed": 0,
-    "detections": 522237,
-    "cell_days": 93282,
+    "detections": 522235,
+    "cell_days": 93280,
     "static_mask_cells": 205,
     "flare_mask_cells": 1,
-    "inventory_flare_cells_hit": 856,
+    "inventory_flare_cells_hit": 855,
     "inventory_flare_detections_removed": {
-      "MODIS": 2305,
+      "MODIS": 2304,
       "VIIRS": 125122
     },
     "flare_detections_removed": 107,
@@ -434,7 +434,7 @@
   },
   "outputs": {
     "alpha_effective.csv": {
-      "sha256": "c114fc10bc1a43c7198968d28d09d860eb7639ec348e54a22eadde77aab0c759",
+      "sha256": "5f592946a238ab36b8d230f440546ffcd79576f57725fb40655a5ac4f574516b",
       "rows": 866
     },
     "alpha_model.json": {
@@ -446,7 +446,7 @@
       "rows": 36
     },
     "calendar_monthly.csv": {
-      "sha256": "2865d35625a4935f0d8f014e028c36ed5970018153a57608c74d7b5f07bd8e73",
+      "sha256": "319100eb111d88d9ecf186288adf366124c55dea216d7ec64eb2a5feab365cca",
       "rows": 302
     },
     "cell_days/2000.csv": {
@@ -458,8 +458,8 @@
       "rows": 572
     },
     "cell_days/2002.csv": {
-      "sha256": "269afcb5cfd9b7efed07f00b764acb0833f86a7fea0fd86a11c7eeb206803408",
-      "rows": 1295
+      "sha256": "b5b8c9af49f49cd7d396dc7d4bdb5ac3f583c009b43f414ec4da8c7ae9397ef4",
+      "rows": 1294
     },
     "cell_days/2003.csv": {
       "sha256": "23a44d017e9ce148e5ef2458ad88b742663782abd67fa52529eaadc44d64a84b",
@@ -494,8 +494,8 @@
       "rows": 1383
     },
     "cell_days/2011.csv": {
-      "sha256": "3bfbc4fd6e5c777a0ba4277cbf8718ff6f7fa853ab484021469c179b21e8e6ab",
-      "rows": 4148
+      "sha256": "77b27a871710e8b3dd53b8bd1569e5d63800c19385a959875137eeec634290a1",
+      "rows": 4147
     },
     "cell_days/2012.csv": {
       "sha256": "8634124c84cea2255bbf1d2adb0a0252c725dad57575b581bc82aa3ee3cf4cbc",
@@ -554,7 +554,7 @@
       "rows": 5717
     },
     "daily_harmonized.csv": {
-      "sha256": "ea8c07064da8fc2662ce6283148fb3d0317c62661389f8617253bd06a8bab05e",
+      "sha256": "a9bd323e9b128e59d1d900796b0793fdcf4b596d6f12a8be62e2df5c92fcb0cb",
       "rows": 9192
     },
     "detections/2000.csv.gz": {
@@ -566,7 +566,7 @@
       "rows": -1
     },
     "detections/2002.csv.gz": {
-      "sha256": "494381488f5b034bd83ce36bcd27c9dc4624529b8fef7aa4d99f626596421e24",
+      "sha256": "4e44bedc597d823f5df82c0a79a262f61791f9f7c635aff6028f75d96724548f",
       "rows": -1
     },
     "detections/2003.csv.gz": {
@@ -602,7 +602,7 @@
       "rows": -1
     },
     "detections/2011.csv.gz": {
-      "sha256": "e736c91c73c74632ee689915e956c697f9067a6990799b702c27332129507d78",
+      "sha256": "aa8e6fad9b92bebee171d1984bb4fc58c7251499aa03e6daa8a877a6c524e125",
       "rows": -1
     },
     "detections/2012.csv.gz": {
@@ -670,8 +670,8 @@
       "rows": 25695
     },
     "static_mask.csv": {
-      "sha256": "d2ea24813d8dce75fb9123c46e8bfa750480e78c8011a3d08a036d7eee500ab1",
-      "rows": 912
+      "sha256": "8848dc5614be363f37ad75feb108eb60fe01fe7e49f6989fe2b050f9eed39f76",
+      "rows": 911
     },
     "validation.json": {
       "sha256": "89f5552c24be73b7ee29e14762c553e6d982c187cf0ad8ff71c6fa5362810d78",

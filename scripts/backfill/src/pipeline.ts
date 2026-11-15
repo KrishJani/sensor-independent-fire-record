@@ -44,6 +44,7 @@ import {
   detectionRow,
   harmonizeDaily,
   inBbox,
+  cellInRegion,
   keepDetection,
   maskSet,
   newFilterStats,
@@ -169,7 +170,7 @@ export async function runBackfill(o: RunOptions) {
   const sensors = loadSensors();
   const excluded = o.excludeBboxes ?? [];
   const inside = (d: Detection) =>
-    d.acqDate >= o.from && d.acqDate <= o.to && inBbox(d.lat, d.lon, o.region.bbox) && !excluded.some((b) => inBbox(d.lat, d.lon, b));
+    d.acqDate >= o.from && d.acqDate <= o.to && cellInRegion(toCellId(d.lat, d.lon), o.region.bbox, excluded);
   const isNrtRow = (d: Detection) => /NRT/i.test(d.version);
 
   const inputs = listCsvFiles(o.rawDir).map((p) => describeInput(p, o.rawDir));

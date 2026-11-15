@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Bbox, Satellite } from '../../../packages/harmonizer/src/index.ts';
+import { cellInRegion, toCellId, type Bbox, type Satellite } from '../../../packages/harmonizer/src/index.ts';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -22,8 +22,7 @@ export function excludedBboxes(cfg: RegionsConfig, r: Region): Bbox[] {
 
 /** Point-in-region with exclusions (bboxes are inclusive on all edges, so ties go to the earlier region). */
 export function regionContains(r: Region, excluded: Bbox[], lat: number, lon: number): boolean {
-  const inB = (b: Bbox) => lon >= b[0] && lat >= b[1] && lon <= b[2] && lat <= b[3];
-  return inB(r.bbox) && !excluded.some(inB);
+  return cellInRegion(toCellId(lat, lon), r.bbox, excluded);
 }
 
 export interface RegionsConfig {

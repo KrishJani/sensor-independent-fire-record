@@ -687,3 +687,116 @@ button:focus-visible {
     animation: none;
   }
 }
+
+/* ---------- Burning activity calendar ---------- */
+.calendar-drawer {
+  position: absolute;
+  left: max(var(--inset), env(safe-area-inset-left));
+  bottom: max(calc(var(--inset) + 28px), env(safe-area-inset-bottom));
+  width: min(760px, calc(100vw - 2 * var(--inset)));
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-popover);
+  z-index: 3;
+}
+.calendar-drawer--closed { max-height: none; }
+.calendar-drawer__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; }
+.calendar-drawer__controls { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-items: center; }
+.calendar-drawer__body { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 12px; padding: 0 10px 10px; overflow: auto; min-height: 0; }
+@media (max-width: 700px) { .calendar-drawer__body { grid-template-columns: minmax(0, 1fr); } }
+.calendar-grid { display: grid; grid-template-columns: 36px repeat(12, minmax(10px, 1fr)); gap: 2px; font-size: 10.5px; font-variant-numeric: tabular-nums; align-content: start; min-width: 0; }
+.calendar-grid__label { color: var(--label-secondary); text-align: center; line-height: 12px; }
+.calendar-grid__label--viirs { box-shadow: inset 0 1.5px 0 var(--label-secondary); }
+.calendar-grid__cell { height: 12px; border: 0; border-radius: 2px; padding: 0; cursor: pointer; }
+.calendar-grid__cell:hover, .calendar-grid__cell:focus-visible { outline: 2px solid var(--label); outline-offset: 0; }
+.calendar-grid__cell--partial { opacity: 0.45; }
+.calendar-drawer__side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.calendar-tip { margin: 0; font-size: 12px; display: grid; gap: 2px; }
+.calendar-tip dt { font-weight: 600; }
+.calendar-tip dd { margin: 0; color: var(--label-secondary); }
+.calendar-tip b { color: var(--label); }
+.calendar-legend { display: flex; align-items: center; gap: 2px; font-size: 10.5px; color: var(--label-secondary); }
+.calendar-legend i { width: 16px; height: 8px; border-radius: 2px; display: inline-block; }
+.calendar-legend span { margin: 0 4px; }
+.calendar-drawer__note { margin: 0; font-size: 11.5px; color: var(--label-secondary); }
+.calendar-drawer__note--error { color: #d70015; }
+.map-status { position: absolute; top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px); left: max(var(--inset), env(safe-area-inset-left)); padding: 4px 10px; font-size: 12px; border-radius: 999px; z-index: 3; }
+.mapboxgl-popup-content { font: 12px/1.45 var(--font); max-width: 280px; }
+
+/* ---------- Fire Explorer (archival right panel) ---------- */
+.explorer {
+  position: absolute;
+  top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px);
+  right: max(var(--inset), env(safe-area-inset-right));
+  width: min(340px, calc(100vw - 2 * var(--inset)));
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+  border-radius: var(--radius-popover);
+  z-index: 4;
+  padding: 4px 0 8px;
+}
+.explorer__header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 4px; }
+.explorer__header h2 { margin: 0; font-size: 15px; letter-spacing: 0.01em; }
+.explorer__section { display: grid; gap: 8px; padding: 10px 14px; border-top: 0.5px solid var(--hairline); }
+.explorer__section h3 { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--label-secondary); display: flex; justify-content: space-between; gap: 8px; }
+.explorer__meta { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--label); }
+.explorer__note { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--label-secondary); }
+.explorer__subhead { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; color: var(--label-secondary); }
+.explorer__sensors { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; }
+.explorer__ramp, .explorer__legend { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--label-secondary); }
+.explorer__ramp { gap: 2px; }
+.explorer__ramp i { width: 20px; height: 8px; display: inline-block; }
+.explorer__ramp i:first-of-type { border-radius: 2px 0 0 2px; }
+.explorer__ramp i:last-of-type { border-radius: 0 2px 2px 0; }
+.explorer__ramp span { margin: 0 6px; }
+.explorer__legend i, .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+.explorer__events { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.explorer__events button { width: 100%; text-align: left; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; padding: 6px 8px; border: 0; border-radius: var(--radius); background: var(--hover); color: var(--label); font: inherit; font-size: 12px; cursor: pointer; }
+.explorer__events button:hover { background: var(--pressed); }
+.explorer__events button > span:last-child { grid-column: 2; color: var(--label-secondary); font-size: 11.5px; line-height: 1.35; }
+.badge { grid-row: span 2; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 999px; color: #fff; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge--record_high { background: #b2182b; }
+.badge--much_above { background: #e45a31; }
+.badge--prone { background: #8f0f4f; }
+
+/* ---------- Bottom toolbar, toast, method ---------- */
+.toolbar {
+  position: absolute;
+  bottom: max(calc(var(--inset) + 28px), env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  z-index: 4;
+}
+.toolbar button { display: grid; justify-items: center; gap: 1px; min-width: 64px; padding: 6px 8px; border: 0; background: transparent; color: var(--label); font: inherit; font-size: 11px; border-radius: 10px; cursor: pointer; }
+.toolbar button span { font-size: 16px; line-height: 1; }
+.toolbar button:hover { background: var(--hover); }
+.toolbar button[aria-pressed='true'] { background: var(--pressed); }
+.toast { position: absolute; bottom: 96px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; font-size: 12.5px; z-index: 5; }
+.method { position: absolute; bottom: 96px; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 2 * var(--inset))); padding: 12px 16px; border-radius: var(--radius-popover); z-index: 5; font-size: 12.5px; line-height: 1.45; }
+.method h3 { margin: 0 0 6px; font-size: 14px; }
+.method p { margin: 0 0 6px; color: var(--label-secondary); }
+.method b { color: var(--label); }
+
+/* Measure readout: top-centre so it never covers the toolbar, calendar or explorer. */
+.measure { position: absolute; top: calc(max(var(--inset), env(safe-area-inset-top)) + 52px); left: 50%; transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; min-width: 220px; padding: 8px 12px; border-radius: var(--radius-popover); z-index: 4; font-size: 12.5px; }
+.measure__modes { display: flex; gap: 2px; }
+.measure__modes button { border: 0; background: transparent; color: var(--label); font: inherit; padding: 3px 10px; border-radius: 8px; cursor: pointer; }
+.measure__modes button[aria-pressed='true'] { background: var(--pressed); }
+.measure__value { margin: 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label); }
+.measure__hint { margin: 0; color: var(--label-secondary); font-size: 11.5px; text-align: center; }
+.measure__analyse { border: 0; border-radius: 8px; padding: 5px 12px; background: #e45a31; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.measure__analyse:hover { filter: brightness(1.08); }
+
+/* Calendar drawer sits bottom-left; on narrow screens the toolbar rides above it. */
+@media (max-width: 900px) {
+  .toolbar { bottom: auto; top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px); left: max(var(--inset), env(safe-area-inset-left)); transform: none; }
+  .toolbar button { min-width: 52px; }
+  .explorer { top: auto; bottom: 12px; max-height: 50vh; }
+  .calendar-drawer { width: calc(100vw - 2 * var(--inset)); }
+  .measure { top: calc(max(var(--inset), env(safe-area-inset-top)) + 110px); }
+}

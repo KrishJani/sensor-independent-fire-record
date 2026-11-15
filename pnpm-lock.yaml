@@ -84,6 +84,9 @@ importers:
       '@repo/harmonizer':
         specifier: workspace:*
         version: link:../../packages/harmonizer
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
     devDependencies:
       '@types/node':
         specifier: 22.10.2

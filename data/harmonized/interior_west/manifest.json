@@ -383,18 +383,18 @@
   },
   "counts": {
     "nrt_rows_skipped": 0,
-    "rows_outside_region_or_range": 13626571,
+    "rows_outside_region_or_range": 13626566,
     "filter": {
-      "seen": 631214,
-      "kept": 533990,
+      "seen": 631219,
+      "kept": 533994,
       "droppedType": 50003,
       "droppedMask": 8044,
-      "droppedConfidence": 39177,
+      "droppedConfidence": 39178,
       "droppedFrpFloor": 0
     },
     "duplicates_removed": 1,
-    "detections": 531005,
-    "cell_days": 110872,
+    "detections": 531009,
+    "cell_days": 110873,
     "static_mask_cells": 203,
     "flare_mask_cells": 10,
     "inventory_flare_cells_hit": 1441,
@@ -435,7 +435,7 @@
   },
   "outputs": {
     "alpha_effective.csv": {
-      "sha256": "b9e9893d8a2ecb4f9d1ae350f4125bc4700c11c5d47509800d1ed616f2809aeb",
+      "sha256": "069bcc52973a3848d8cec4e42867867490f0aa4b8a577cc9ca890f235ed30090",
       "rows": 866
     },
     "alpha_model.json": {
@@ -447,7 +447,7 @@
       "rows": 36
     },
     "calendar_monthly.csv": {
-      "sha256": "bf089ded4835be332eb5e22b921fc982f8a009282bb05600874fbcdc5a019149",
+      "sha256": "df3ebf56268cfad398f47a649ba56f0fc99a9237bf2e41a98cb09a26c9dc83d4",
       "rows": 302
     },
     "cell_days/2000.csv": {
@@ -459,7 +459,7 @@
       "rows": 812
     },
     "cell_days/2002.csv": {
-      "sha256": "fcd790f7c16f593fddf96eec28a24cadd09c052a35d48c042b6255ef7773066f",
+      "sha256": "43e613ef019c57983c354f64874fdcb659214f86b2076f9f08869e982556d801",
       "rows": 2037
     },
     "cell_days/2003.csv": {
@@ -479,7 +479,7 @@
       "rows": 3110
     },
     "cell_days/2007.csv": {
-      "sha256": "cdbb8f8bbad360b1c932bb7852264d396e8f7c4280a1c6cae3919f1dee87cdc5",
+      "sha256": "abe3500a672eb768f1e7cdda06886fe170152766296043455ad4b441c9d2549a",
       "rows": 2240
     },
     "cell_days/2008.csv": {
@@ -495,8 +495,8 @@
       "rows": 1679
     },
     "cell_days/2011.csv": {
-      "sha256": "f52024b7d23c9f8f14ad0678ee97f0591c28d34079a0a43366b395bd2e5b6027",
-      "rows": 1765
+      "sha256": "b0dfe54320d76e1a622b050e86cb4554c2ff1a4d22c560d2e96b889e10299e85",
+      "rows": 1766
     },
     "cell_days/2012.csv": {
       "sha256": "cbbca6487ad333bba15b2261b3c855a1a68671c25d10c8c80fcba0302d14194e",
@@ -515,7 +515,7 @@
       "rows": 3420
     },
     "cell_days/2016.csv": {
-      "sha256": "599a6fe12cdb274f38a76c6ca54cad21a4d2478b1dfaedb3913d9e8dc5f24dca",
+      "sha256": "3a6b15efe314e4e27c9ba15bd1f1ec34b5f3581c0734441166ac2fdc2a9f2ef6",
       "rows": 5991
     },
     "cell_days/2017.csv": {
@@ -555,7 +555,7 @@
       "rows": 7532
     },
     "daily_harmonized.csv": {
-      "sha256": "02dbee5ef600bd9380cb9f4b1a596b63d3301e9a969a9ffc38c55ae9566c6d4c",
+      "sha256": "30aa250894978bddc1c2b06fa51884a278b7384109c452aae818e8c843f51cf3",
       "rows": 9192
     },
     "detections/2000.csv.gz": {
@@ -567,7 +567,7 @@
       "rows": -1
     },
     "detections/2002.csv.gz": {
-      "sha256": "7718b787007eb52e37d1da215a911d8193234858a8b094f45e54118f8c82e87a",
+      "sha256": "e8f9d951fbd73f02a2d787ba12836a5a818bb8b46fe4c0454874d5cc818764f8",
       "rows": -1
     },
     "detections/2003.csv.gz": {
@@ -587,7 +587,7 @@
       "rows": -1
     },
     "detections/2007.csv.gz": {
-      "sha256": "f2f41d0646788071e0b3ebcafecf4406784d31b6027d9a4b88b93e8bbf3b0346",
+      "sha256": "2be5835f5a5db6b0a78c2f7679afb574cb57c6e892246775316f232ce2175236",
       "rows": -1
     },
     "detections/2008.csv.gz": {
@@ -603,7 +603,7 @@
       "rows": -1
     },
     "detections/2011.csv.gz": {
-      "sha256": "27b00b042e866a119696992a34e6bcce4c99b4990aade6d9609c732f58482bb3",
+      "sha256": "47c169be0ced6a01f2a7feaf6717106ef470344b48ef3cd7034c7bc710a81b89",
       "rows": -1
     },
     "detections/2012.csv.gz": {
@@ -623,7 +623,7 @@
       "rows": -1
     },
     "detections/2016.csv.gz": {
-      "sha256": "3a85f3e18f70e1ba51c44fbbc1ff6d241d339608c76914a611b626a49755661a",
+      "sha256": "6f23caa2757a157cddb80a85706f7351429909aaf05a9190a0d7789bec5d7d33",
       "rows": -1
     },
     "detections/2017.csv.gz": {

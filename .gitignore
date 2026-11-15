@@ -20,6 +20,12 @@ wrangler.toml.bak
 # Bulk historical downloads (keep sample_api/ and data/harmonized/ tracked)
 data/*
 !data/harmonized/
+# Per-year bulk outputs (~420 MB per data version) are NOT versioned: they are reproducible byte for
+# byte (`backfill run` + `backfill verify` against the SHA-256 hashes in each tracked manifest.json)
+# and served from Postgres. Git LFS's free tier (1 GB storage / 1 GB transfer a month) can't hold them.
+data/harmonized/*/detections/
+data/harmonized/*/cell_days/
+data/harmonized/*.log
 *.zip
 *.tar.gz
 
@@ -29,3 +35,6 @@ data/*
 .vscode/
 .idea/
 *.tsbuildinfo
+
+# Non-fire layer: derived, regenerable with `backfill industrial-heat` (loaded into Postgres)
+data/harmonized/*/industrial_heat/

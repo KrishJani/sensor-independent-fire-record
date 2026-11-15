@@ -139,4 +139,16 @@ Outputs in `data/harmonized/<region>/`:
 
 Re-running with the same inputs gives byte-identical outputs. Hashes cover the
 *uncompressed* content of `.gz` files, so a different zlib build can never fail `verify`.
-Loading these into Postgres (`--load`) is Stage 3.
+## Loading into Postgres (Stage 3)
+
+```bash
+node --env-file=.env scripts/backfill/src/cli.ts load --all            # every region, group and global layer
+node --env-file=.env scripts/backfill/src/cli.ts load --group us --prone
+```
+
+Each region loads in one transaction and is checked against its `manifest.json`. After a successful
+load the loader sets `data:version:archival` in the `FIRMS_INGEST_STATE` KV namespace (account and
+namespace read from `apps/api-worker/wrangler.jsonc`, written with `wrangler kv key put --remote`).
+The API puts that value in every cache key, so cached archival responses are dropped immediately.
+Needs `wrangler login` on the right account. If the write fails, the data stays loaded and the exact
+command to run by hand is printed. `--no-kv` skips it, for example when loading a scratch database.

@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
+    "dev": "sh -c 'export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(grep ^DATABASE_URL= ../../.env | cut -d= -f2-)\"; wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state'",
     "deploy": "wrangler deploy",
-    "typegen": "wrangler types"
+    "typegen": "wrangler types",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@repo/harmonizer": "workspace:*",

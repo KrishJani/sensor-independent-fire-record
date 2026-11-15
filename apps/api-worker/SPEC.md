@@ -86,6 +86,7 @@ This serves map features from **Postgres**.
 - In the `coarse` and `cells` levels, `cell_days` counts distinct `(cell, date)` pairs across the VIIRS reference and MODIS. It is meant for map density only; harmonized counts come from `/api/calendar`.
 - **Global coverage.** The parts of the bbox inside configured regions are served as above. Everything else is served at the `coarse` level only, from `global_coarse_months` (0.5° bins, per satellite, *not harmonized*). Those features carry `harmonized: false`, and the UI labels them by satellite. `cells` and `points` outside regions fall back to `coarse`, with `meta.globalFallback: true`.
 - `points` is limited to 5000 rows `ORDER BY frp_mw DESC`. When the limit is hit, the response sets `truncated: true`.
+- `heat=fire` (the default) returns only `detections.heat_class = 'fire'`. `heat=industrial` returns the industrial-heat layer: flares, static sources, offshore and volcanic heat, each with its `heat_reason`. The UI offers it as an optional overlay. Calendars never include industrial heat.
 - The response is a GeoJSON `FeatureCollection` plus `meta: { level, bbox, from, to, truncated, dataVersion }`.
 
 ### `GET /api/realtime/spots?bbox=&from=&to=&level=`

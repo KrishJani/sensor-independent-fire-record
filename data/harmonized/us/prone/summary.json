@@ -1,0 +1,34 @@
+{
+  "harmonizer_version": "1.2.0",
+  "group": "us",
+  "years": [
+    2001,
+    2025
+  ],
+  "tile_deg": 0.25,
+  "method": "Getis-Ord Gi* (tile + 8 neighbours, binary weights) on mean annual harmonized cell-days per grid cell; two-sided p; Benjamini–Hochberg FDR. very_high = hot spot q<0.01 and burns in ≥60% of years; high = q<0.05; elevated = q<0.10 or top-10% density; low otherwise.",
+  "tiles": 38272,
+  "classes": {
+    "low": 34067,
+    "elevated": 952,
+    "high": 479,
+    "very_high": 2774
+  },
+  "tile_sum_checks": {
+    "california": 3.6697599983439983e-7,
+    "pacific_northwest": 0.0000019407782362335587,
+    "southwest": 0.000003835406211391209,
+    "interior_west": 9.130606715899674e-7,
+    "great_plains": 4.1495416906244913e-8,
+    "southeast": 0.0000010340130373973005,
+    "midwest_northeast": 6.277173932025198e-7,
+    "alaska": 0.000010890740669642403,
+    "hawaii": 0.000008846228859916147
+  },
+  "outputs": {
+    "prone_tiles.csv": {
+      "sha256": "058b83b4e6df3c09a7d7562e67a088ae1844282842bc0bb63a3df2bc6552caec",
+      "rows": 38272
+    }
+  }
+}

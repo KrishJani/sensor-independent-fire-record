@@ -75,6 +75,7 @@ Steps run for each source in `MODIS_NRT`, `VIIRS_SNPP_NRT`, `VIIRS_NOAA20_NRT` a
    - `parseFirmsCsv(tier: 'NRT')`
    - `filterDetections` with the **static mask**. NRT has no `type` column, so the mask is required. Inside regions, the regional `static_mask` is used, which keeps NRT identical to the regional SP. Elsewhere, `global_static_mask` is used. Both are cached in KV (`cache:static_mask:<region|global>`, 24 h TTL).
 3. **Upsert raw detections** into `nrt_detections`.
+   - Detections in masked cells are **kept** with `heat_class = 'industrial'` and a `heat_reason`. Masked cells are static sources, persistent VIIRS-only heat, and known flare sites from the EOG inventory (docs/HARMONIZATION.md §4.5). They are not dropped, and they are never counted in cell-days.
    - Key: `(satellite, acq_date, acq_time, lat, lon)`.
    - `INSERT … ON CONFLICT DO UPDATE` makes it idempotent.
 4. **Recompute cell-days:** for every `(acq_date, satellite)` touched in step 3, re-read *all* `nrt_detections` rows for that date and satellite in the region, then run `buildCellDays`. The result replaces those rows in `nrt_cell_days`: delete then insert, in one `db.batch()`. Recomputing from raw rows rather than patching increments keeps D1 correct when FIRMS revises a granule.

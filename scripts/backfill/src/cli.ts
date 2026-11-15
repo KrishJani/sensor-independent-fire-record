@@ -12,6 +12,11 @@ import { runGlobal } from './global.ts';
 import { aggregateGroup } from './aggregate.ts';
 import { buildReport } from './report.ts';
 import { buildFlareCells, loadFlareCells } from './flares.ts';
+import { buildIndustrialHeat } from './industrial.ts';
+import { connect, dbSummary, loadGlobal, loadGroup, loadProne, loadRegion, migrate } from './load.ts';
+import { bumpArchivalVersion, newArchivalVersion } from './kv.ts';
+import { dbCheck } from './dbcheck.ts';
+import { runProne } from './prone.ts';
 import { DEFAULT_SENSITIVITY_GRIDS, alphaAt, fmt } from '../../../packages/harmonizer/src/index.ts';
 
 const { positionals, values } = parseArgs({
@@ -37,6 +42,10 @@ const { positionals, values } = parseArgs({
     'dry-run': { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     group: { type: 'string', default: 'us' },
+    global: { type: 'boolean', default: false },
+    all: { type: 'boolean', default: false },
+    prone: { type: 'boolean', default: false },
+    'no-kv': { type: 'boolean', default: false },
     quiet: { type: 'boolean', default: false },
   },
 });
@@ -169,6 +178,52 @@ async function main() {
       for (const [y, o] of g.overlap) console.log(`  ${y}  VIIRS ${String(o.vi).padStart(7)}  MODIS×α ${fmt(o.ms, 0).padStart(7)}  ${o.vi ? ((o.ms / o.vi - 1) * 100 >= 0 ? '+' : '') + fmt((o.ms / o.vi - 1) * 100, 1) + '%' : ''}`);
       return;
     }
+    case 'load': {
+      // node --env-file=.env scripts/backfill/src/cli.ts load --region <id> | --group us | --global | --all [--prone] [--no-kv]
+      // After a successful load, data:version:archival is bumped in KV so the API's caches miss (skip with --no-kv).
+      const sql = await connect();
+      try {
+        await migrate(sql, log);
+        const explicitRegion = process.argv.includes('--region');
+        if (values.all) {
+          for (const r of cfg.regions) await loadRegion(sql, cfg, r, log);
+          for (const g of [...new Set(cfg.regions.map((r) => r.group).filter(Boolean))] as string[]) await loadGroup(sql, g, log);
+          await loadGlobal(sql, cfg, log);
+        } else {
+          if (explicitRegion) await loadRegion(sql, cfg, region, log);
+          if (process.argv.includes('--group')) await loadGroup(sql, values.group!, log);
+          if (values.global) await loadGlobal(sql, cfg, log);
+          if (process.argv.includes('--prone')) await loadProne(sql, values.group!, log);
+        }
+        if (!values['no-kv']) {
+          const what = values.all ? 'all' : [explicitRegion && `region=${region.id}`, process.argv.includes('--group') && `group=${values.group}`, values.global && 'global', values.prone && 'prone'].filter(Boolean).join(',');
+          bumpArchivalVersion(newArchivalVersion(what), log);
+        }
+        const s = await dbSummary(sql);
+        console.log(`\ndatabase size ${s.size}`);
+        for (const t of s.tables) console.log(`  ${String(t.table).padEnd(24)} ${Number(t.rows).toLocaleString().padStart(12)} rows  ${t.size}`);
+      } finally {
+        await sql.end();
+      }
+      return;
+    }
+    case 'prone': {
+      // node scripts/backfill/src/cli.ts prone --group us   (years 2001–2025: complete years of every region)
+      const res = await runProne(cfg, values.group!, [2001, 2025], log);
+      const top = res.results.filter((t) => t.proneClass === 'very_high').sort((a, b) => b.giZ - a.giZ).slice(0, 10);
+      console.log('\nmost significant very-high tiles:');
+      for (const t of top) console.log(`  ${t.lat.toFixed(2)}, ${t.lon.toFixed(2)}  z ${t.giZ.toFixed(1)}  ${t.why}`);
+      return;
+    }
+    case 'db-check': {
+      const sql = await connect();
+      try { if (!(await dbCheck(sql, log))) process.exitCode = 1; } finally { await sql.end(); }
+      return;
+    }
+    case 'industrial-heat': {
+      await buildIndustrialHeat({ region, excludeBboxes: excludedBboxes(cfg, region), rawDir, outDir, log });
+      return;
+    }
     case 'flare-cells': {
       // node scripts/backfill/src/cli.ts flare-cells --inventory data/raw/flares/eog-myc25q4/annual_flare_site_records.csv
       const inv = values.inventory ? abs(values.inventory) : join(REPO_ROOT, 'data/raw/flares/eog-myc25q4/annual_flare_site_records.csv');
@@ -191,7 +246,7 @@ async function main() {
       return;
     }
     default:
-      throw new Error(`unknown command "${cmd}" (availability | download | run | global | aggregate | report | flare-cells | verify)`);
+      throw new Error(`unknown command "${cmd}" (availability | download | run | global | aggregate | report | flare-cells | industrial-heat | load | db-check | prone | verify)`);
   }
 }
 

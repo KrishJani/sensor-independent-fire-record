@@ -381,17 +381,17 @@
   },
   "counts": {
     "nrt_rows_skipped": 0,
-    "rows_outside_region_or_range": 12014029,
+    "rows_outside_region_or_range": 12014027,
     "filter": {
-      "seen": 2406393,
-      "kept": 2209200,
+      "seen": 2406395,
+      "kept": 2209202,
       "droppedType": 70419,
       "droppedMask": 14283,
       "droppedConfidence": 112491,
       "droppedFrpFloor": 0
     },
     "duplicates_removed": 0,
-    "detections": 2208724,
+    "detections": 2208726,
     "cell_days": 432950,
     "static_mask_cells": 111,
     "flare_mask_cells": 3,
@@ -433,19 +433,19 @@
   },
   "outputs": {
     "alpha_effective.csv": {
-      "sha256": "6c14ea15925de32d729500f9f341335b5dd84c9cd2c29a8a9a44deb76ef4c1d2",
+      "sha256": "604a9ccd5f253b6b73f6ba88044e8254b51df97e68a84ab27b74b18454696836",
       "rows": 866
     },
     "alpha_model.json": {
-      "sha256": "25e51f3095b6e3d9051cd252a23cf99eef495096ac8882b6310cea71cbd08279",
+      "sha256": "4e6cc0c612576a4a6fec273e5bab8dc26ef9e33f3d0eda8d1ed2404dbc3d4425",
       "rows": 632
     },
     "alpha_monthly.csv": {
-      "sha256": "3d5928d846079f0f587cc74f444931a9dda2f261678b5a68bd8ac2f2b5a379ac",
+      "sha256": "a51ef6c32b376c9280c213ee274debe3cb0252f47ff131bdb382e9cde23bd4da",
       "rows": 36
     },
     "calendar_monthly.csv": {
-      "sha256": "e118239f7038f3348d35d9f72f76dbbb6eaa21010731a925988031448d74bb58",
+      "sha256": "28b40c9970c712804d36781cc353c59a3746546e9d739ad83623b072913593ca",
       "rows": 302
     },
     "cell_days/2000.csv": {
@@ -465,8 +465,8 @@
       "rows": 8820
     },
     "cell_days/2004.csv": {
-      "sha256": "a6828af78efbd63af11a3db8f49f8b2daefedac6c0364724e29d26f3596c9a38",
-      "rows": 5031
+      "sha256": "064b04f3a5f4d641c2304b5de15dbec3407903ed288c3568a6cafa72a75a8978",
+      "rows": 5032
     },
     "cell_days/2005.csv": {
       "sha256": "34bc2d8b000e1679265f178009e0db6a881db47db8828ac0ed993508d173c10b",
@@ -497,7 +497,7 @@
       "rows": 5147
     },
     "cell_days/2012.csv": {
-      "sha256": "b40bbe454926e1477a9d2ec89180bc9373872bb3332cc81b4c9d78c5a1331d37",
+      "sha256": "84c54421bde316293d6b4dca95f9d4f2d50ccbce8e2c991242b89da2b27251da",
       "rows": 26564
     },
     "cell_days/2013.csv": {
@@ -513,8 +513,8 @@
       "rows": 24868
     },
     "cell_days/2016.csv": {
-      "sha256": "a50b47848d3483f4999d20116bd7b120c10773f4714573cfd38fd5e561b97a14",
-      "rows": 13121
+      "sha256": "777ecb4dace63f6bfe3b5a17ebdac8f1fe75b849ff09236bb27b6d74ef32bf1a",
+      "rows": 13120
     },
     "cell_days/2017.csv": {
       "sha256": "22b1129eae2287b1d75db9a04461bf50086cdb0f57ec1ec1a0de405ebb14d861",
@@ -553,7 +553,7 @@
       "rows": 24550
     },
     "daily_harmonized.csv": {
-      "sha256": "d594284bd74c06a6a25f917079e1a8e332b8aa89c3d46c59d2a8682bfe2e83fb",
+      "sha256": "e9b5d4f6d54480fb81c8c1ec74db868048281bd20963c7037a2cb6ecb357b795",
       "rows": 9192
     },
     "detections/2000.csv.gz": {
@@ -573,7 +573,7 @@
       "rows": -1
     },
     "detections/2004.csv.gz": {
-      "sha256": "e614068938fe5f8a11673ccf227f19a5ca58ad1c27d9de38f5ef64faa15a8496",
+      "sha256": "f6b01eb7545843b01c5438218048ce7c2edc67ad551bd18a0be58d740d971c38",
       "rows": -1
     },
     "detections/2005.csv.gz": {
@@ -605,7 +605,7 @@
       "rows": -1
     },
     "detections/2012.csv.gz": {
-      "sha256": "12bb34957e1872ed94a69bd6dcf20be4db2125dd26d3da8b28edbcc50a686ba6",
+      "sha256": "677dbef19141c52552f0b31312c73ea65bc4d5d60947c1c665d1dbc4f4185b0d",
       "rows": -1
     },
     "detections/2013.csv.gz": {
@@ -621,7 +621,7 @@
       "rows": -1
     },
     "detections/2016.csv.gz": {
-      "sha256": "1b8548b3caed80258409918eb13333002b9907f47a132e2dc4ede01a8677ce6f",
+      "sha256": "63a0a8860ca04e6a87916ec4869c2414173de72bf94d4f15366335166eeb70bc",
       "rows": -1
     },
     "detections/2017.csv.gz": {
@@ -673,7 +673,7 @@
       "rows": 118
     },
     "validation.json": {
-      "sha256": "de4e29138673234aa6c172b7320900f51ec06771f8bbe3098b10f9eec5648b70",
+      "sha256": "4cdec083b83910d3728170f1b1e3a9debd5a5de91944b904b85db0d36aa9a04c",
       "rows": 397
     }
   }

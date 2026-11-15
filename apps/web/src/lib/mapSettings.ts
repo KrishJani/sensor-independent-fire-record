@@ -5,6 +5,11 @@ import type { ColorScheme } from './useColorScheme';
 export type LightSetting = 'auto' | 'dawn' | 'day' | 'dusk' | 'night';
 export type LightPreset = Exclude<LightSetting, 'auto'>;
 export type ProjectionId = 'globe' | 'mercator';
+/** activity & hotspots are harmonized (sensor-independent); raw shows the satellites' own pixels. */
+export type FireMode = 'activity' | 'hotspots' | 'raw';
+/** recency / amount for harmonized modes; sensor / intensity (FRP, not harmonized) only for raw. */
+export type FireColoring = 'recency' | 'amount' | 'sensor' | 'intensity';
+export type RangePreset = 'day' | 'week' | 'month' | 'season' | 'year';
 
 export interface MapSettings {
   basemap: BasemapId;
@@ -21,6 +26,15 @@ export interface MapSettings {
   terminator: boolean;
   coordinates: boolean;
   scale: boolean;
+  fireActivity: boolean;
+  proneAreas: boolean;
+  industrialHeat: boolean;
+  regionOutlines: boolean;
+  showViirs: boolean;
+  showModis: boolean;
+  fireMode: FireMode;
+  fireColoring: FireColoring;
+  rangePreset: RangePreset;
 }
 
 export const DEFAULT_SETTINGS: MapSettings = {
@@ -38,6 +52,15 @@ export const DEFAULT_SETTINGS: MapSettings = {
   terminator: false,
   coordinates: true,
   scale: true,
+  fireActivity: true,
+  proneAreas: false,
+  industrialHeat: false,
+  regionOutlines: true,
+  showViirs: true,
+  showModis: true,
+  fireMode: 'activity',
+  fireColoring: 'recency',
+  rangePreset: 'month',
 };
 
 const STORAGE_KEY = 'skywalkers77.mapSettings.v1';

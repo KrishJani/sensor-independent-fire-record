@@ -289,15 +289,39 @@ gas-flaring volumes, 2012–2025* (MYC25Q4 v1.0), doi:10.5281/zenodo.23091822, C
 - **Great Plains:** 7.7% → 7.3%. **Midwest/NE:** 10.2% → 9.5%.
 - **Pacific NW:** unchanged. **California:** 8.1% → 8.4%. **Southeast:** 5.0% → 5.2%.
   All still pass.
-- **Cost.** Across the US: 5,426 cells, with 529,705 VIIRS and 35,811 MODIS detections removed
-  (14.8 : 1).
-  - In the oil regions about 50 : 1, so these are flares, not fires.
-  - **Southeast 2.7 : 1 (8.2k MODIS)** and California 5 : 1. Some known-flare cells there also
-    contain real (likely prescribed) burning, which is removed with the flares. This is reported
-    as is, not tuned away.
+- **Cost.** Counted from the industrial-heat layer (§4.5), with the same confidence filter as
+  fires. Both flare rules together removed **280,539 VIIRS (3.3%) and 27,454 MODIS (1.0%)**
+  detections across the US.
+  - In the oil regions VIIRS : MODIS is 35–48 : 1 (Southwest, Interior West), so these are
+    flares. They are 12.5% and 15.7% of those regions' VIIRS detections.
+  - **Southeast 3 : 1 (8,246 MODIS, 1.0% of its MODIS)**, Great Plains 7 : 1 (2.9%) and
+    California 6.5 : 1 (0.4%). Some known-flare cells there also contain real burning, which is
+    removed with the flares. This is reported as is, not tuned away.
+  - *Correction:* an earlier count (530k / 36k) was taken before the confidence filter and
+    overstated this.
 - **All 8 data-sufficient regions pass every check.** Hawaii (3 scorable months) is flagged
   low data.
 - **US:** MODIS × α vs VIIRS within ±2.3% every year 2012–2021. The US year band is −6% / +7%.
+
+### 4.5 Industrial-heat layer (kept, labelled, not counted) [`backfill industrial-heat`]
+
+Detections excluded from the fire record are **kept** for the map, with their reason. They are
+never counted in calendars:
+
+| Reason | Source |
+|---|---|
+| `volcano` · `static_source_type` · `offshore` | FIRMS `type` 1, 2, 3 |
+| `static_source_cell` | a cell masked for repeated type-2 detections |
+| `persistent_viirs_only` | the 30-day rule (§4.3) |
+| `eog_flare_site` | the inventory (§4.4) |
+
+- The layer is re-derived in one pass from each region's `static_mask.csv`, with the same clip,
+  date range and confidence filter. It therefore matches exactly what `run` removed.
+- Output: `data/harmonized/<region>/industrial_heat/<year>.csv.gz` plus a manifest.
+- It is gitignored (38 MB for the US, regenerable in about 3 minutes) and loaded into Postgres
+  as `detections.heat_class = 'industrial'`.
+- US: 3.05 M detections. 1.81 M static-source type, 709 k static-source cells, 283 k inventory
+  flares, 140 k offshore, 89 k volcano, 25 k 30-day rule.
 
 ## 5. Validation [`validateModel` → `validation.json`]
 
@@ -430,7 +454,11 @@ Aleutians, across the date line).
 - **Cross-check:** where both sensors flew, the US-wide MODIS × α matches observed VIIRS within
   ±2.1% every year 2012–2021. After that it drifts low (−5% to −11% by 2025) with Terra/Aqua
   orbit drift. That is why calibration stops in 2021, and the calendar uses VIIRS for those
-  years.
+  years. **Consequence:** the published record is unaffected, because every day from 2012 on
+  that VIIRS observed uses VIIRS. The gap would matter only if VIIRS dropped out after 2021 and a
+  day fell back to MODIS × α. Such days would read about 5–11% low, beyond the stated bands, and
+  `source_mix` in the calendar flags them. A recalibration window after 2021 would be needed
+  before relying on that fallback.
 
 **US results, v1.2** (`data/harmonized/us/regions_summary.csv`). Errors are held-out; the
 constant ratio is in brackets. "Correct-model range" is what simulations of a correct model
@@ -457,4 +485,59 @@ score at that region's own noise (§5.1).
   around 97.2k cell-days). It is the sum of the region bands, so it is conservative.
 - Where both sensors flew, the US-wide MODIS × α matches VIIRS **within ±2.1% every year
   2012–2021**.
+
+## 9. Fire-prone areas from the archival record [`analyseProne`, `backfill prone`]
+
+**Question:** where does burning recur, year after year, more than chance would put it?
+**Method:** `packages/harmonizer/src/prone.ts`; outputs in `data/harmonized/us/prone/` and the
+`prone_tiles` table.
+
+- **Unit:** 0.25° tiles (5 × 5 grid cells, about 28 km). Each tile's value is its mean annual
+  **harmonized** cell-days per grid cell, 2001–2025. Because it is VIIRS-equivalent, the MODIS-only
+  years count the same as the VIIRS years, so a tile does not look more fire-prone just because
+  the newer sensor sees more.
+- **Hot spots:** Getis-Ord Gi* over the US study area (the tile plus its 8 neighbours, binary
+  weights), two-sided p, then Benjamini–Hochberg FDR across all tiles.
+- **Pre-specified classes:** fixed before seeing results, not tuned.
+  - **very high:** hot spot at q < 0.01 that burns in ≥ 60% of years
+  - **high:** hot spot at q < 0.05
+  - **elevated:** q < 0.10, or in the top 10% of density
+  - **low:** everything else
+- **Attributes, giving each tile its "why" text:**
+  - recurrence: years with fire out of 25
+  - season: peak month and the fewest months holding 80% of burning
+  - intensity: MODIS-only FRP p90, one sensor across the whole record so it is comparable
+  - trend: Theil–Sen slope per decade, with a Mann–Kendall p-value
+- **Integrity check:** each region's tile series must add up to that region's harmonized calendar,
+  within the rounding of the stored files (0.005 per day, 0.00005 per MODIS cell-day for α).
+  All 9 regions pass, with the largest gap 0.001% (Alaska).
+
+**US results (38,272 tiles):** 2,774 very high, 479 high, 952 elevated.
+
+| Region | Very high | High | Elevated | Tiles |
+|---|---|---|---|---|
+| Southeast | 1,399 | 116 | 126 | 3,952 |
+| Great Plains | 752 | 110 | 244 | 3,256 |
+| Pacific Northwest | 255 | 152 | 183 | 1,680 |
+| California | 204 | 44 | 59 | 1,596 |
+| Midwest/Northeast | 139 | 36 | 175 | 5,500 |
+| Southwest | 25 | 20 | 38 | 3,104 |
+| Interior West | 0 | 0 | 37 | 2,040 |
+| Alaska | 0 | 1 | 90 | 16,728 |
+| Hawaii | 0 | 0 | 0 | 416 |
+
+- **The strongest hot spots are in the Red Hills of SW Georgia and N Florida** (z ≈ 40–44). They
+  burn every year of 25, peaking in March: a long-managed prescribed-burning landscape.
+- **Seasons separate the regimes.** In the Southeast and Great Plains the typical very-high peak
+  is March, which is prescribed and agricultural burning. In California and the Pacific Northwest
+  it is September, which is wildfire.
+- **Trends:** among the 3,253 high and very-high tiles, 733 are increasing and 403 decreasing at
+  p < 0.05. The rest show no significant trend.
+- **Read "prone" as recurrent burning activity, not wildfire hazard.** Satellites see all fire,
+  so prescribed and agricultural burning rank highly. Where fires are big but rare at any one
+  place, such as Alaska's boreal forest (return intervals of decades or more) or the Interior
+  West, a 25-year mean is low. Those areas come out *elevated* rather than *very high*, which is
+  correct for recurrence but not a statement about how dangerous a fire there can be.
+- Industrial heat (gas flares, volcanoes, static sources) is excluded upstream (§4.3–4.5), so
+  it cannot create hot spots.
 
