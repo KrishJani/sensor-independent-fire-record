@@ -28,13 +28,13 @@ export interface TimelinePoint {
   detections: number;
   newCells: number;
   frp: number;
-  /** Cumulative area at the end of this hour. */
-  areaKm2: number;
+  /** Cumulative affected area (km² of 0.05° cells with detections) at the end of this hour. */
+  affectedAreaKm2: number;
 }
 
 export interface EnrichmentMark {
   t: number; // stream time when enrichment was requested
-  areaKm2: number;
+  affectedAreaKm2: number;
   reason: "significant" | "area_doubled";
 }
 
@@ -55,6 +55,8 @@ export interface IncidentState {
   cells: Record<string, CellStat>;
   timeline: Record<string, { detections: number; newCells: number; frp: number; newAreaKm2: number }>;
   mergedInto: string | null;
+  /** Id of the detection that started the incident: stable across replays of the same scenario. */
+  firstDetectionId?: string | null;
   significantAt: number | null;
   enrichments: EnrichmentMark[];
   /** Latest stream time this incident has been told about. */
@@ -69,7 +71,11 @@ export interface IncidentSummary {
   mergedInto: string | null;
   detections: number;
   cells: number;
-  areaKm2: number;
+  /**
+   * Summed area of the 0.05° grid cells (~5.5 km) that contain at least one detection. Not a burned
+   * area: a single hotspot marks a whole cell, so this overstates the area actually burned.
+   */
+  affectedAreaKm2: number;
   frpTotalMw: number;
   frpMaxMw: number;
   frpMaxSensor: Sensor | null;
@@ -107,6 +113,7 @@ export function emptyState(id: string, stream: string): IncidentState {
 }
 
 export function applyDetections(s: IncidentState, ds: Detection[], streamT: number): void {
+  if (!s.firstDetectionId && ds.length) s.firstDetectionId = ds[0].id;
   for (const d of ds) {
     s.detections++;
     s.sumLat += d.lat;
@@ -146,7 +153,8 @@ export function isSignificant(s: IncidentState): boolean {
   return s.detections >= SIGNIFICANT_MIN_DETECTIONS && Object.keys(s.cells).length >= SIGNIFICANT_MIN_CELLS;
 }
 
-export function areaKm2(s: IncidentState): number {
+/** km² of the 0.05° cells with detections (overstates burned area; see IncidentSummary). */
+export function affectedAreaKm2(s: IncidentState): number {
   let a = 0;
   for (const key of Object.keys(s.cells)) a += cellAreaKm2(parseCellKey(key));
   return a;
@@ -176,7 +184,7 @@ export function summarize(s: IncidentState, streamT = s.streamT): IncidentSummar
     mergedInto: s.mergedInto,
     detections: s.detections,
     cells: Object.keys(s.cells).length,
-    areaKm2: round1(areaKm2(s)),
+    affectedAreaKm2: round1(affectedAreaKm2(s)),
     frpTotalMw: round1(s.frpTotal),
     frpMaxMw: round1(s.frpMax),
     frpMaxSensor: s.frpMaxSensor ?? null,
@@ -197,21 +205,22 @@ export function timeline(s: IncidentState): TimelinePoint[] {
     .sort((a, b) => a.hour - b.hour)
     .map((p) => {
       area += p.newAreaKm2;
-      return { hour: p.hour, detections: p.detections, newCells: p.newCells, frp: round1(p.frp), areaKm2: round1(area) };
+      return { hour: p.hour, detections: p.detections, newCells: p.newCells, frp: round1(p.frp), affectedAreaKm2: round1(area) };
     });
 }
 
 /**
- * Enrichment is due when the incident first becomes significant, and again when its area has
- * doubled since the last enrichment, but at most once per 6 h of stream time.
+ * Enrichment is due when the incident is significant and its affected area has reached
+ * `minAreaKm2` (0 = on significance), and again when that area has doubled since the last
+ * enrichment, but at most once per 6 h of stream time.
  */
-export function enrichmentDue(s: IncidentState, streamT: number): EnrichmentMark | null {
+export function enrichmentDue(s: IncidentState, streamT: number, minAreaKm2 = 0): EnrichmentMark | null {
   if (s.significantAt === null || s.mergedInto) return null;
-  const area = areaKm2(s);
+  const area = affectedAreaKm2(s);
   const last = s.enrichments.at(-1);
-  if (!last) return { t: streamT, areaKm2: area, reason: "significant" };
-  if (area >= 2 * last.areaKm2 && streamT - last.t >= ENRICH_MIN_INTERVAL_MS) {
-    return { t: streamT, areaKm2: area, reason: "area_doubled" };
+  if (!last) return area >= minAreaKm2 ? { t: streamT, affectedAreaKm2: area, reason: "significant" } : null;
+  if (area >= 2 * last.affectedAreaKm2 && streamT - last.t >= ENRICH_MIN_INTERVAL_MS) {
+    return { t: streamT, affectedAreaKm2: area, reason: "area_doubled" };
   }
   return null;
 }

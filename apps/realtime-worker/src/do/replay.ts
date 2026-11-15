@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { fromCompact, withStream, type CompactRow, type Detection } from "../detection";
-import { loadScenario } from "../replay/scenarios";
+import { loadScenario, type ScenarioOrigin } from "../replay/scenarios";
 import { replayStream } from "../streams";
 
 /** Real-time interval between replay ticks. */
@@ -14,7 +14,7 @@ export interface ReplayInfo {
   id: string;
   stream: string;
   scenario: string;
-  origin: "r2" | "bundled";
+  origin: ScenarioOrigin;
   note: string | null;
   speed: number;
   status: ReplayStatus;
@@ -93,6 +93,7 @@ export class Replay extends DurableObject<Env> {
     };
     this.save(info);
     this.setMeta("lastTick", Date.now());
+    await this.env.CLUSTERER.get(this.env.CLUSTERER.idFromName(info.stream)).setScenario(info.scenario);
     await this.ctx.storage.setAlarm(Date.now() + 50);
     return info;
   }
@@ -128,6 +129,7 @@ export class Replay extends DurableObject<Env> {
     info.finishedAt = Date.now();
     this.save(info);
     await this.ctx.storage.deleteAlarm();
+    await this.releaseSlot(info.id);
     await this.hub(info.stream).publish({ replayStatus: { status: info.status, progress: info.progress } });
     return info;
   }
@@ -164,7 +166,8 @@ export class Replay extends DurableObject<Env> {
         clock: info.streamT,
         replayStatus: { status: info.status, progress: info.progress }
       });
-      if (!finished) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+      if (finished) await this.releaseSlot(info.id);
+      else await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     } catch (err) {
       console.error(JSON.stringify({ msg: "replay_tick_failed", id: info.id, error: String(err) }));
       // Keep going: retry this window on the next tick instead of burning the alarm's retry budget.
@@ -172,6 +175,14 @@ export class Replay extends DurableObject<Env> {
     }
   }
 
+  /** Frees the global one-active-replay slot (see Control). */
+  private async releaseSlot(id: string) {
+    try {
+      await this.env.CONTROL.get(this.env.CONTROL.idFromName("global")).releaseReplay(id);
+    } catch (err) {
+      console.warn(JSON.stringify({ msg: "replay_release_failed", id, error: String(err) }));
+    }
+  }
   private hub(stream: string) {
     return this.env.LIVE_HUB.get(this.env.LIVE_HUB.idFromName(stream));
   }

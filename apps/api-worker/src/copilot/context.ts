@@ -4,16 +4,20 @@ import { z } from "zod";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
-export const BboxSchema = z
-  .tuple([
-    z.number().min(-180).max(180),
-    z.number().min(-90).max(90),
-    z.number().min(-180).max(180),
-    z.number().min(-90).max(90)
-  ])
-  .refine(([w, s, e, n]) => w < e && s < n, "bbox must be [west, south, east, north]");
+export type Bbox = [west: number, south: number, east: number, north: number];
 
-export type Bbox = z.infer<typeof BboxSchema>;
+/**
+ * A 4-number array, not z.tuple: tuples become draft-07 `items: [...]` in the tool JSON schema,
+ * which Workers AI (kimi-k2.6) rejects under JSON Schema 2020-12 ("Tool 0 function has invalid
+ * 'parameters' schema"). Ranges and order are checked by the refine instead.
+ */
+export const BboxSchema = z
+  .array(z.number().min(-180).max(180))
+  .length(4)
+  .refine(
+    ([w, s, e, n]) => s >= -90 && s <= 90 && n >= -90 && n <= 90 && w < e && s < n,
+    "bbox must be [west, south, east, north] in degrees"
+  ) as unknown as z.ZodType<Bbox>;
 
 export const AoiSchema = z.object({
   bbox: BboxSchema,

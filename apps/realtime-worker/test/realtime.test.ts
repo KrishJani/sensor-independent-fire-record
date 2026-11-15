@@ -228,7 +228,7 @@ describe("incident aggregate", () => {
     expect(sum.significant).toBe(true);
     expect(sum.cells).toBe(2);
     expect(sum.detections).toBe(6);
-    expect(sum.areaKm2).toBeGreaterThan(20);
+    expect(sum.affectedAreaKm2).toBeGreaterThan(20);
   });
 
   it("computes area, growth over the last 24 h of stream time, timeline and status", () => {
@@ -236,12 +236,12 @@ describe("incident aggregate", () => {
     applyDetections(s, cellsIn(3, T0), T0);
     applyDetections(s, cellsIn(6, T0 + 30 * H).slice(3), T0 + 30 * H);
     const sum = summarize(s);
-    const cellArea = sum.areaKm2 / 6;
+    const cellArea = sum.affectedAreaKm2 / 6;
     expect(sum.growthKm2PerDay).toBeCloseTo(cellArea * 3, 0);
     expect(growthKm2PerDay(s, T0 + 10 * H)).toBeCloseTo(cellArea * 3, 0);
     const tl = timeline(s);
     expect(tl).toHaveLength(2);
-    expect(tl[1].areaKm2).toBeCloseTo(sum.areaKm2, 0);
+    expect(tl[1].affectedAreaKm2).toBeCloseTo(sum.affectedAreaKm2, 0);
     expect(statusAt(s, T0 + 30 * H + 47 * H)).toBe("active");
     expect(statusAt(s, T0 + 30 * H + 49 * H)).toBe("inactive");
   });
@@ -256,6 +256,49 @@ describe("incident aggregate", () => {
     applyDetections(s, cellsIn(11, T0 + 2 * H).slice(5), T0 + 2 * H); // area doubled, but < 6 h
     expect(enrichmentDue(s, T0 + 2 * H)).toBeNull();
     expect(enrichmentDue(s, T0 + 6 * H)?.reason).toBe("area_doubled");
+  });
+
+  it("remembers the first detection id as a stable key across replays", () => {
+    const a = emptyState("replay-aaaaaa.3", "replay:aaaaaa");
+    const b = emptyState("replay-bbbbbb.3", "replay:bbbbbb");
+    applyDetections(a, cellsIn(3, T0), T0);
+    applyDetections(b, cellsIn(3, T0).map((d) => withStream(d, "replay:bbbbbb")), T0);
+    applyDetections(a, cellsIn(5, T0 + H).slice(3), T0 + H);
+    expect(a.firstDetectionId).toBeTruthy();
+    expect(a.firstDetectionId).toBe(b.firstDetectionId);
+  });
+
+  it("with a minimum area, the first enrichment waits until the affected area reaches it", () => {
+    const s = emptyState("x.1", "replay:test01");
+    applyDetections(s, cellsIn(5, T0), T0);
+    const area = summarize(s).affectedAreaKm2;
+    expect(enrichmentDue(s, T0, area + 1)).toBeNull();
+    applyDetections(s, cellsIn(6, T0 + H).slice(5), T0 + H);
+    expect(enrichmentDue(s, T0 + H, area + 1)?.reason).toBe("significant");
+  });
+});
+
+describe("enrichment config", async () => {
+  const { briefMinAreaKm2 } = await import("../src/streams");
+  const { briefModels, reasoningParams } = await import("../src/enrich/brief");
+
+  it("min brief area applies to replays only", () => {
+    expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "200" }, "live")).toBe(0);
+    expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "200" }, "replay:abcdef12")).toBe(200);
+    expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "x" } as never, "replay:abcdef12")).toBe(200);
+  });
+
+  it("brief cache key: scenario + stable incident key + doubling level", async () => {
+    const { briefCacheKey } = await import("../src/enrich/brief");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v1/quebec-2023-06/abc123/0");
+  });
+
+  it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
+    expect(briefModels({ CHAT_MODEL: "@cf/a", CHAT_FALLBACK_MODEL: "@cf/b" })).toEqual(["@cf/a", "@cf/b"]);
+    expect(briefModels({ CHAT_MODEL: "@cf/a", CHAT_FALLBACK_MODEL: "" })).toEqual(["@cf/a"]);
+    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "none" }, "@cf/moonshotai/kimi-k2.6")).toEqual({ reasoning_effort: "none" });
+    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "none" }, "@cf/zai-org/glm-4.7-flash")).toEqual({});
+    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "" }, "@cf/moonshotai/kimi-k2.6")).toEqual({});
   });
 });
 
@@ -282,6 +325,14 @@ describe("brief", async () => {
     expect(out).not.toMatch(/[—–]/);
   });
 
+  it("drops a sentence cut off by max_tokens", () => {
+    expect(cleanBrief("Area is 10 km2. Wind is 5 km/h. The nearest town is Ch")).toBe("Area is 10 km2. Wind is 5 km/h.");
+  });
+
+  it("never says burned area", () => {
+    expect(cleanBrief("The burned area is 120 km2.")).toBe("The area with detections is 120 km2.");
+  });
+
   it("prompt contains only the given numbers and skips mock history", () => {
     const s = emptyState("live.1", "live");
     applyDetections(s, [0, 1, 2, 3, 4, 5].map((i) => det(48 + i * 0.05, -75, T0 + i * H)), T0 + 5 * H);
@@ -297,6 +348,35 @@ describe("brief", async () => {
     expect(user).toContain("Chibougamau (12.3 km NE)");
     expect(user).not.toContain("999");
     expect(msgs[0].content).toMatch(/Never give evacuation/);
+    expect(user).toContain("Area with detections:");
+    expect(user).not.toMatch(/burned area/i);
+    expect(msgs[0].content).toContain('"area with detections"');
   });
   void extractText;
+});
+
+describe("allowed origins", async () => {
+  const { isAllowedOrigin, parseAllowedOrigins } = await import("../src/origins");
+  const allowed = parseAllowedOrigins("http://localhost:5173, https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev");
+  it("allows exact origins and one-label Pages preview subdomains only", () => {
+    expect(isAllowedOrigin("http://localhost:5173", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://nasa-fire-web.pages.dev", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://a1b2c3d4.nasa-fire-web.pages.dev", allowed)).toBe(true);
+    expect(isAllowedOrigin("https://feat-realtime.nasa-fire-web.pages.dev", allowed)).toBe(true);
+  });
+  it("rejects everything else", () => {
+    for (const o of [
+      "http://a1b2.nasa-fire-web.pages.dev",
+      "https://a.b.nasa-fire-web.pages.dev",
+      "https://evilnasa-fire-web.pages.dev",
+      "https://nasa-fire-web.pages.dev.evil.com",
+      "https://x.nasa-fire-web.pages.dev:8443",
+      "https://-x.nasa-fire-web.pages.dev",
+      "http://localhost:5174",
+      "null",
+      ""
+    ])
+      expect(isAllowedOrigin(o, allowed), o).toBe(false);
+    expect(isAllowedOrigin("https://anything.com", parseAllowedOrigins("*"))).toBe(false);
+  });
 });

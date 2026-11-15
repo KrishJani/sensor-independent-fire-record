@@ -410,7 +410,7 @@ describe("get_live_incidents (realtime service binding)", async () => {
     mergedInto: null,
     detections: 3550,
     cells: 71,
-    areaKm2: 1718.9,
+    affectedAreaKm2: 1718.9,
     frpMaxMw: 6718,
     frpMaxSensor: "VIIRS",
     firstSeen: Date.UTC(2020, 7, 18, 6, 7),
@@ -444,7 +444,7 @@ describe("get_live_incidents (realtime service binding)", async () => {
     expect(r.stream).toBe("live");
     expect(calls[0]).toContain("bbox=-123%2C38%2C-121%2C39");
     expect(calls[0]).toContain("stream=live");
-    expect(r.incidents[0]).toMatchObject({ areaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestTowns: ["Napa (12.1 km SW)"] });
+    expect(r.incidents[0]).toMatchObject({ affectedAreaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestTowns: ["Napa (12.1 km SW)"] });
   });
 
   it("accepts a replay stream (from args or context) and labels it as a replay", async () => {
@@ -454,5 +454,43 @@ describe("get_live_incidents (realtime service binding)", async () => {
     expect(r.note).toMatch(/REPLAY/);
     const bad = (await getLiveIncidents(fake, { stream: "replay:../x" }, ctx)) as Record<string, any>;
     expect(bad.error).toBe("bad_stream");
+  });
+});
+
+describe("chat model fallback", async () => {
+  const { chatFallbacks, DEFAULT_FALLBACK_MODEL } = await import("../src/copilot/models");
+  it('uses the default fallback when unset and none when CHAT_FALLBACK_MODEL=""', () => {
+    expect(chatFallbacks(undefined, "@cf/a")).toEqual([DEFAULT_FALLBACK_MODEL]);
+    expect(chatFallbacks("", "@cf/a")).toEqual([]);
+    expect(chatFallbacks("  ", "@cf/a")).toEqual([]);
+    expect(chatFallbacks("@cf/a", "@cf/a")).toEqual([]);
+    expect(chatFallbacks("@cf/b", "@cf/a")).toEqual(["@cf/b"]);
+  });
+});
+
+describe("tool JSON schemas", async () => {
+  const { z } = await import("zod");
+  const { createFireTools } = await import("../src/copilot/tools");
+  const { createRealtimeTools } = await import("../src/copilot/realtime");
+  const db = new DatabaseSync(":memory:");
+  const sqlTag: SqlTag = (strings, ...values) => db.prepare(strings.join("?")).all(...(values as never[])) as never;
+  const memory = new MemoryStore(sqlTag);
+  memory.init();
+  const tools = {
+    ...createFireTools({ data: new MockFireData(), memory, getContext: () => null }),
+    ...createRealtimeTools({ fetch: async () => new Response("{}") }, () => null)
+  };
+
+  // Workers AI validates tool parameters against JSON Schema 2020-12: array-form `items` (zod tuples) is rejected.
+  it.each(Object.keys(tools))("%s has no tuple-style items", (name) => {
+    const schema = z.toJSONSchema((tools as unknown as Record<string, { inputSchema: Parameters<typeof z.toJSONSchema>[0] }>)[name].inputSchema, { io: "input" });
+    const walk = (n: unknown): void => {
+      if (!n || typeof n !== "object") return;
+      const o = n as Record<string, unknown>;
+      expect(Array.isArray(o.items), `${name}: array-form items`).toBe(false);
+      expect("prefixItems" in o, `${name}: prefixItems`).toBe(false);
+      Object.values(o).forEach(walk);
+    };
+    walk(schema);
   });
 });
