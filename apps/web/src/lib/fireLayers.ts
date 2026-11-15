@@ -21,8 +21,8 @@ export const FLAME_DARK = FLAME;
 /** Crisp FIRMS-style dot: small at world scale, a little larger as you zoom in. */
 const DOT_RADIUS = ['interpolate', ['exponential', 1.5], ['zoom'], 1, 1.3, 5, 2.2, 9, 3.6, 13, 6];
 
-/** Centre of a feature's bounding box (bins are axis-aligned squares). */
-function centre(g: Geometry): [number, number] {
+/** Centre and width (degrees) of a feature's bounding box (bins are axis-aligned squares). */
+function centre(g: Geometry): [number, number, number] {
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   const visit = (c: unknown): void => {
     if (typeof (c as number[])[0] === 'number') {
@@ -31,7 +31,7 @@ function centre(g: Geometry): [number, number] {
     } else (c as unknown[]).forEach(visit);
   };
   if ('coordinates' in g) visit(g.coordinates);
-  return [(w + e) / 2, (s + n) / 2];
+  return [(w + e) / 2, (s + n) / 2, Math.max(0, e - w)];
 }
 
 let darkMap = false;
@@ -101,7 +101,8 @@ export function drawActivity(map: mapboxgl.Map, data: FeatureCollection | null, 
   }
   remove(map, FIRE_POINTS, FIRE_GLOW);
   // Coarse bins become red dots at the bin centre, sized (and slightly brightened) by intensity.
-  const dots: FeatureCollection = { type: 'FeatureCollection', features: data.features.map((f) => ({ type: 'Feature', properties: f.properties, geometry: { type: 'Point', coordinates: centre(f.geometry) } })) };
+  // `w`: the bin's width in degrees, so each dot can be sized to fit inside its own cell at every zoom.
+  const dots: FeatureCollection = { type: 'FeatureCollection', features: data.features.map((f) => { const c = centre(f.geometry); return { type: 'Feature', properties: { ...f.properties, w: c[2] }, geometry: { type: 'Point', coordinates: [c[0], c[1]] } }; }) };
   source(map, FIRE, dots);
   const R = flameRamp();
   // value: harmonized_cell_days (sensor-independent) or cell_days (raw / global layer)
@@ -111,7 +112,10 @@ export function drawActivity(map: mapboxgl.Map, data: FeatureCollection | null, 
   const cls: unknown[] = ['step', val, 0];
   bs.forEach((b, i) => cls.push(b, i + 1));
   const k = ['/', cls, Math.max(1, bs.length)];
-  const radius = ['interpolate', ['linear'], ['zoom'], 1, ['+', 1.2, ['*', 2.2, k]], 5, ['+', 2, ['*', 4, k]], 9, ['+', 3.5, ['*', 7, k]]];
+  // Radius in px = half the bin's on-screen width × (55%..95% by intensity), never below a visible 1.2 px.
+  const perPx = (z: number) => ['*', ['coalesce', ['get', 'w'], 0.05], (512 * 2 ** z) / 360 / 2];
+  const frac = ['+', 0.55, ['*', 0.4, k]];
+  const radius = ['interpolate', ['exponential', 2], ['zoom'], 0, ['max', 1.2, ['*', frac, perPx(0)]], 16, ['max', 1.2, ['*', frac, perPx(16)]]];
   const color = step(val, bs, R);
   if (map.getLayer(FIRE) && map.getLayer(FIRE)!.type !== 'circle') map.removeLayer(FIRE);
   if (!map.getLayer(FIRE))

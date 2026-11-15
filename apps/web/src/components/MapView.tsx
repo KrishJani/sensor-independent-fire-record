@@ -20,7 +20,8 @@ import { Toolbar } from './Toolbar';
 import { api } from '../lib/api';
 import type { Tab } from '../lib/dataWindows';
 
-const INITIAL_CENTER: [number, number] = [0, 20];
+// Shifted west of Greenwich so the Americas sit right of the left-hand incident panel.
+const INITIAL_CENTER: [number, number] = [-30, 25];
 const TERMINATOR_REFRESH_MS = 60_000;
 
 /** Flat Mercator world filling the screen: one world width (512 px at z0) covers the larger side. */
