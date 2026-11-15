@@ -57,7 +57,10 @@ ws.addEventListener("message", (ev) => {
     secCount = 0;
   }
   maxMsgsPerSec = Math.max(maxMsgsPerSec, ++secCount);
-  const msg = JSON.parse(ev.data);
+  const frame = JSON.parse(ev.data);
+  for (const msg of frame.type === "batch" ? frame.messages : [frame]) handle(msg);
+});
+function handle(msg) {
   switch (msg.type) {
     case "incident.upsert": {
       const s = msg.incident;
@@ -89,7 +92,7 @@ ws.addEventListener("message", (ev) => {
       if (msg.status === "done" || msg.status === "stopped") replayDone = true;
       break;
   }
-});
+}
 
 let status = replay;
 let lastPrint = 0;
@@ -116,7 +119,8 @@ const checks = [
   ["counts grow", growing > 0, `${growing} incidents grew after first upsert`],
   ["clock advances", clockAdvanced, `${clocks.length} clock msgs, ${fmt(clocks[0])} → ${fmt(clocks.at(-1))}`],
   ["replay finished", status.status === "done", `status=${status.status} progress=${(status.progress * 100).toFixed(0)}%`],
-  ["detections streamed", points > 0, `${points} map points`]
+  ["detections streamed", points > 0, `${points} map points`],
+  ["frame rate", maxMsgsPerSec <= 4, `max ${maxMsgsPerSec} frames/s (limit 4)`]
 ];
 
 console.log("\nsummary");
@@ -125,7 +129,7 @@ console.log(`  detections       ${status.clusterer?.counters?.detections ?? "?"}
 console.log(`  incidents        ${status.clusterer?.incidents?.total ?? "?"} total, ${status.clusterer?.incidents?.significant ?? "?"} significant, ${status.clusterer?.merges ?? 0} merges`);
 if (largest)
   console.log(`  largest          ${largest.id}: ${largest.areaKm2} km², ${largest.detections} detections, max FRP ${largest.frpMaxMw} MW, ${largest.status}`);
-console.log(`  messages         ${messages} total, max ${maxMsgsPerSec}/s, ${briefs} briefs`);
+console.log(`  frames           ${messages} total, max ${maxMsgsPerSec}/s, ${briefs} briefs`);
 let failed = 0;
 for (const [name, ok, detail] of checks) {
   if (!ok) failed++;

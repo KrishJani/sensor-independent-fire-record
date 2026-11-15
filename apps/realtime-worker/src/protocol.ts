@@ -20,7 +20,9 @@ export type ServerMessage =
   | { type: "detections"; points: MapPoint[]; replace?: boolean }
   | { type: "clock"; t: number }
   | { type: "replay.status"; status: string; progress: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** Every frame the hub sends is either a single message or a batch of them (one per flush). */
+  | { type: "batch"; messages: ServerMessage[] };
 
 export type ClientMessage = { type: "viewport"; bbox: Bbox | null } | { type: "ping" };
 

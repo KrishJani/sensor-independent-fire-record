@@ -4,7 +4,7 @@ import type { IncidentSummary } from "../incidentModel";
 import type { Brief, ClientMessage, MapPoint, PublishPayload, ServerMessage } from "../protocol";
 
 /** Minimum gap between flushes to one socket (coalescing window). */
-const FLUSH_INTERVAL_MS = 400;
+const FLUSH_INTERVAL_MS = 500;
 /** Points kept for late joiners / viewport changes (stream time). */
 const POINT_RETENTION_MS = 48 * 3600_000;
 const MAX_POINTS_PER_MESSAGE = 5000;
@@ -15,9 +15,9 @@ interface Attachment {
 
 /**
  * One per stream. Hibernatable WebSockets (ctx.acceptWebSocket). Publishers call publish();
- * updates are coalesced in memory and flushed to every socket at most every FLUSH_INTERVAL_MS:
- * per flush a client gets at most one clock, one detections message, and one upsert per changed
- * incident (latest version only).
+ * updates are coalesced in memory and flushed to every socket at most every FLUSH_INTERVAL_MS as
+ * ONE "batch" frame: at most one clock, one detections message, and one upsert per changed incident
+ * (latest version only). So a client gets at most ~2 frames per second.
  */
 export class LiveHub extends DurableObject<Env> {
   private sql: SqlStorage;
@@ -57,14 +57,15 @@ export class LiveHub extends DurableObject<Env> {
     // Initial snapshot: hello, current clock, every known significant incident (+ briefs), recent points.
     const incidents = this.sql.exec<{ summary: string; brief: string | null }>("SELECT summary, brief FROM incidents").toArray();
     const streamT = this.streamT();
-    this.send(server, { type: "hello", stream, streamT, incidents: incidents.length });
-    if (streamT !== null && stream !== "live") this.send(server, { type: "clock", t: streamT });
+    const snapshot: ServerMessage[] = [{ type: "hello", stream, streamT, incidents: incidents.length }];
+    if (streamT !== null && stream !== "live") snapshot.push({ type: "clock", t: streamT });
     for (const r of incidents) {
       const incident = JSON.parse(r.summary) as IncidentSummary;
-      this.send(server, { type: "incident.upsert", incident });
-      if (r.brief) this.send(server, { type: "incident.brief", id: incident.id, brief: JSON.parse(r.brief) });
+      snapshot.push({ type: "incident.upsert", incident });
+      if (r.brief) snapshot.push({ type: "incident.brief", id: incident.id, brief: JSON.parse(r.brief) });
     }
-    this.send(server, { type: "detections", points: this.recentPoints(bbox), replace: true });
+    snapshot.push({ type: "detections", points: this.recentPoints(bbox), replace: true });
+    this.send(server, { type: "batch", messages: snapshot });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -164,14 +165,17 @@ export class LiveHub extends DurableObject<Env> {
 
     for (const ws of this.ctx.getWebSockets()) {
       const att = (ws.deserializeAttachment() as Attachment | null) ?? { bbox: null };
-      if (clock !== null) this.send(ws, { type: "clock", t: clock });
-      for (const incident of upserts) this.send(ws, { type: "incident.upsert", incident });
-      for (const [id, brief] of briefs) this.send(ws, { type: "incident.brief", id, brief });
+      const out: ServerMessage[] = [];
+      if (clock !== null) out.push({ type: "clock", t: clock });
+      for (const incident of upserts) out.push({ type: "incident.upsert", incident });
+      for (const [id, brief] of briefs) out.push({ type: "incident.brief", id, brief });
       if (points.length) {
         const visible = att.bbox ? points.filter((p) => inside(p, att.bbox!)) : points;
-        if (visible.length) this.send(ws, { type: "detections", points: visible.slice(-MAX_POINTS_PER_MESSAGE) });
+        if (visible.length) out.push({ type: "detections", points: visible.slice(-MAX_POINTS_PER_MESSAGE) });
       }
-      if (replay) this.send(ws, { type: "replay.status", ...replay });
+      if (replay) out.push({ type: "replay.status", ...replay });
+      if (out.length === 1) this.send(ws, out[0]);
+      else if (out.length > 1) this.send(ws, { type: "batch", messages: out });
     }
   }
 
