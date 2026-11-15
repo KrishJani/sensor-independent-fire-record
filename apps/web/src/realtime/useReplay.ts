@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, controlReplay, getReplay, startOrJoinReplay } from './api';
+import { clearPresenterKey, presenterKey } from './presenter';
 import type { ReplayInfo } from './types';
 
 const STORAGE_KEY = 'skywalkers77.realtime.replay.v1';
@@ -25,7 +26,13 @@ function save(v: { mode: 'live' | 'replay'; id: string | null }) {
 function message(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'replay_busy') return `${e.message}. Stop it first or wait for it to finish.`;
-    if (e.status === 401) return 'Replay controls need a token (set VITE_REPLAY_TOKEN).';
+    if (e.status === 401) {
+      if (presenterKey()) {
+        clearPresenterKey();
+        return 'The presenter key was rejected. Open the presenter link again.';
+      }
+      return 'Only the presenter can start or control the replay right now.';
+    }
     return e.message;
   }
   if (e instanceof TypeError) return 'Cannot reach the realtime service.';
@@ -77,7 +84,7 @@ export function useReplay() {
   }, []);
 
   const start = useCallback(
-    (scenario: string, speed: number) => run(() => startOrJoinReplay(scenario, speed)),
+    (scenario: string, speed?: number) => run(() => startOrJoinReplay(scenario, speed)),
     [run],
   );
   const control = useCallback(

@@ -6,8 +6,6 @@ export const REALTIME_URL = trimSlash(import.meta.env.VITE_REALTIME_URL || 'http
 /** api-worker base URL (chat copilot, apps/api-worker/CHAT.md). */
 export const API_URL = trimSlash(import.meta.env.VITE_API_URL || 'http://localhost:8787');
 
-/** Sent as `x-replay-token` on replay POSTs when the worker has REPLAY_TOKEN set. */
-export const REPLAY_TOKEN = import.meta.env.VITE_REPLAY_TOKEN || '';
 
 /** Max detections kept on the map. The Quebec replay emits ~60k. */
 export const POINT_CAP = 20_000;

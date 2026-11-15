@@ -12,6 +12,7 @@ import { SourceBadge, StatusChip } from './StatusChip';
 import type { Bbox, StreamId } from './types';
 import { useIncidentDetail } from './useIncidentDetail';
 import { useRealtimeLayers } from './useRealtimeLayers';
+import { usePresenter } from './presenter';
 import { useReplay } from './useReplay';
 import { useRealtimeStream } from './useRealtimeStream';
 import './realtime.css';
@@ -56,6 +57,7 @@ interface Props {
 
 export function RealtimeView({ map, onContextChange }: Props) {
   const replay = useReplay();
+  const presenter = usePresenter();
   const [speed, setSpeed] = useState<SpeedId>('12000');
   const isReplay = replay.mode === 'replay';
   const stream: StreamId | null = isReplay ? (replay.info?.stream ?? null) : 'live';
@@ -93,7 +95,8 @@ export function RealtimeView({ map, onContextChange }: Props) {
 
   const startScenario = (s: Scenario) => {
     fit(map, s.bounds, 7, 2400);
-    void replay.start(s.id, Number(speed));
+    // Viewers start (or join) at the worker's default speed; only presenters pick one.
+    void replay.start(s.id, presenter ? Number(speed) : undefined);
   };
 
   const nearestName = detail?.summary.id === selectedId && detail?.enrichment?.places?.status === 'ok'
@@ -129,6 +132,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
           progress={replayProgress}
           speedLabel={speedLabel}
           busy={replay.busy}
+          presenter={presenter}
           note={replay.info.origin === 'bundled' ? replay.info.note : null}
           onPause={() => void replay.control('pause')}
           onResume={() => void replay.control('resume')}
@@ -177,17 +181,19 @@ export function RealtimeView({ map, onContextChange }: Props) {
                 <span className="rt-scenario__blurb">{s.blurb}</span>
               </button>
             ))}
-            <div className="rt-speed">
-              <span className="rt-dim">Speed</span>
-              <Segmented
-                options={SPEEDS}
-                value={speed}
-                onChange={(v: SpeedId) => setSpeed(v)}
-                label="Replay speed"
-                className="segmented--fill"
-                disabled={replay.busy}
-              />
-            </div>
+            {presenter && (
+              <div className="rt-speed">
+                <span className="rt-dim">Speed</span>
+                <Segmented
+                  options={SPEEDS}
+                  value={speed}
+                  onChange={(v: SpeedId) => setSpeed(v)}
+                  label="Replay speed"
+                  className="segmented--fill"
+                  disabled={replay.busy}
+                />
+              </div>
+            )}
           </div>
         )}
         {replay.error && isReplay && <p className="rt-error">{replay.error}</p>}

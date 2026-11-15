@@ -1,4 +1,5 @@
-import { REALTIME_URL, REPLAY_TOKEN } from './config';
+import { REALTIME_URL } from './config';
+import { presenterKey } from './presenter';
 import { normalizeIncident, type IncidentDetail, type ReplayInfo } from './types';
 
 export class ApiError extends Error {
@@ -25,7 +26,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 function replayPost<T>(path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (REPLAY_TOKEN) headers['x-replay-token'] = REPLAY_TOKEN;
+  // Start is public; pause/resume/stop need the presenter key (see presenter.ts).
+  const key = presenterKey();
+  if (key) headers['x-replay-token'] = key;
   return request<T>(path, { method: 'POST', headers, body: JSON.stringify(body ?? {}) });
 }
 

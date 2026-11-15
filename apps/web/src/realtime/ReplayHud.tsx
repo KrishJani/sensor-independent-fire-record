@@ -9,6 +9,8 @@ interface Props {
   progress: number;
   speedLabel: string;
   busy: boolean;
+  /** Presenters get transport controls; everyone else watches. */
+  presenter: boolean;
   note: string | null;
   onPause(): void;
   onResume(): void;
@@ -57,7 +59,11 @@ export function ReplayHud(p: Props) {
         <span className="rt-hud__pct">{pct}%</span>
 
         <div className="rt-hud__controls">
-          {ended ? (
+          {!p.presenter && !ended ? (
+            <span className="rt-hud__watch" title="Replay controls are for the presenter">
+              Watch only
+            </span>
+          ) : ended ? (
             <button type="button" className="rt-button" disabled={p.busy} onClick={p.onRestart}>
               <PlayIcon /> Restart
             </button>
