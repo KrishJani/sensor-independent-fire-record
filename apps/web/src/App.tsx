@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
+import type mapboxgl from 'mapbox-gl';
 import { DatePicker } from './components/DatePicker';
 import { MapView } from './components/MapView';
 import { TabSwitcher } from './components/TabSwitcher';
 import { dateWindow, type Tab } from './lib/dataWindows';
 import type { ISODate } from './lib/dates';
+import { RealtimeView } from './realtime/RealtimeView';
 
 export function App() {
   const windows = useMemo(
@@ -17,10 +19,12 @@ export function App() {
   }));
 
   const range = windows[tab];
+  const [map, setMap] = useState<mapboxgl.Map | null>(null);
 
   return (
     <div className="app">
-      <MapView />
+      <MapView onMapReady={setMap} />
+      {tab === 'realtime' && map && <RealtimeView map={map} />}
 
       <div className="overlay-top">
         <TabSwitcher value={tab} onChange={setTab} />
