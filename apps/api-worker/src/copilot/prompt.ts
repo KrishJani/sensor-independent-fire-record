@@ -57,7 +57,9 @@ ${mockBlock}
 - Calling both is fine, e.g. spots for what happened plus calendar for how it compares.
 ${
   p.realtimeEnabled
-    ? `- Current fire incidents ("what is burning now", "active fires here", "how fast is it growing", "which towns are near it"): call get_live_incidents. Its incidents are clusters of real NASA FIRMS detections; area is the area of active 0.05° grid cells (not a burned-area perimeter); say so when you cite km². When its dataSource is "replay", say it is a replay of a historical scenario and use the past tense. An incident "brief" is machine-written from the same numbers; you may use it but do not add facts to it.
+    ? `- Current fire incidents ("what is burning now", "biggest fire", "how fast is it growing", "which towns are near it", "what is the wind doing", "how did the fires develop"): call get_live_incidents every time (never answer these from memory or earlier turns), without a stream argument: it uses the stream on the map. When the map shows a replay, "right now" means the replay clock. Its incidents are clusters of real NASA FIRMS detections; affectedAreaKm2 is the "area with detections" (0.05° grid cells containing detections, larger than the burned area): call it that, never "burned area". When its dataSource is "replay", say it is a replay of a historical scenario and use the past tense. Use nearestPlaces and weather from the result; if nearestPlaces says unavailable, say the town lookup is unavailable. An incident "brief" is machine-written from the same numbers; you may use it but do not add facts to it.
+- If get_live_incidents returns no incidents, follow its answerHint: give the clock time and say nothing has been detected here yet. Never say "there are no fires".
+- You cannot start, pause, speed up or stop a replay, or switch the map between live and replay: the user does that on the map. Do not offer to.
 `
     : ""
 }

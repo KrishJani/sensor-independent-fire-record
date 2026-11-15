@@ -290,7 +290,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v1/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v2/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
@@ -346,6 +346,7 @@ describe("brief", async () => {
     const user = msgs[1].content;
     expect(user).toContain("22 km/h from the SW");
     expect(user).toContain("Chibougamau (12.3 km NE)");
+    expect(user).toContain("Nearest populated places");
     expect(user).not.toContain("999");
     expect(msgs[0].content).toMatch(/Never give evacuation/);
     expect(user).toContain("Area with detections:");
@@ -378,5 +379,47 @@ describe("allowed origins", async () => {
     ])
       expect(isAllowedOrigin(o, allowed), o).toBe(false);
     expect(isAllowedOrigin("https://anything.com", parseAllowedOrigins("*"))).toBe(false);
+  });
+});
+
+describe("places", async () => {
+  const { finalizePlaces, parseOverpass, parsePhoton, fetchPlaces } = await import("../src/enrich/places");
+  const lat = 48.9184, lon = -76.4023;
+
+  it("parses Photon place features, drops houses, dedupes names, keeps 75 km", () => {
+    const f = (name: string | undefined, value: string, c: [number, number], key = "place") => ({ geometry: { coordinates: c }, properties: { osm_key: key, osm_value: value, name } });
+    const out = finalizePlaces(
+      parsePhoton(
+        [
+          f("Quévillon", "locality", [-76.9395, 49.0084]),
+          f("Quévillon", "locality", [-76.9395, 49.0084]),
+          f(undefined, "house", [-76.96, 49.03], "building"),
+          f("Lebel-sur-Quévillon", "village", [-76.9805, 49.0534]),
+          f("Far", "town", [-70, 49])
+        ],
+        lat,
+        lon
+      )
+    );
+    // Within 5 km of each other, the village outranks the locality.
+    expect(out.map((p) => p.name)).toEqual(["Lebel-sur-Quévillon", "Quévillon"]);
+    expect(out[0]).toMatchObject({ place: "village", direction: expect.any(String) });
+  });
+
+  it("parses Overpass elements", () => {
+    const out = parseOverpass([{ lat: 49.05, lon: -76.98, tags: { name: "Lebel-sur-Quévillon", place: "village", population: "2,091" } }], lat, lon);
+    expect(out[0]).toMatchObject({ name: "Lebel-sur-Quévillon", place: "village", population: 2091 });
+  });
+
+  it("falls back to Photon when Overpass fails, and throws with every reason when all fail", async () => {
+    const calls: string[] = [];
+    const ok = await fetchPlaces(async (url) => {
+      calls.push(new URL(url).host);
+      if (url.includes("overpass")) throw new Error("timeout");
+      return { features: [] };
+    }, lat, lon);
+    expect(ok).toEqual({ places: [], source: "photon" });
+    expect(calls).toEqual(["overpass-api.de", "overpass.kumi.systems", "photon.komoot.io"]);
+    await expect(fetchPlaces(async () => { throw new Error("down"); }, lat, lon)).rejects.toThrow(/overpass-api.de: down.*photon.komoot.io: down/);
   });
 });

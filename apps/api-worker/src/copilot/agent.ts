@@ -6,6 +6,7 @@ import {
   isStepCount,
   streamText,
   type GenerateTextOnFinishCallback,
+  type UIMessageChunk,
   type ToolSet
 } from "ai";
 import { createFireData } from "../data/fireData";
@@ -13,7 +14,8 @@ import { parseContext, type MapContext } from "./context";
 import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
 import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
-import { chatFallbacks, DEFAULT_MODEL } from "./models";
+import { chatCacheTtl, chatFallbacks, chatReasoningEffort, DEFAULT_MODEL, effortLabel, withKimiReasoningOff } from "./models";
+import { TurnTimer, type TurnTiming } from "./timing";
 import { buildSystemPrompt } from "./prompt";
 import { createRealtimeTools } from "./realtime";
 import { createFireTools } from "./tools";
@@ -61,16 +63,21 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     const data = createFireData(this.env);
     const webTools = createWebTools(this.env);
     const realtimeTools = createRealtimeTools(this.env.REALTIME, () => this.state.context);
-    const tools: ToolSet = {
+    const timer = new TurnTimer();
+    const tools: ToolSet = timer.wrapTools({
       ...createFireTools({ data, memory: this.memory, getContext: () => this.state.context }),
       ...realtimeTools,
       ...webTools
-    };
+    });
 
-    const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
+    const cacheTtl = chatCacheTtl(this.env.CHAT_CACHE_TTL);
+    const effort = chatReasoningEffort(this.env.CHAT_REASONING_EFFORT);
+    const binding = effort === null ? withKimiReasoningOff(this.env.AI) : this.env.AI;
+    const ai = createAI({ binding, id: this.env.AI_GATEWAY_ID, ...(cacheTtl ? { cacheTtl } : {}) });
     const primary = (this.env.CHAT_MODEL || DEFAULT_MODEL) as CloudflareLanguageModelId;
     const fallbacks = chatFallbacks(this.env.CHAT_FALLBACK_MODEL, primary) as CloudflareLanguageModelId[];
-    const model = ai(primary, { fallback: fallbacks });
+    const model = ai(primary, { fallback: fallbacks, ...(effort !== undefined ? { reasoningEffort: effort } : {}) });
+    let timing: TurnTiming | null = null;
 
     const result = streamText({
       model,
@@ -92,15 +99,30 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
       prepareStep: ({ stepNumber }) =>
         stepNumber >= MAX_STEPS - 1 ? { toolChoice: "none" as const } : undefined,
       abortSignal: options?.abortSignal,
+      onStepStart: () => timer.stepStart(),
+      onStepFinish: (step) => timer.stepFinish(step as never),
       onFinish: (event) => {
+        timing = timer.summary();
         // Which model actually answered (primary or fallback): needed to trace language drift.
-        console.log(JSON.stringify({ msg: "copilot_turn_done", model: event.response?.modelId ?? null, primary, fallbacks, finishReason: event.finishReason }));
+        console.log(JSON.stringify({ msg: "copilot_turn_done", model: event.response?.modelId ?? null, primary, fallbacks, reasoningEffort: effortLabel(effort), finishReason: event.finishReason }));
+        console.log(JSON.stringify({ msg: "copilot_turn_timing", ...timing }));
         return onFinish(event);
       },
       onError: ({ error }) => console.error("[copilot] stream error:", error)
     });
 
     let stream = result.toUIMessageStream({ onError: toUserError });
+    // Per-step timing as a message-metadata chunk just before "finish" (the finish chunk's own
+    // metadata is replaced downstream). scripts/demo-chat.mjs prints it.
+    stream = stream.pipeThrough(
+      new TransformStream<UIMessageChunk, UIMessageChunk>({
+        transform(chunk, controller) {
+          if (chunk.type === "finish")
+            controller.enqueue({ type: "message-metadata", messageMetadata: { timing: timing ?? timer.summary(), reasoningEffort: effortLabel(effort) } });
+          controller.enqueue(chunk);
+        }
+      })
+    );
     if (data.source === "mock") stream = stream.pipeThrough(demoDisclaimerTransform());
     // Last: spacing between text parts, unlink URLs no web tool returned, "your area" → "this area".
     stream = stream.pipeThrough(

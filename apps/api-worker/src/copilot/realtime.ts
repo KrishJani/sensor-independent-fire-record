@@ -54,22 +54,52 @@ export interface LiveIncidentsArgs {
   limit?: number;
 }
 
+type ListResponse = { streamT: number | null; count: number; incidents: IncidentSummary[] };
+type PlacesStep = { status: string; data?: { name: string; place?: string; distanceKm: number; direction: string }[]; radiusKm?: number; error?: string };
+type WeatherStep = { status: string; data?: { time?: string; windSpeedKmh: number | null; windFrom: string | null; relativeHumidityPct: number | null; temperatureC: number | null } };
+
+/**
+ * The stream comes from the map context when it has one: the model sometimes passes
+ * stream "live" on its own, which during a replay answered about live fires elsewhere and
+ * produced "no fires". args.stream is only used when the map shows no stream.
+ */
+export function resolveStream(argStream: string | undefined, ctx: MapContext | null): { stream: string; ignored: string | null } {
+  const fromCtx = ctx?.realtimeStream;
+  if (fromCtx) return { stream: fromCtx, ignored: argStream && argStream !== fromCtx ? argStream : null };
+  return { stream: argStream ?? "live", ignored: null };
+}
+
+/** Nearest places for the tool output: names, "none within N km", or "unavailable (...)". */
+export function describePlaces(places: PlacesStep | undefined | null): string[] | string | null {
+  if (!places) return null;
+  if (places.status === "ok") {
+    if (places.data?.length) return places.data.slice(0, 3).map((p) => `${p.name} (${p.place ? `${p.place}, ` : ""}${p.distanceKm} km ${p.direction})`);
+    return `none within ${places.radiusKm ?? 30} km`;
+  }
+  if (places.status === "failed") return "unavailable (the place lookup failed; say it is unavailable, not that there are no towns)";
+  return null;
+}
+
 export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsArgs, ctx: MapContext | null) {
-  const stream = args.stream ?? ctx?.realtimeStream ?? "live";
+  const { stream, ignored } = resolveStream(args.stream, ctx);
   if (!STREAM_RE.test(stream)) return { error: "bad_stream", message: 'stream must be "live" or "replay:<id>"' };
   const bbox = args.bbox ?? ctx?.aoi?.bbox ?? null;
   const dataSource = stream === "live" ? "live" : "replay";
 
-  let replay: { scenario: string; status: string; progress: number } | null = null;
+  let replay: { scenario: string; status: string; progress: number; clock: string | null } | null = null;
   if (stream !== "live") {
-    const r = await getJson<{ scenario: string; status: string; progress: number }>(rt, `/realtime/replay/${stream.slice(7)}`);
+    const r = await getJson<{ scenario: string; status: string; progress: number; streamT: number }>(rt, `/realtime/replay/${stream.slice(7)}`);
     if (!r.ok) return { error: "no_such_replay", message: `Replay ${stream} was not found (HTTP ${r.status}).` };
-    replay = { scenario: r.data.scenario, status: r.data.status, progress: round(r.data.progress) };
+    replay = { scenario: r.data.scenario, status: r.data.status, progress: round(r.data.progress), clock: iso(r.data.streamT) };
   }
 
-  const qs = new URLSearchParams({ stream, status: args.status ?? "active", limit: String(Math.min(args.limit ?? 10, 25)) });
-  if (bbox) qs.set("bbox", bbox.join(","));
-  const r = await getJson<{ streamT: number | null; count: number; incidents: IncidentSummary[] }>(rt, `/realtime/incidents?${qs}`);
+  const status = args.status ?? "active";
+  const list = (q: { status: string; bbox: Bbox | null; limit: number }) => {
+    const qs = new URLSearchParams({ stream, status: q.status, limit: String(q.limit) });
+    if (q.bbox) qs.set("bbox", q.bbox.join(","));
+    return getJson<ListResponse>(rt, `/realtime/incidents?${qs}`);
+  };
+  const r = await list({ status, bbox, limit: Math.min(args.limit ?? 10, 25) });
   if (!r.ok) return { error: "realtime_unavailable", message: `Realtime service error (HTTP ${r.status}).` };
 
   const incidents = r.data.incidents.map((s) => ({
@@ -87,10 +117,10 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
     ...(s.mergedInto ? { mergedInto: s.mergedInto } : {})
   }));
 
-  // Briefs + nearest towns for the 3 largest incidents (one detail call each).
+  // Briefs, nearest places and weather for the 3 largest incidents (one detail call each).
   const details = await Promise.all(
     incidents.slice(0, 3).map((i) =>
-      getJson<{ brief: { text: string } | null; enrichment: { places?: { status: string; data?: { name: string; distanceKm: number; direction: string }[] } } | null }>(
+      getJson<{ brief: { text: string; asOf?: string } | null; enrichment: { places?: PlacesStep; weather?: WeatherStep; streamT?: number } | null }>(
         rt,
         `/realtime/incidents/${encodeURIComponent(i.id)}`
       ).catch(() => null)
@@ -99,11 +129,55 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
   details.forEach((d, idx) => {
     if (!d?.ok) return;
     const target = incidents[idx] as Record<string, unknown>;
-    if (d.data.brief?.text) target.brief = d.data.brief.text;
-    const places = d.data.enrichment?.places;
-    if (places?.status === "ok" && places.data?.length)
-      target.nearestTowns = places.data.slice(0, 3).map((p) => `${p.name} (${p.distanceKm} km ${p.direction})`);
+    if (d.data.brief?.text) {
+      target.brief = d.data.brief.text;
+      if (d.data.brief.asOf) target.briefAsOf = d.data.brief.asOf;
+    }
+    const places = describePlaces(d.data.enrichment?.places);
+    if (places) target.nearestPlaces = places;
+    const w = d.data.enrichment?.weather;
+    if (w?.status === "ok" && w.data)
+      target.weather = {
+        time: w.data.time ?? null,
+        windKmh: w.data.windSpeedKmh,
+        windFrom: w.data.windFrom,
+        relativeHumidityPct: w.data.relativeHumidityPct,
+        temperatureC: w.data.temperatureC
+      };
+    else if (w) target.weather = "unavailable";
   });
+
+  // Empty result: say why, so the answer is "nothing detected here yet as of <time>", never "no fires".
+  let empty: Record<string, unknown> = {};
+  if (incidents.length === 0) {
+    const clock = replay?.clock ?? iso(r.data.streamT);
+    const [anyStatus, anyArea] = await Promise.all([
+      status !== "all" ? list({ status: "all", bbox, limit: 1 }) : null,
+      bbox ? list({ status: "all", bbox: null, limit: 1 }) : null
+    ]);
+    const inactiveHere = anyStatus?.ok ? anyStatus.data.count : 0;
+    const elsewhere = anyArea?.ok ? anyArea.data.count : 0;
+    const reason =
+      r.data.streamT === null ? "stream_not_started" : inactiveHere > 0 ? "only_inactive" : bbox && elsewhere > 0 ? "outside_area" : "none_detected_yet";
+    const where = bbox ? "in this area" : "in this stream";
+    empty = {
+      emptyReason: reason,
+      ...(bbox ? { incidentsOutsideThisArea: elsewhere } : {}),
+      ...(inactiveHere ? { inactiveIncidentsHere: inactiveHere } : {}),
+      answerHint:
+        (replay
+          ? `Replay clock ${clock ?? "not started"} (${Math.round((replay.progress ?? 0) * 100)}% through the scenario). `
+          : `As of ${clock ?? "the latest poll"}. `) +
+        (reason === "stream_not_started"
+          ? "The stream has no detections yet. Say nothing has been detected yet and give the clock time."
+          : reason === "only_inactive"
+            ? `No active incidents ${where}, but ${inactiveHere} inactive one(s): call again with status "all" to describe them.`
+            : reason === "outside_area"
+              ? `No significant incidents ${where} yet; there are incidents elsewhere in the stream (call again without bbox to see them).`
+              : `No significant incident has been detected ${where} yet.`) +
+        ' Do not say "there are no fires": satellites miss fires and incidents need several detections to count.'
+    };
+  }
 
   return {
     dataSource,
@@ -114,8 +188,10 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
         ? `Incidents are clusters of real NASA FIRMS near-real-time detections (VIIRS + MODIS) on a 0.05° grid. ${INCIDENT_RULES}`
         : `REPLAY of a stored historical scenario (${replay?.scenario}), not current activity: real archived NASA FIRMS detections played back. Times are the original detection times; use the past tense and say it is a replay. ${INCIDENT_RULES}`,
     streamTime: iso(r.data.streamT),
+    ...(ignored ? { streamNote: `Used the map's stream ${stream}; the requested stream "${ignored}" was ignored.` } : {}),
     bbox,
     count: r.data.count,
+    ...empty,
     incidents
   };
 }
@@ -125,9 +201,9 @@ export function createRealtimeTools(rt: RealtimeFetcher | undefined, getContext:
   return {
     get_live_incidents: tool({
       description:
-        "Current fire INCIDENTS (clusters of real NASA FIRMS detections) from the realtime pipeline: affected area in km² (0.05° cells with detections, larger than the burned area), growth over the last 24 h, detections, peak FRP, first/last seen, and an AI brief and nearest towns when available. Use for 'what is burning now', 'active fires/incidents here', 'how fast is it growing'. Defaults to the map's area and the live stream; pass stream 'replay:<id>' (or rely on the map context) for a historical replay.",
+        "Current fire INCIDENTS (clusters of real NASA FIRMS detections) from the realtime pipeline: affected area in km² (0.05° cells with detections, larger than the burned area), growth over the last 24 h, detections, peak FRP, first/last seen, plus for the 3 largest an AI brief, nearest populated places and the weather. Use for 'what is burning now', 'biggest fire', 'how fast is it growing', 'which towns are near', 'what is the wind doing', 'how did the fires develop'. Uses the map's stream (live or the replay on screen) and area automatically: do not pass stream unless the map shows none.",
       inputSchema: z.object({
-        stream: z.string().regex(STREAM_RE).optional().describe('"live" (default) or "replay:<id>" for an active replay. Omit to use the map context.'),
+        stream: z.string().regex(STREAM_RE).optional().describe("Leave out: the map's stream is used. Only used when the map shows no stream."),
         bbox: BboxSchema.optional().describe("[west, south, east, north]. Omit to use the area selected on the map (no area = whole stream)."),
         status: z.enum(["active", "inactive", "all"]).optional().describe("Default active."),
         limit: z.number().int().min(1).max(25).optional().describe("Max incidents, largest first. Default 10.")

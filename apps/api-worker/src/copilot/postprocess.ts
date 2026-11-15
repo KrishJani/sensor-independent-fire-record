@@ -15,6 +15,10 @@ import type { UIMessage, UIMessageChunk } from "ai";
  * 4. A "Sources" / "Source facts" heading and the list under it are dropped
  *    when no web tool ran this turn (data tools need no source list, and
  *    without a web result there is nothing outside to cite).
+ * 5. Bare URLs (plain text, not a markdown link) that no web tool returned are
+ *    removed ("Citation: https://made-up.example"), and a "Citation:" /
+ *    "Source:" line left with nothing after it is dropped. Such lines are held
+ *    until they are complete so the check sees the whole line.
  *
  * Text is held back only as far as needed to see a link or phrase whole (an
  * unfinished `[…](…)` / `<http…>`, plus the last two words); whitespace inside
@@ -103,6 +107,37 @@ export function rewriteYourArea(text: string): string {
   return text.replace(/\b([Yy])our area\b/g, (_m, y: string) => (y === "Y" ? "This area" : "this area"));
 }
 
+/** Plain-text URLs (not inside a markdown link or autolink), without trailing punctuation. */
+const BARE_URL = /(?<![(<\w/])https?:\/\/[^\s<>()\[\]"'`]+/g;
+
+/** Remove bare URLs that are not in `known` (normalized). Trailing sentence punctuation stays. */
+export function removeUnknownBareUrls(text: string, known: Set<string>): string {
+  return text.replace(BARE_URL, (raw) => {
+    const url = raw.replace(/[.,;:!?*_]+$/, "");
+    const tail = raw.slice(url.length);
+    return known.has(normUrl(url)) ? raw : tail;
+  });
+}
+
+/** A line that is only a citation/source label: "Citation:", "- **Source:** ", "Sources: ;". */
+const LABEL_ONLY = /^[ \t]*(?:[-*+•][ \t]+)?[*_]*[ \t]*(?:citations?|sources?)[ \t]*[*_]*[ \t]*:?[ \t]*[*_]*[ \t]*[.,;]?[ \t]*$/i;
+
+/**
+ * Apply `fix` line by line; a line that `fix` changed and that is left as only a citation/source
+ * label is dropped with its newline. Untouched lines (a real "**Sources:**" heading) stay.
+ */
+export function fixLines(text: string, fix: (line: string) => string): string {
+  return text
+    .split(/(?<=\n)/)
+    .map((line) => {
+      const body = line.replace(/\r?\n$/, "");
+      const fixed = fix(body);
+      if (fixed !== body && LABEL_ONLY.test(fixed)) return "";
+      return fixed + line.slice(body.length);
+    })
+    .join("");
+}
+
 /** Unlink markdown links and <autolinks> whose URL is not in `known` (normalized). */
 export function filterLinks(text: string, known: Set<string>): string {
   return text
@@ -112,7 +147,8 @@ export function filterLinks(text: string, known: Set<string>): string {
     .replace(/<(https?:\/\/[^>\s]+)>/g, (whole, url: string) => (known.has(normUrl(url)) ? whole : ""));
 }
 
-const HEADING_LEAD = /^\s*(#{1,6}\s*)?[*_]*\s*/;
+/** Leading "#", list bullet and emphasis before a possible Sources/Citation label. */
+const HEADING_LEAD = /^\s*([-+•]\s+|\*\s+(?=\S))?(#{1,6}\s*)?[*_]*\s*/;
 /** A whole line that is a "Sources" heading: "## Sources", "**Source facts:**", "Sources: NASA FIRMS…". */
 const SOURCES_HEADING = /^\s*(#{1,6}\s*)?[*_]*\s*(sources?|source facts)\s*[*_]*\s*(:.*)?\s*$/i;
 /** Lines that belong to the section under the heading: list items, indented continuations, blank lines. */
@@ -122,7 +158,12 @@ const SECTION_LINE = /^\s*$|^\s*([-*+•]|\d+[.)])\s|^\s{2,}\S/;
 function couldBeHeading(frag: string): boolean {
   const rest = frag.replace(HEADING_LEAD, "").toLowerCase();
   if (rest === "") return true;
-  return "source facts".startsWith(rest) || "sources".startsWith(rest) || /^(sources?|source facts)\b/.test(rest);
+  return (
+    "source facts".startsWith(rest) ||
+    "sources".startsWith(rest) ||
+    "citations".startsWith(rest) ||
+    /^(sources?|source facts|citations?)\b/.test(rest)
+  );
 }
 
 /**
@@ -212,7 +253,7 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
   };
 
   const process = (s: string) => {
-    let out = filterLinks(s, known);
+    let out = fixLines(s, (line) => removeUnknownBareUrls(filterLinks(line, known), known));
     if (rewriteArea) out = rewriteYourArea(out);
     return out;
   };

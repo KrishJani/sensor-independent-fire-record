@@ -327,6 +327,25 @@ describe("answer post-processor", async () => {
     expect(text).toBe("The fire is still in August, with detections(4,236) and\n\n- a  list");
   });
 
+  it("removes made-up bare URLs and the Citation/Source lines they leave empty (streamed in pieces)", async () => {
+    const text = await run(
+      part("a", "The largest fire grew 120 km2.\nCita", "tion: https://www.fire", "watch.example/q", "uebec-2023\n", "Details at https://made.up/x. Done.\n- **Source:** <https://nope.example/a>\nEnd")
+    );
+    expect(text).toBe("The largest fire grew 120 km2.\nDetails at . Done.\nEnd");
+  });
+
+  it("keeps bare URLs a web tool returned, and their Citation line", async () => {
+    const text = await run([
+      ...tool("1", "web_search", { items: [{ url: "https://www.cbc.ca/news/quebec-fires" }] }),
+      ...part("a", "Evacuations were ordered.\nCitation: https://cbc.ca/news/quebec-fires\n")
+    ]);
+    expect(text).toBe("Evacuations were ordered.\nCitation: https://cbc.ca/news/quebec-fires\n");
+  });
+
+  it("leaves URLs inside markdown links to the link filter", async () => {
+    expect(pp.removeUnknownBareUrls("see [CBC](https://cbc.ca/x) and <https://y.example>", new Set())).toBe("see [CBC](https://cbc.ca/x) and <https://y.example>");
+  });
+
   it("does not add a space when either side already has whitespace", async () => {
     expect(await run([...part("a", "One.\n"), ...part("b", "Two.")])).toBe("One.\nTwo.");
     expect(await run([...part("a", "One."), ...part("b", " Two.")])).toBe("One. Two.");
@@ -425,7 +444,7 @@ describe("get_live_incidents (realtime service binding)", async () => {
     async fetch(url: string) {
       calls.push(url);
       const u = new URL(url);
-      if (u.pathname.startsWith("/realtime/replay/")) return Response.json({ scenario: "quebec-2023-06", status: "running", progress: 0.42 });
+      if (u.pathname.startsWith("/realtime/replay/")) return Response.json({ scenario: "quebec-2023-06", status: "running", progress: 0.42, streamT: Date.UTC(2023, 5, 3, 10) });
       if (u.pathname === "/realtime/incidents") return Response.json({ streamT: Date.UTC(2020, 7, 19, 22), count: 1, incidents: [incident] });
       if (u.pathname.startsWith("/realtime/incidents/"))
         return Response.json({
@@ -444,16 +463,48 @@ describe("get_live_incidents (realtime service binding)", async () => {
     expect(r.stream).toBe("live");
     expect(calls[0]).toContain("bbox=-123%2C38%2C-121%2C39");
     expect(calls[0]).toContain("stream=live");
-    expect(r.incidents[0]).toMatchObject({ affectedAreaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestTowns: ["Napa (12.1 km SW)"] });
+    expect(r.incidents[0]).toMatchObject({ affectedAreaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestPlaces: ["Napa (12.1 km SW)"] });
   });
 
   it("accepts a replay stream (from args or context) and labels it as a replay", async () => {
     const r = (await getLiveIncidents(fake, {}, { ...ctx, realtimeStream: "replay:abc123def0" })) as Record<string, any>;
     expect(r.dataSource).toBe("replay");
-    expect(r.replay).toEqual({ scenario: "quebec-2023-06", status: "running", progress: 0.42 });
+    expect(r.replay).toEqual({ scenario: "quebec-2023-06", status: "running", progress: 0.42, clock: "2023-06-03T10:00Z" });
     expect(r.note).toMatch(/REPLAY/);
     const bad = (await getLiveIncidents(fake, { stream: "replay:../x" }, ctx)) as Record<string, any>;
     expect(bad.error).toBe("bad_stream");
+  });
+
+  it("uses the map's replay stream even when the model passes stream live", async () => {
+    calls.length = 0;
+    const r = (await getLiveIncidents(fake, { stream: "live" }, { ...ctx, realtimeStream: "replay:abc123def0" })) as Record<string, any>;
+    expect(r.stream).toBe("replay:abc123def0");
+    expect(r.streamNote).toMatch(/ignored/);
+    expect(calls.find((c) => c.includes("/realtime/incidents?"))).toContain("stream=replay%3Aabc123def0");
+  });
+
+  it("an empty replay result gives the replay clock and says nothing detected yet", async () => {
+    const empty = {
+      async fetch(url: string) {
+        const u = new URL(url);
+        if (u.pathname.startsWith("/realtime/replay/")) return Response.json({ scenario: "quebec-2023-06", status: "running", progress: 0.02, streamT: Date.UTC(2023, 5, 1, 6) });
+        if (u.pathname === "/realtime/incidents") return Response.json({ streamT: Date.UTC(2023, 5, 1, 6), count: 0, incidents: [] });
+        return new Response("nope", { status: 404 });
+      }
+    };
+    const r = (await getLiveIncidents(empty, {}, { ...ctx, aoi: null, realtimeStream: "replay:abc123def0" })) as Record<string, any>;
+    expect(r.count).toBe(0);
+    expect(r.emptyReason).toBe("none_detected_yet");
+    expect(r.answerHint).toContain("Replay clock 2023-06-01T06:00Z");
+    expect(r.answerHint).toMatch(/nothing has been detected|No significant incident has been detected/);
+    expect(r.answerHint).toMatch(/Do not say "there are no fires"/);
+  });
+
+  it("places: names, none within radius, or unavailable", async () => {
+    const { describePlaces } = await import("../src/copilot/realtime");
+    expect(describePlaces({ status: "ok", data: [{ name: "Lebel-sur-Quévillon", place: "village", distanceKm: 45.2, direction: "W" }] })).toEqual(["Lebel-sur-Quévillon (village, 45.2 km W)"]);
+    expect(describePlaces({ status: "ok", data: [], radiusKm: 75 })).toBe("none within 75 km");
+    expect(describePlaces({ status: "failed", error: "timeout" })).toMatch(/^unavailable/);
   });
 });
 
@@ -492,5 +543,29 @@ describe("tool JSON schemas", async () => {
       Object.values(o).forEach(walk);
     };
     walk(schema);
+  });
+});
+
+describe("chat reasoning settings", async () => {
+  const m = await import("../src/copilot/models");
+  it("parses CHAT_REASONING_EFFORT and CHAT_CACHE_TTL", () => {
+    expect(m.chatReasoningEffort(undefined)).toBeUndefined();
+    expect(m.chatReasoningEffort("")).toBeUndefined();
+    expect(m.chatReasoningEffort("none")).toBeNull();
+    expect(m.chatReasoningEffort("off")).toBeNull();
+    expect(m.chatReasoningEffort("high")).toBe("high");
+    expect(m.effortLabel(null)).toBe("none");
+    expect(m.chatCacheTtl("0")).toBeUndefined();
+    expect(m.chatCacheTtl(undefined)).toBeUndefined();
+    expect(m.chatCacheTtl("300")).toBe(300);
+  });
+  it("adds reasoning_effort none to kimi chat requests only", async () => {
+    const seen: unknown[] = [];
+    const ai = { run: async (model: string, input: unknown) => (seen.push([model, input]), "ok"), other: () => "x" };
+    const w = m.withKimiReasoningOff(ai);
+    await w.run("@cf/moonshotai/kimi-k2.6", { messages: [] });
+    await w.run("@cf/zai-org/glm-4.7-flash", { messages: [] });
+    expect(seen).toEqual([["@cf/moonshotai/kimi-k2.6", { messages: [], reasoning_effort: "none" }], ["@cf/zai-org/glm-4.7-flash", { messages: [] }]]);
+    expect(w.other()).toBe("x");
   });
 });
