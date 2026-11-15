@@ -33,7 +33,7 @@ const shortFmt = new Intl.DateTimeFormat('en-US', {
 
 /** "Tue Jun 6 2023, 18:00 UTC" */
 export function fmtClock(t: number): string {
-  return `${clockFmt.format(t).replace(/,(?= \d{4})/, '')}, ${hhmm.format(t)} UTC`;
+  return `${clockFmt.format(t).replace(/,/g, '')}, ${hhmm.format(t)} UTC`;
 }
 
 /** "Jun 6, 18:00 UTC" */

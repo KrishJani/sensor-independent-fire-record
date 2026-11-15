@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
 import { POINT_CAP, POINT_MAX_AGE_MS, REALTIME_URL } from './config';
 import {
+  briefTime,
   normalizeIncident,
   type Bbox,
   type Brief,
@@ -168,7 +169,11 @@ export function useRealtimeStream(
       if (newBriefs.length)
         setBriefs((prev) => {
           const next = new Map(prev);
-          for (const [id, b] of newBriefs) next.set(id, b);
+          // Enrichment runs can finish out of order: keep the brief describing the latest moment.
+          for (const [id, b] of newBriefs) {
+            const have = next.get(id);
+            if (!have || briefTime(b) >= briefTime(have)) next.set(id, b);
+          }
           return next;
         });
       pointsRef.current.prune(streamT);

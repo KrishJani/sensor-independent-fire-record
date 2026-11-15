@@ -1,4 +1,4 @@
-import { fmtMw } from './format';
+import { fmtInt } from './format';
 import { INCIDENT_FRP_STOPS, RAMP } from './layers';
 
 /** Ramp + labelled stops, and a size key: color is never the only cue. */
@@ -7,12 +7,12 @@ export function Legend() {
   return (
     <div className="rt-legend material" aria-label="Map legend">
       <div className="rt-legend__block">
-        <span className="rt-legend__title">Peak fire radiative power</span>
+        <span className="rt-legend__title">Peak fire radiative power (MW)</span>
         <span className="rt-legend__ramp" style={{ background: gradient }} aria-hidden="true" />
         <span className="rt-legend__ticks">
           {INCIDENT_FRP_STOPS.map((s, i) => (
             <span key={s}>
-              {fmtMw(s)}
+              {fmtInt(s)}
               {i === INCIDENT_FRP_STOPS.length - 1 ? '+' : ''}
             </span>
           ))}

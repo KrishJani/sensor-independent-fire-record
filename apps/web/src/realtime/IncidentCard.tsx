@@ -42,8 +42,14 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
   const enrichment = detail?.enrichment ?? null;
   const weather = enrichment?.weather?.status === 'ok' ? enrichment.weather.data : null;
   const places = enrichment?.places?.status === 'ok' ? enrichment.places.data : null;
-  const shownBrief =
-    brief ?? detail?.brief ?? (enrichment?.brief?.status === 'ok' ? enrichment.brief.data : null);
+  const candidates = [
+    brief,
+    detail?.brief,
+    enrichment?.brief?.status === 'ok' ? enrichment.brief.data : null,
+  ].filter((b): b is Brief => !!b);
+  const shownBrief = candidates.length
+    ? candidates.reduce((a, b) => (briefTime(b) > briefTime(a) ? b : a))
+    : null;
   const briefFailed = !shownBrief && enrichment?.brief?.status === 'failed';
   const nearest = places?.[0];
   const title = nearest ? `Near ${nearest.name}` : fmtLatLon(i.centroid);

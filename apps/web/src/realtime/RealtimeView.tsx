@@ -77,7 +77,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
     (id: string | null) => {
       setSelectedId(id);
       const inc = id ? rt.incidents.get(id) : null;
-      if (inc) fit(map, inc.bbox, 9.5, 1600);
+      if (inc) fit(map, inc.bbox, 8, 1600);
     },
     [map, rt.incidents],
   );

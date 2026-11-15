@@ -167,8 +167,9 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
       },
       paint: {
         'text-color': '#ffffff',
-        'text-halo-color': 'rgba(0,0,0,0.85)',
-        'text-halo-width': 1.6,
+        'text-halo-color': 'rgba(0,0,0,0.75)',
+        'text-halo-width': 1.1,
+        'text-halo-blur': 0.4,
       },
     },
     {
@@ -190,15 +191,18 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
         'text-field': ['get', 'label'],
         'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
         'text-size': 12,
-        'text-anchor': 'left',
-        'text-offset': [0.8, 0],
+        // Above-right of the dot: the basemap's own "New York" label sits to the lower right.
+        'text-anchor': 'bottom-left',
+        'text-offset': [0.5, -0.5],
+        'text-max-width': 30,
         'text-allow-overlap': true,
         'text-ignore-placement': true,
       },
       paint: {
         'text-color': '#ffffff',
-        'text-halo-color': 'rgba(0,0,0,0.85)',
-        'text-halo-width': 1.6,
+        'text-halo-color': 'rgba(0,0,0,0.75)',
+        'text-halo-width': 1.1,
+        'text-halo-blur': 0.4,
       },
     },
   ] as mapboxgl.LayerSpecification[];
