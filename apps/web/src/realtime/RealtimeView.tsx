@@ -86,7 +86,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
 
   useRealtimeLayers(map, {
     points: rt.points,
-    clock: rt.clock,
+    streamClock: rt.streamClock,
     incidents: ranked,
     selectedId,
     annotations: scenario?.annotations ?? NO_ANNOTATIONS,
@@ -125,6 +125,8 @@ export function RealtimeView({ map, onContextChange }: Props) {
   const replayProgress = ended(replayStatus)
     ? Math.max(wsReplay?.progress ?? 0, replay.info?.progress ?? 0)
     : (wsReplay?.progress ?? replay.info?.progress ?? 0);
+  // Let the clock advance between server ticks only while the replay is actually playing.
+  rt.streamClock.rate = isReplay && replayStatus === 'running' ? (replay.info?.speed ?? 0) : 0;
   const speedLabel =
     SPEEDS.find((s) => Number(s.id) === replay.info?.speed)?.label ??
     `${Math.round((replay.info?.speed ?? 12000) / 3600)} h/s`;
@@ -138,6 +140,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
         <ReplayHud
           title={scenario?.title ?? replay.info.scenario}
           clock={rt.clock ?? replay.info.streamT ?? replay.info.startT}
+          streamClock={rt.streamClock}
           status={replayStatus}
           progress={replayProgress}
           speedLabel={speedLabel}

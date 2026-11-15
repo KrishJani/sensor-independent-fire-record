@@ -1,3 +1,4 @@
+import { FADE_IN_MS } from './config';
 import type mapboxgl from 'mapbox-gl';
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import type { DetectionPoint, IncidentSummary } from './types';
@@ -55,8 +56,12 @@ function groundRadius(minPx: number): mapboxgl.ExpressionSpecification {
 
 /** Fade with age in stream hours (`a`): fresh points are solid, 48 h old ones faint. */
 const AGE_OPACITY: mapboxgl.ExpressionSpecification = [
-  'interpolate', ['linear'], ['get', 'a'], 0, 0.95, 6, 0.8, 24, 0.45, 48, 0.15,
+  '*',
+  ['coalesce', ['get', 'f'], 1],
+  ['interpolate', ['linear'], ['get', 'a'], 0, 0.95, 6, 0.8, 24, 0.45, 48, 0.15],
 ];
+/** Radius grows from 40% to full while a detection fades in. */
+const GROW: mapboxgl.ExpressionSpecification = ['+', 0.4, ['*', 0.6, ['coalesce', ['get', 'f'], 1]]];
 
 export function layerSpecs(): mapboxgl.LayerSpecification[] {
   return [
@@ -70,6 +75,7 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
           '*',
           ['interpolate', ['linear'], ['get', 'frp'], 0, 0.15, 20, 0.45, 150, 0.8, 600, 1],
           ['interpolate', ['linear'], ['get', 'a'], 0, 1, 24, 0.55, 48, 0.15],
+          ['coalesce', ['get', 'f'], 1],
         ],
         'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.6, 9, 2.2],
         'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 4, 8, 7, 16, 9, 24],
@@ -94,8 +100,8 @@ export function layerSpecs(): mapboxgl.LayerSpecification[] {
         // Size and color both encode FRP, so the ramp is never the only cue.
         'circle-radius': [
           'interpolate', ['linear'], ['zoom'],
-          7, ['interpolate', ['linear'], ['get', 'frp'], 0, 1.5, 100, 3, 1000, 5],
-          12, ['interpolate', ['linear'], ['get', 'frp'], 0, 3, 100, 6, 1000, 10],
+          7, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 1.5, 100, 3, 1000, 5]],
+          12, ['*', GROW, ['interpolate', ['linear'], ['get', 'frp'], 0, 3, 100, 6, 1000, 10]],
         ],
         'circle-color': ramp('frp', POINT_FRP_STOPS),
         'circle-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 8.5, AGE_OPACITY],
@@ -227,14 +233,20 @@ export function removeRealtimeLayers(map: mapboxgl.Map) {
   for (const id of Object.values(SRC)) if (map.getSource(id)) map.removeSource(id);
 }
 
-export function detectionsGeoJson(points: DetectionPoint[], now: number | null): FeatureCollection<Point> {
+export function detectionsGeoJson(
+  points: DetectionPoint[],
+  now: number | null,
+  arrived?: number[],
+  realNow = performance.now(),
+): FeatureCollection<Point> {
   const ref = now ?? (points.length ? points[points.length - 1][3] : 0);
   return {
     type: 'FeatureCollection',
     features: points.map(
-      ([lon, lat, frp, t, conf]): Feature<Point> => ({
+      ([lon, lat, frp, t, conf], i): Feature<Point> => ({
         type: 'Feature',
-        properties: { frp, a: Math.max(0, (ref - t) / 3600_000), conf },
+        // f: fade-in 0..1 since the point arrived (real time), so new detections ease in instead of popping.
+        properties: { frp, a: Math.max(0, (ref - t) / 3600_000), conf, f: arrived ? Math.min(1, Math.max(0, (realNow - arrived[i]) / FADE_IN_MS)) : 1 },
         geometry: { type: 'Point', coordinates: [lon, lat] },
       }),
     ),

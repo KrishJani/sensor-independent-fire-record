@@ -2,10 +2,31 @@ import { Ember } from '../components/Ember';
 import { fmtClock } from './format';
 import { PauseIcon, PlayIcon, StopIcon } from './icons';
 import type { ReplayStatus } from './types';
+import type { StreamClock } from './useRealtimeStream';
+import { useEffect, useRef } from 'react';
+
+/** Clock text driven by rAF straight into the DOM: smooth, and no React render per frame. */
+function LiveClock({ clock, fallback }: { clock: StreamClock; fallback: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    let shown = '';
+    const tick = () => {
+      const t = clock.clockAt() ?? fallback;
+      const text = fmtClock(t);
+      if (text !== shown && ref.current) ref.current.textContent = shown = text;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [clock, fallback]);
+  return <span ref={ref}>{fmtClock(clock.clockAt() ?? fallback)}</span>;
+}
 
 interface Props {
   title: string;
   clock: number | null;
+  streamClock?: StreamClock;
   status: ReplayStatus;
   progress: number;
   speedLabel: string;
@@ -61,7 +82,7 @@ export function ReplayHud(p: Props) {
         </div>
       ) : (
         <div className="rt-hud__clock" aria-live="off">
-          {p.clock !== null ? fmtClock(p.clock) : <Ember caption="Loading fires" />}
+          {p.clock !== null ? (p.streamClock ? <LiveClock clock={p.streamClock} fallback={p.clock} /> : fmtClock(p.clock)) : <Ember caption="Loading fires" />}
         </div>
       )}
 
