@@ -4,6 +4,7 @@
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:api": "pnpm --filter api-worker exec wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
+    "dev:realtime": "pnpm --filter realtime-worker dev",
     "dev:ingest": "pnpm --filter ingest-worker exec wrangler dev --port 8788 --test-scheduled --persist-to ../../.wrangler/shared-state",
     "typegen": "pnpm --filter api-worker --filter ingest-worker exec wrangler types"
   },

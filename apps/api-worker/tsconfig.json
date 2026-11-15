@@ -1,7 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["@cloudflare/workers-types", "./worker-configuration.d.ts"]
+    "types": [
+      "./worker-configuration.d.ts",
+      "node"
+    ],
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

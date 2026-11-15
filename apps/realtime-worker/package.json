@@ -1,0 +1,24 @@
+{
+  "name": "realtime-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8789 --test-scheduled --persist-to ../../.wrangler/shared-state",
+    "deploy": "wrangler deploy",
+    "typegen": "wrangler types --strict-vars=false",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "fixtures": "node scripts/build-fallback-fixture.mjs",
+    "fetch-replay-fixture": "node scripts/fetch-replay-fixture.mjs",
+    "replay-smoke": "node scripts/replay-smoke.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.13.18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.162.0"
+  }
+}

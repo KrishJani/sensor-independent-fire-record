@@ -5,14 +5,27 @@
   "scripts": {
     "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/shared-state",
     "deploy": "wrangler deploy",
-    "typegen": "wrangler types"
+    "typegen": "wrangler types --strict-vars=false",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "node scripts/build-fixtures.mjs",
+    "smoke": "node scripts/chat-smoke.mjs",
+    "test": "vitest run",
+    "compare-models": "node scripts/compare-models.mjs"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^4.0.38",
+    "@cloudflare/ai-chat": "^0.12.2",
     "@repo/harmonizer": "workspace:*",
-    "hono": "^4.7.0",
-    "postgres": "^3.4.5"
+    "agents": "^0.33.0",
+    "ai": "^7.0.173",
+    "hono": "^4.13.18",
+    "postgres": "^3.4.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260101.0"
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.162.0"
   }
 }

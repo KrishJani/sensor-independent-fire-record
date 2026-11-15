@@ -8,9 +8,10 @@ User-facing Cloudflare Worker built with Hono.
   - Queries historical `_SP` cells from **PlanetScale Postgres** (via `env.HYPERDRIVE`) and live `_NRT` cells from **D1** (`env.NRT_DB`) concurrently via `Promise.all()`.
   - Deduplicates any overlapping dates (preferring `_SP` over `_NRT`).
   - Runs `@repo/harmonizer` to compute local monthly calibration factors ($\alpha_m$) across the 2012–2025 sensor overlap window and returns the `Year × Month` matrix, anomaly Z-scores, and GeoJSON grid summary.
-- **`POST /api/chat`**
-  - Routes prompts through **Cloudflare AI Gateway** (`env.AI`) backed by Durable Object state (`env.FIRE_COPILOT`) for conversation memory.
-  - Grounds responses in the user's active polygon metrics so the assistant cites exact harmonized hotspot counts and peak FRP (MW).
+- **Chat copilot: `/agents/fire-copilot-agent/<sessionId>`** (WebSocket + HTTP via the Agents SDK)
+  - `FireCopilotAgent` (`AIChatAgent`) calls the model through **Cloudflare AI Gateway** (`env.AI`). Transcript, long-term memories and the last map context live in the session's Durable Object SQLite.
+  - Answers are grounded in the user's active AOI via data tools (calendar, spots, month-to-date). Web news comes from `web_search` / `web_fetch`. Data is **mocked** until LiveFireData lands.
+  - See [`CHAT.md`](CHAT.md) for setup, configuration and the frontend contract.
 
 ## Implementation Rules
 - Always instantiate a fresh Postgres client per request using `env.HYPERDRIVE.connectionString` (never in global scope).

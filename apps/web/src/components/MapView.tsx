@@ -32,7 +32,12 @@ function tryApplyAll(map: mapboxgl.Map, settings: MapSettings, scheme: ColorSche
   }
 }
 
-export function MapView() {
+interface Props {
+  /** Called with the map once it exists, and with null when it is removed. */
+  onMapReady?(map: mapboxgl.Map | null): void;
+}
+
+export function MapView({ onMapReady }: Props = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -75,6 +80,12 @@ export function MapView() {
     }
     tryApplyAll(map, settings, scheme);
   }, [map, settings, scheme]);
+
+  const onMapReadyRef = useRef(onMapReady);
+  onMapReadyRef.current = onMapReady;
+  useEffect(() => {
+    onMapReadyRef.current?.(map);
+  }, [map]);
 
   useEffect(() => {
     map?.setProjection(settings.projection);

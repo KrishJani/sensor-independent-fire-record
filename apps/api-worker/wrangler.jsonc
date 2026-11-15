@@ -1,4 +1,5 @@
 {
+  "account_id": "6584e46ce8c9d53c6074b3dac9cc1b9b",
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
   "main": "src/index.ts",
@@ -9,30 +10,58 @@
   },
   "vars": {
     "AI_GATEWAY_ID": "nasa-fire-copilot",
+    // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
+    // AI Gateway catalog id (<author>/<model>).
+    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    // Tried when CHAT_MODEL fails before producing output. "" disables it (demo setting: the glm
+    // fallback is the model that drifted into Chinese; see CHAT.md).
+    "CHAT_FALLBACK_MODEL": "",
+    // Chat reasoning: "none" = off (demo setting: ~11-15 s per turn instead of 45-140 s, see CHAT.md),
+    // "" = model default (kimi: high).
+    "CHAT_REASONING_EFFORT": "none",
+    // AI Gateway response cache TTL (s) for chat model calls. "0" = off (default).
+    "CHAT_CACHE_TTL": "0",
+    // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
+    "WEB_SEARCH_PROVIDER": "tavily",
+    // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.
+    "FIRE_DATA_SOURCE": "mock",
+    // CORS + agent WebSocket origins. Exact origins, plus "https://*.<suffix>" for exactly one
+    // subdomain label (Pages preview URLs). See src/origins.ts.
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://nasa-fire-web.pages.dev,https://*.nasa-fire-web.pages.dev",
     "CALIBRATION_START_YEAR": "2012",
     "CALIBRATION_END_YEAR": "2025"
   },
   "d1_databases": [
     {
       "binding": "NRT_DB",
-      "database_name": "firms-nrt-cells"
-      // Omit database_id on first deploy: `wrangler deploy` will auto-create D1
-      // and write the generated UUID here. Copy that UUID to ingest-worker afterward.
+      "database_name": "firms-nrt-cells",
+      // Auto-created by the first deploy on account 6584e46c…. Copy this id to ingest-worker.
+      "database_id": "0dc2501f-bc5a-4a41-8a80-eabec4913cc1"
     }
   ],
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
-    }
-  ],
+  // TODO(data team): restore once a Hyperdrive config exists and LiveFireData uses it
+  // (FIRE_DATA_SOURCE is "mock" for now; see src/data/fireData.ts).
+  // "hyperdrive": [
+  //   {
+  //     "binding": "HYPERDRIVE",
+  //     "id": "<YOUR_HYPERDRIVE_CONFIG_ID>"
+  //   }
+  // ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    // No local implementation: under `wrangler dev` this runs against the logged-in account.
+    "remote": true
   },
+  "services": [
+    // apps/realtime-worker: live/replay fire incidents for the get_live_incidents chat tool.
+    { "binding": "REALTIME", "service": "nasa-fire-realtime" }
+  ],
   "durable_objects": {
     "bindings": [
       {
-        "name": "FIRE_COPILOT",
+        // Binding name MUST equal the class name for routeAgentRequest()
+        // (/agents/fire-copilot-agent/<sessionId>).
+        "name": "FireCopilotAgent",
         "class_name": "FireCopilotAgent"
       }
     ]

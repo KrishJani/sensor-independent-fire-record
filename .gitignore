@@ -14,11 +14,15 @@ wrangler.toml.bak
 .env
 .env.*
 !.env.example
+# Public production URLs for the web build (no secrets: VITE_ vars ship in the bundle)
+!apps/web/.env.production
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 
 # Bulk historical downloads (keep sample_api/ tracked)
 data/
+!apps/*/src/data/
 *.zip
 *.tar.gz
 
@@ -27,4 +31,7 @@ data/
 .DS_Store
 .vscode/
 .idea/
+
+# Model comparison output (apps/api-worker/scripts/compare-models.mjs)
+compare-models.json
 *.tsbuildinfo
