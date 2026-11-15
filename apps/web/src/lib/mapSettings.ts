@@ -38,11 +38,11 @@ export interface MapSettings {
 }
 
 export const DEFAULT_SETTINGS: MapSettings = {
-  // FIRMS-like default: dark, quiet basemap so detections glow.
-  basemap: 'muted',
+  // FIRMS-like default: flat dark map (grey land, darker ocean) so red hotspots read.
+  basemap: 'dark',
   light: 'night',
-  projection: 'globe',
-  atmosphere: true,
+  projection: 'mercator',
+  atmosphere: false,
   spin: false,
   placeLabels: true,
   roadLabels: true,
