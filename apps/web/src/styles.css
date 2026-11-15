@@ -730,10 +730,11 @@ button:focus-visible {
 /* ---------- Fire Explorer (archival right panel) ---------- */
 .explorer {
   position: absolute;
-  top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px);
+  /* Starts below the "Ask Copilot" button, which shares this corner. */
+  top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px + var(--control-h) + 8px);
   right: max(var(--inset), env(safe-area-inset-right));
   width: min(340px, calc(100vw - 2 * var(--inset)));
-  max-height: calc(100vh - 170px);
+  max-height: calc(100vh - 170px - var(--control-h) - 8px);
   overflow-y: auto;
   border-radius: var(--radius-popover);
   z-index: 4;
