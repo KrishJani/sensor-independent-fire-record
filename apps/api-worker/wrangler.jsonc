@@ -9,6 +9,15 @@
   },
   "vars": {
     "AI_GATEWAY_ID": "nasa-fire-copilot",
+    // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
+    // AI Gateway catalog id (<author>/<model>).
+    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
+    "WEB_SEARCH_PROVIDER": "tavily",
+    // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.
+    "FIRE_DATA_SOURCE": "mock",
+    // Comma-separated list of origins allowed by CORS.
+    "ALLOWED_ORIGINS": "http://localhost:5173",
     "CALIBRATION_START_YEAR": "2012",
     "CALIBRATION_END_YEAR": "2025"
   },
@@ -27,12 +36,16 @@
     }
   ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    // No local implementation: under `wrangler dev` this runs against the logged-in account.
+    "remote": true
   },
   "durable_objects": {
     "bindings": [
       {
-        "name": "FIRE_COPILOT",
+        // Binding name MUST equal the class name for routeAgentRequest()
+        // (/agents/fire-copilot-agent/<sessionId>).
+        "name": "FireCopilotAgent",
         "class_name": "FireCopilotAgent"
       }
     ]

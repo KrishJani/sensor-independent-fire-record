@@ -16,9 +16,11 @@ wrangler.toml.bak
 !.env.example
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 
 # Bulk historical downloads (keep sample_api/ tracked)
 data/
+!apps/*/src/data/
 *.zip
 *.tar.gz
 

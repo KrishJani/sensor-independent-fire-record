@@ -11,4 +11,4 @@ React + Vite + TypeScript application deployed on **Cloudflare Pages** (build co
   - Displays harmonized monthly active cell-days and intensity anomalies relative to the 2000–2025 baseline.
   - Supports one-click CSV export and `@media print` situation reports.
 - **Emergency Manager Copilot**
-  - Side panel connected to `/api/chat` passing the active polygon geometry and calendar summary as context.
+  - Side panel connected to the `FireCopilotAgent` (`useAgent` + `useAgentChat`, see `apps/api-worker/CHAT.md`) passing the active polygon geometry and calendar summary as context.
