@@ -16,8 +16,8 @@
     "BASELINE_START_YEAR": "2001",
     "BASELINE_END_YEAR": "2025",
     "D1_RETENTION_DAYS": "92",
-    // Comma-separated browser origins allowed by CORS (add the Pages domain at deploy)
-    "ALLOWED_ORIGINS": "http://localhost:5173"
+    // Comma-separated browser origins allowed by CORS: local dev + the Cloudflare Pages site
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev"
   },
   "d1_databases": [
     {
