@@ -1,7 +1,6 @@
 {
-  // ONE deployment on the team account (Hemanth, 7d56e968…): chat copilot + archival API. A plain
-  // `wrangler deploy` has everything; there is no `-e archive` environment any more.
-  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
+  // One deployment serves the chat copilot and the archival API. No account_id: wrangler uses the
+  // logged-in account, or CLOUDFLARE_ACCOUNT_ID when set.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-api",
   "main": "src/index.ts",
@@ -28,9 +27,8 @@
     // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.
     "FIRE_DATA_SOURCE": "mock",
     // CORS + agent WebSocket origins. Exact origins, plus "https://*.<suffix>" for exactly one
-    // subdomain label (Pages preview URLs). See src/origins.ts. nasa-fire-web.pages.dev (old account)
-    // stays allowed while it is the fallback site.
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev,https://*.skywalkers77-fire.pages.dev,https://nasa-fire-web.pages.dev",
+    // subdomain label (Pages preview URLs). See src/origins.ts.
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev",
     // Archival harmonizer settings.
     "CALIBRATION_START_YEAR": "2013",
     "CALIBRATION_END_YEAR": "2021",
@@ -40,17 +38,18 @@
   },
   "d1_databases": [
     // Shared with ingest-worker (read-only here).
-    { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "42f0df01-e8a9-408c-acdf-b7af2ee19a5b" }
+    { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "<D1_DATABASE_ID>" }
   ],
   "hyperdrive": [
-    // "firms-pg" → PlanetScale Postgres (archival tier); shared with ingest-worker. Origin limit 15 (packages/db/README.md).
+    // "firms-pg" → archival Postgres; shared with ingest-worker. Origin limit 15 (packages/db/README.md).
+    // Created with: npx wrangler hyperdrive create firms-pg --connection-string="<POSTGRES_URL>"
     // Local dev reads CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (the dev scripts set it from ../../.env DATABASE_URL).
-    { "binding": "HYPERDRIVE", "id": "0ff8af0e49994b6b932f34caf78ece73" }
+    { "binding": "HYPERDRIVE", "id": "<HYPERDRIVE_ID>" }
   ],
   "kv_namespaces": [
     // Namespace title "FIRMS_INGEST_STATE": data versions, ingest flags (ingest:*). realtime-worker
-    // shares it under realtime:poll:*.
-    { "binding": "INGEST_STATE", "id": "fbd5a9bf8e124c81b0df1595b5a07566" }
+    // shares it under realtime:poll:*. Created with: npx wrangler kv namespace create FIRMS_INGEST_STATE
+    { "binding": "INGEST_STATE", "id": "<FIRMS_INGEST_STATE_KV_ID>" }
   ],
   "ai": {
     "binding": "AI",

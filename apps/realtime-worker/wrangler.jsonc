@@ -1,5 +1,5 @@
 {
-  "account_id": "7d56e968fb40e19867fb8043a90f2f4e",
+  // No account_id: wrangler uses the logged-in account, or CLOUDFLARE_ACCOUNT_ID when set.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "nasa-fire-realtime",
   "main": "src/index.ts",
@@ -8,7 +8,7 @@
   "vars": {
     // CORS + WebSocket origins (same as api-worker). Exact origins, plus "https://*.<suffix>" for
     // exactly one subdomain label (Pages preview URLs). See src/origins.ts.
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://skywalkers77-fire.pages.dev,https://*.skywalkers77-fire.pages.dev,https://nasa-fire-web.pages.dev",
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev",
     // Default replay speed: stream seconds per real second (see REALTIME.md).
     "REPLAY_DEFAULT_SPEED": "12000",
     // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
@@ -48,16 +48,17 @@
   "triggers": { "crons": ["*/10 * * * *"] },
   "kv_namespaces": [
     {
-      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The team's shared FIRMS_INGEST_STATE
+      // Per-source poll state (keys realtime:poll:<source>:<bbox>). The shared FIRMS_INGEST_STATE
       // namespace; ingest-worker / api-worker use ingest:*, data:version:* and cache:* there, so no overlap.
       "binding": "INGEST_STATE",
-      "id": "fbd5a9bf8e124c81b0df1595b5a07566"
+      "id": "<FIRMS_INGEST_STATE_KV_ID>"
     },
     {
       // Replay scenarios when R2 is not bound (scenarios/<id>.json.gz, gzipped JSON; uploaded by
       // `pnpm fetch-replay-fixture --store=kv`) and the replay brief cache (brief-cache/...).
+      // Created with: npx wrangler kv namespace create REPLAY_KV
       "binding": "REPLAY_KV",
-      "id": "c3f602b4de0c44ddac9eedfb544cf7c5"
+      "id": "<REPLAY_KV_ID>"
     }
   ],
   "queues": {
