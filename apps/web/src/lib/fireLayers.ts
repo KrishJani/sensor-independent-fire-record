@@ -1,10 +1,10 @@
-import { YLORRD } from './colors';
+
 // Fire data layers on the map. Colors (colorblind-safe):
 //  hotspots  flame ramp yellow → orange → red → deep purple (by age, FRP, or sensor)
 //  sensors   VIIRS orange #e8710a, MODIS blue #1f77b4 (distinct under common color-vision deficiencies)
 //  prone     red ordinal ramp;  industrial heat  cool blue-grey (never read as fire)
 import mapboxgl from 'mapbox-gl';
-import type { FeatureCollection } from 'geojson';
+import type { FeatureCollection, Geometry } from 'geojson';
 import type { FireColoring } from './mapSettings';
 
 export const FIRE = 'fire-activity';
@@ -15,8 +15,25 @@ export const INDUSTRIAL = 'industrial-heat';
 export const REGIONS = 'harmonized-regions';
 
 /** One ramp on every basemap (YlOrRd, low → high); see lib/colors.ts. */
-export const FLAME: string[] = [...YLORRD];
+/** FIRMS-like map dots: always red; older / lower is a slightly deeper red, newest / higher the brightest. */
+export const FLAME: string[] = ['#8e1016', '#a3141a', '#b8181d', '#cc1d1f', '#e02422', '#f22e24', '#ff3b2b'];
 export const FLAME_DARK = FLAME;
+/** Crisp FIRMS-style dot: small at world scale, a little larger as you zoom in. */
+const DOT_RADIUS = ['interpolate', ['exponential', 1.5], ['zoom'], 1, 1.3, 5, 2.2, 9, 3.6, 13, 6];
+
+/** Centre and width (degrees) of a feature's bounding box (bins are axis-aligned squares). */
+function centre(g: Geometry): [number, number, number] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const visit = (c: unknown): void => {
+    if (typeof (c as number[])[0] === 'number') {
+      const [x, y] = c as number[];
+      if (x < w) w = x; if (x > e) e = x; if (y < s) s = y; if (y > n) n = y;
+    } else (c as unknown[]).forEach(visit);
+  };
+  if ('coordinates' in g) visit(g.coordinates);
+  return [(w + e) / 2, (s + n) / 2, Math.max(0, e - w)];
+}
+
 let darkMap = false;
 /** Set from the current basemap/light preset; the next draw uses the matching ramp. */
 export function setFireTheme(dark: boolean) { darkMap = dark; }
@@ -59,7 +76,7 @@ function pointColor(coloring: FireColoring): unknown {
   if (coloring === 'amount') return ['interpolate', ['linear'], ['get', 'harmonized_cell_days'], 0, R[0], 2, R[2], 6, R[4], 15, R[6]];
   if (coloring === 'intensity') return ['interpolate', ['linear'], ['get', 'frp_mw'], 0, R[0], 10, R[1], 50, R[3], 200, R[5], 1000, R[6]];
   // time: newest = the ramp's most salient end (white-hot on dark maps, deep on light), oldest = faintest; `age` is set in drawActivity
-  return ['interpolate', ['linear'], ['get', 'age'], 0, R[6], 0.25, R[4], 0.5, R[3], 0.75, R[2], 1, R[0]];
+  return ['interpolate', ['linear'], ['get', 'age'], 0, R[6], 0.5, R[4], 1, R[1]];
 }
 
 export function drawActivity(map: mapboxgl.Map, data: FeatureCollection | null, kind: 'points' | 'polygons', coloring: FireColoring = 'recency', from = '', to = '') {
@@ -74,26 +91,40 @@ export function drawActivity(map: mapboxgl.Map, data: FeatureCollection | null, 
     }
     source(map, FIRE_POINTS, data);
     const color = pointColor(coloring);
-    if (!map.getLayer(FIRE_GLOW))
-      map.addLayer({ id: FIRE_GLOW, type: 'circle', source: FIRE_POINTS, ...slotFor(map, true),
-        paint: { 'circle-emissive-strength': 1, 'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'frp_mw'], ['*', 40, ['get', 'harmonized_cell_days']]], 0, 6, 100, 12, 1000, 20], 'circle-color': color, 'circle-opacity': 0.18, 'circle-blur': 0.8 } } as mapboxgl.LayerSpecification);
-    else map.setPaintProperty(FIRE_GLOW, 'circle-color', color as never);
+    remove(map, FIRE_GLOW); // FIRMS look: crisp dots, no halo
     if (!map.getLayer(FIRE_POINTS))
       map.addLayer({ id: FIRE_POINTS, type: 'circle', source: FIRE_POINTS, ...slotFor(map, true),
-        paint: { 'circle-emissive-strength': 1, 'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, ['interpolate', ['linear'], ['coalesce', ['get', 'frp_mw'], ['*', 40, ['get', 'harmonized_cell_days']]], 0, 1.6, 500, 4], 9, ['interpolate', ['linear'], ['coalesce', ['get', 'frp_mw'], ['*', 40, ['get', 'harmonized_cell_days']]], 0, 3.5, 500, 9]],
-          'circle-color': color, 'circle-stroke-color': 'rgba(40,10,0,0.55)', 'circle-stroke-width': 0.6 } } as mapboxgl.LayerSpecification);
+        paint: { 'circle-emissive-strength': 1, 'circle-radius': DOT_RADIUS,
+          'circle-color': color, 'circle-stroke-width': 0, 'circle-pitch-alignment': 'map' } } as mapboxgl.LayerSpecification);
     else map.setPaintProperty(FIRE_POINTS, 'circle-color', color as never);
     return;
   }
   remove(map, FIRE_POINTS, FIRE_GLOW);
-  source(map, FIRE, data);
+  // Coarse bins become red dots at the bin centre, sized (and slightly brightened) by intensity.
+  // `w`: the bin's width in degrees, so each dot can be sized to fit inside its own cell at every zoom.
+  const dots: FeatureCollection = { type: 'FeatureCollection', features: data.features.map((f) => { const c = centre(f.geometry); return { type: 'Feature', properties: { ...f.properties, w: c[2] }, geometry: { type: 'Point', coordinates: [c[0], c[1]] } }; }) };
+  source(map, FIRE, dots);
   const R = flameRamp();
   // value: harmonized_cell_days (sensor-independent) or cell_days (raw / global layer)
   const val = ['coalesce', ['get', 'harmonized_cell_days'], ['get', 'cell_days']];
   const bs = breaks(data.features.map((f) => Number(f.properties?.harmonized_cell_days ?? f.properties?.cell_days ?? 0)), R.length);
-  const paint = { 'fill-emissive-strength': 1, 'fill-color': step(val, bs, R), 'fill-opacity': 0.72, 'fill-outline-color': 'rgba(255,255,255,0.18)' };
-  if (!map.getLayer(FIRE)) map.addLayer({ id: FIRE, type: 'fill', source: FIRE, ...slotFor(map), paint } as mapboxgl.LayerSpecification);
-  else map.setPaintProperty(FIRE, 'fill-color', paint['fill-color'] as never);
+  // Size class 0..n from the quantile breaks, then radius by zoom.
+  const cls: unknown[] = ['step', val, 0];
+  bs.forEach((b, i) => cls.push(b, i + 1));
+  const k = ['/', cls, Math.max(1, bs.length)];
+  // Radius in px = half the bin's on-screen width × (55%..95% by intensity), never below a visible 1.2 px.
+  const perPx = (z: number) => ['*', ['coalesce', ['get', 'w'], 0.05], (512 * 2 ** z) / 360 / 2];
+  const frac = ['+', 0.55, ['*', 0.4, k]];
+  const radius = ['interpolate', ['exponential', 2], ['zoom'], 0, ['max', 1.2, ['*', frac, perPx(0)]], 16, ['max', 1.2, ['*', frac, perPx(16)]]];
+  const color = step(val, bs, R);
+  if (map.getLayer(FIRE) && map.getLayer(FIRE)!.type !== 'circle') map.removeLayer(FIRE);
+  if (!map.getLayer(FIRE))
+    map.addLayer({ id: FIRE, type: 'circle', source: FIRE, ...slotFor(map),
+      paint: { 'circle-emissive-strength': 1, 'circle-radius': radius, 'circle-color': color, 'circle-opacity': 0.92, 'circle-stroke-width': 0, 'circle-pitch-alignment': 'map' } } as mapboxgl.LayerSpecification);
+  else {
+    map.setPaintProperty(FIRE, 'circle-color', color as never);
+    map.setPaintProperty(FIRE, 'circle-radius', radius as never);
+  }
 }
 
 export function drawProne(map: mapboxgl.Map, data: FeatureCollection | null) {

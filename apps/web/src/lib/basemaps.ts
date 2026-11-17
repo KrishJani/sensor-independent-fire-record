@@ -2,7 +2,7 @@ import type mapboxgl from 'mapbox-gl';
 import type { FogSpecification } from 'mapbox-gl';
 import type { LightPreset, MapSettings } from './mapSettings';
 
-export type BasemapId = 'explore' | 'satellite' | 'terrain' | 'muted';
+export type BasemapId = 'dark' | 'explore' | 'satellite' | 'terrain' | 'muted';
 
 /**
  * `standard` and `standard-satellite` are configured through the `basemap` import;
@@ -18,6 +18,7 @@ interface Basemap {
 }
 
 export const BASEMAPS: Record<BasemapId, Basemap> = {
+  dark: { label: 'Dark', style: 'mapbox://styles/mapbox/dark-v11', kind: 'classic' },
   explore: { label: 'Explore', style: 'mapbox://styles/mapbox/standard', kind: 'standard' },
   satellite: {
     label: 'Satellite',
@@ -37,7 +38,7 @@ export const BASEMAPS: Record<BasemapId, Basemap> = {
   },
 };
 
-export const BASEMAP_ORDER: BasemapId[] = ['explore', 'satellite', 'terrain', 'muted'];
+export const BASEMAP_ORDER: BasemapId[] = ['dark', 'explore', 'satellite', 'terrain', 'muted'];
 
 const FOG: Record<LightPreset, FogSpecification> = {
   day: {
@@ -92,9 +93,11 @@ export function applyBasemap(map: mapboxgl.Map, s: MapSettings, preset: LightPre
     set('showTransitLabels', false);
   } else {
     applyClassicDetails(map, s);
+    if (s.basemap === 'dark') applyFirmsLook(map);
   }
 
-  map.setFog(s.atmosphere ? FOG[preset] : null);
+  // Fog/atmosphere only makes sense on the globe; the flat map stays clean.
+  map.setFog(s.atmosphere && s.projection === 'globe' ? FOG[preset] : null);
 }
 
 function applyClassicDetails(map: mapboxgl.Map, s: MapSettings) {
@@ -110,4 +113,47 @@ function applyClassicDetails(map: mapboxgl.Map, s: MapSettings) {
       map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none');
     }
   }
+}
+
+/** FIRMS-like palette on top of dark-v11: grey land, darker ocean, thin light borders, small muted labels. */
+const FIRMS = { land: '#2b2c2e', water: '#16181b', border: 'rgba(225,225,225,0.55)', label: '#8d9096', halo: 'rgba(10,10,12,0.85)' };
+function applyFirmsLook(map: mapboxgl.Map) {
+  const paint = (id: string, key: string, value: unknown) => {
+    try { map.setPaintProperty(id, key as never, value as never); } catch { /* property not valid for this layer */ }
+  };
+  for (const layer of map.getStyle()?.layers ?? []) {
+    const id = layer.id;
+    if (id.startsWith('overlay-')) continue;
+    if (layer.type === 'background') paint(id, 'background-color', FIRMS.land);
+    else if (id === 'water' || id.startsWith('water-')) {
+      if (layer.type === 'fill') paint(id, 'fill-color', FIRMS.water);
+      if (layer.type === 'line') paint(id, 'line-color', FIRMS.water);
+    } else if (layer.type === 'fill' && /^(land|landuse|national-park|landcover)/.test(id)) paint(id, 'fill-color', FIRMS.land);
+    else if (layer.type === 'line' && id.startsWith('admin-0')) {
+      paint(id, 'line-color', FIRMS.border);
+      paint(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 1, 0.5, 6, 1]);
+    } else if (layer.type === 'line' && id.startsWith('admin-1')) paint(id, 'line-color', 'rgba(225,225,225,0.22)');
+    else if (layer.type === 'symbol' && !id.startsWith('road')) {
+      paint(id, 'text-color', FIRMS.label);
+      paint(id, 'text-halo-color', FIRMS.halo);
+      // Smaller labels, scaled from the style's original size (cached, so re-applying is idempotent).
+      let originals = ORIGINAL_SIZES.get(map);
+      if (!originals) ORIGINAL_SIZES.set(map, (originals = new Map()));
+      if (!originals.has(id)) originals.set(id, map.getLayoutProperty(id, 'text-size'));
+      const scaled = scaleSize(originals.get(id), 0.85);
+      if (scaled !== undefined) {
+        try { map.setLayoutProperty(id, 'text-size', scaled as never); } catch { /* keep the style's size */ }
+      }
+    }
+  }
+}
+
+const ORIGINAL_SIZES = new WeakMap<mapboxgl.Map, Map<string, unknown>>();
+/** Multiplies a number, or the numeric outputs of a zoom interpolate/step, by k; undefined if unsupported. */
+function scaleSize(v: unknown, k: number): unknown {
+  if (typeof v === 'number') return v * k;
+  if (!Array.isArray(v)) return undefined;
+  if (v[0] === 'interpolate') return [...v.slice(0, 3), ...v.slice(3).map((x, i) => (i % 2 === 1 && typeof x === 'number' ? x * k : x))];
+  if (v[0] === 'step') return [v[0], v[1], typeof v[2] === 'number' ? v[2] * k : v[2], ...v.slice(3).map((x, i) => (i % 2 === 1 && typeof x === 'number' ? x * k : x))];
+  return undefined;
 }

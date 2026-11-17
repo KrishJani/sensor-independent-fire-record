@@ -20,11 +20,13 @@ import { Toolbar } from './Toolbar';
 import { api } from '../lib/api';
 import type { Tab } from '../lib/dataWindows';
 
-const INITIAL_CENTER: [number, number] = [-40, 22];
+// Shifted west so the incident panel covers the open Pacific, not North America.
+const INITIAL_CENTER: [number, number] = [-52, 28];
 const TERMINATOR_REFRESH_MS = 60_000;
 
+/** Flat Mercator world filling the screen: one world width (512 px at z0) covers the larger side. */
 function initialZoom(): number {
-  return window.innerWidth < 700 ? 0.6 : 1.6;
+  return Math.max(0, Math.log2(Math.max(window.innerWidth, window.innerHeight) / 512));
 }
 
 function applyAll(map: mapboxgl.Map, settings: MapSettings, scheme: ColorScheme) {
