@@ -24,11 +24,11 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 
 ## Setup (once)
 
-> **Deploy account:** `wrangler.jsonc` has no `account_id`, so wrangler deploys to the logged-in account (or `CLOUDFLARE_ACCOUNT_ID`) and uses its `default` AI Gateway. One deployment serves the chat copilot and the archival API: plain `npx wrangler deploy`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is still mock (`FIRE_DATA_SOURCE`).
+> **Deploy account:** `wrangler.jsonc` has no `account_id`, so wrangler deploys to the logged-in account (or `CLOUDFLARE_ACCOUNT_ID`) and uses the AI Gateway named in `AI_GATEWAY_ID` (`nasa-fire-copilot`). One deployment serves the chat copilot and the archival API: plain `npx wrangler deploy`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is still mock (`FIRE_DATA_SOURCE`).
 
 1. `pnpm install` at the repo root.
 2. `npx wrangler login`. The `AI` binding has no local implementation, so even under `wrangler dev` it runs against (and bills) the account you are logged in to.
-3. **Create the AI Gateway** named as `AI_GATEWAY_ID` (`default`) in the Cloudflare dashboard (AI → AI Gateway → Create gateway), in the same account. Without it every chat turn fails with `code 2001: Please configure AI Gateway`. The public demo sets a rate limit of 20 requests per minute.
+3. **Create the AI Gateway** named as `AI_GATEWAY_ID` (`nasa-fire-copilot`) in the Cloudflare dashboard (AI → AI Gateway → Create gateway), in the same account. Without it every chat turn fails with `code 2001: Please configure AI Gateway`. The public demo sets a rate limit of 60 requests per minute and spend limits of $2 a day and $5 a month.
 4. Secrets: `cp .dev.vars.example .dev.vars` and set `TAVILY_API_KEY`. For production, run `npx wrangler secret put TAVILY_API_KEY`.
 
 ## Run locally
@@ -63,7 +63,7 @@ Both turns also FAIL on a bare (plain-text) URL that no web tool returned and on
 
 | Name | Kind | Default | Notes |
 |---|---|---|---|
-| `AI_GATEWAY_ID` | var | `default` | The gateway must exist in the account. |
+| `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
 | `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
 | `CHAT_FALLBACK_MODEL` | var | `""` in `wrangler.jsonc` (code default when unset: `@cf/zai-org/glm-4.7-flash`) | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
 | `CHAT_REASONING_EFFORT` | var | `none` in `wrangler.jsonc` | `none`/`off` = reasoning off (demo setting, see "Latency" below); `""` = model default (kimi-k2.6: high); `low`/`medium`/`high` pass through (kimi maps low/medium to high). For kimi, "off" is sent as `reasoning_effort: "none"` by wrapping the AI binding (`withKimiReasoningOff`), because `agents/models` drops the off request for moonshotai models. |

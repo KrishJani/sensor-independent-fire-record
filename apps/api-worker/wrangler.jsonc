@@ -10,7 +10,7 @@
     "mode": "smart"
   },
   "vars": {
-    "AI_GATEWAY_ID": "default",
+    "AI_GATEWAY_ID": "nasa-fire-copilot",
     // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
     // AI Gateway catalog id (<author>/<model>).
     "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",

@@ -269,7 +269,7 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev`. CORS and WebSocket origin check. |
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
-| `AI_GATEWAY_ID` | var | `default` | Same as api-worker |
+| `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | Same as api-worker |
 | `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
 | `ENRICH_MAX_PER_STREAM` | var | `10` | Workflow runs (and AI calls) per replay stream, and per rolling 24 h for `live` |
 | `BRIEF_DAILY_MAX` | var | `50` | AI briefs per rolling 24 h across all streams (re-briefs count; cached replay briefs do not) |
@@ -305,7 +305,7 @@ pnpm typegen                            # after editing wrangler.jsonc
 
 ## 7. Deployment
 
-The demo deployment runs on Krish Jani's Cloudflare account with AI Gateway `default`:
+The demo deployment runs on Krish Jani's Cloudflare account with AI Gateway `nasa-fire-copilot`:
 
 | Worker / site | URL |
 |---|---|
