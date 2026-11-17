@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler dev --port 8788 --test-scheduled --persist-to ../../.wrangler/shared-state",
     "deploy": "wrangler deploy",
-    "typegen": "wrangler types"
+    "typegen": "wrangler types",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@repo/harmonizer": "workspace:*",
