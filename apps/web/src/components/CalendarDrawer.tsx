@@ -4,7 +4,7 @@ import { Ember } from './Ember';
 // with the before/after-harmonization toggle, 90% bands and anomalies on hover, and CSV export.
 import { useEffect, useMemo, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
-import { api, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth, type CalendarResponse } from '../lib/api';
+import { api, DETAIL_MISSING_TEXT, isDetailMissing, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth, type CalendarResponse } from '../lib/api';
 import { Segmented, type SegmentedOption } from './Segmented';
 
 type Series = 'harmonized' | 'gridded' | 'raw';
@@ -35,12 +35,15 @@ interface Props {
   onPickMonth(date: string): void;
   onClose(): void;
   /** Region the user clicked on the map; shown as its own area option. */
-  region?: { bbox: Bbox; name: string } | null;
+  region?: { id: string; bbox: Bbox; name: string } | null;
   /** Polygon from the Measure tool's "Analyse this area"; switches the calendar to that shape. */
   drawn?: GeoJSON.Polygon | null;
+  /** false when only the summary archive is loaded: regions use their precomputed calendar, and
+   *  "This view" and drawn areas (built from cell-days) show a notice instead. */
+  detail?: boolean;
 }
 
-export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region }: Props) {
+export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detail = true }: Props) {
   const open = true;
   const [series, setSeries] = useState<Series>('harmonized');
   const [measure, setMeasure] = useState<Measure>('actual');
@@ -73,20 +76,26 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region }: Pro
     if (scope === 'view' && !viewBox) return;
     if (scope === 'drawn' && !drawn) return;
     if (scope === 'region' && !region) return;
+    if (!detail && (scope === 'view' || scope === 'drawn')) {
+      setData(null); setLoading(false); setOutside(true); setError(DETAIL_MISSING_TEXT);
+      return;
+    }
     const ac = new AbortController();
     setLoading(true);
     setError(null);
     setOutside(false);
-    api.calendar(scope === 'us' ? { scope: 'us' } : scope === 'drawn' ? { geometry: drawn! } : scope === 'region' ? { bbox: region!.bbox } : { bbox: viewBox! }, ac.signal)
+    api.calendar(scope === 'us' ? { scope: 'us' } : scope === 'drawn' ? { geometry: drawn! } : scope === 'region' ? (detail ? { bbox: region!.bbox } : { scope: region!.id }) : { bbox: viewBox! }, ac.signal)
       .then((d) => { setData(d); setLoading(false); })
       .catch((e) => {
         if (e.name === 'AbortError') return;
         // Outside harmonized coverage: a note, never a (zero) grid.
-        if (isOutsideCoverage(e)) { setData(null); setOutside(true); setError(OUTSIDE_COVERAGE_TEXT); } else setError(e.message);
+        if (isOutsideCoverage(e)) { setData(null); setOutside(true); setError(OUTSIDE_COVERAGE_TEXT); }
+        else if (isDetailMissing(e)) { setData(null); setOutside(true); setError(DETAIL_MISSING_TEXT); }
+        else setError(e.message);
         setLoading(false);
       });
     return () => ac.abort();
-  }, [open, scope, viewBox, drawn, region]);
+  }, [open, scope, viewBox, drawn, region, detail]);
 
   const grid = useMemo(() => {
     if (!data) return null;
@@ -125,8 +134,8 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region }: Pro
                 </select>
               </span>
             )}
-            {data && scope !== 'drawn' && (
-              <a className="text-button" href={api.calendarCsvUrl(scope === 'us' ? { scope: 'us' } : { bbox: scope === 'region' ? region!.bbox : viewBox! })}>
+            {data && !error && scope !== 'drawn' && (
+              <a className="text-button" href={api.calendarCsvUrl(scope === 'us' ? { scope: 'us' } : scope === 'region' && !detail ? { scope: region!.id } : { bbox: scope === 'region' ? region!.bbox : viewBox! })}>
                 CSV
               </a>
             )}

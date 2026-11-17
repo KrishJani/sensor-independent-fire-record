@@ -11,6 +11,7 @@ import { db, type Sql, type Ctx } from '../lib/db.ts';
 import { ApiError, clampRange, parseDate, polygonBbox } from '../lib/http.ts';
 import { CONFIG, REGIONS } from './meta.ts';
 import { coverage, MIN_COVERAGE } from '../lib/coverage.ts';
+import { requireDetail } from '../lib/detail.ts';
 
 export interface CalendarRequest {
   scope?: string;
@@ -84,6 +85,7 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
   if (cov < MIN_COVERAGE) throw new ApiError(422, 'outside_regions', OUTSIDE, { coverage: cov });
   const regs = REGIONS.filter((r) => loaded.has(r.id) && overlaps(bbox, r.bbox)).map((r) => r.id);
   if (!regs.length) throw new ApiError(422, 'outside_regions', OUTSIDE, { coverage: 0 });
+  await requireDetail(env, ctx);
   const max = regs.map((m) => loaded.get(m)!.t).sort()[0];
   const { from, to } = clampRange(parseDate(req.from, '2000-11-01', 'from'), parseDate(req.to, max, 'to'), '2000-11-01', max);
   const r0 = Math.floor((bbox[1] + 90) * 20), r1 = Math.ceil((bbox[3] + 90) * 20) - 1, c0 = Math.floor((bbox[0] + 180) * 20), c1 = Math.ceil((bbox[2] + 180) * 20) - 1;
