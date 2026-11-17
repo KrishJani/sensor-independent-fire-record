@@ -19,9 +19,9 @@
     "CHAT_FALLBACK_MODEL": "",
     // "" disables the fallback (demo setting, see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
     // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
-    "ENRICH_MAX_PER_STREAM": "30",
+    "ENRICH_MAX_PER_STREAM": "10",
     // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count; cached replay briefs don't).
-    "BRIEF_DAILY_MAX": "400",
+    "BRIEF_DAILY_MAX": "50",
     // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).
     "BRIEF_MIN_AREA_KM2": "200",
     // kimi-k2.6 supports "high" | "none" ("low" is mapped to "high"). "none": ~2 s per brief instead of ~55 s.
@@ -44,8 +44,8 @@
     // api-worker, for the historical calendar in enrichment. Optional: skipped when unavailable.
     { "binding": "API", "service": "nasa-fire-api" }
   ],
-  // Live polling: FIRMS NRT every 10 minutes.
-  "triggers": { "crons": ["*/10 * * * *"] },
+  // Live polling: FIRMS NRT every 30 minutes (demo cost cap; the code works with any interval).
+  "triggers": { "crons": ["*/30 * * * *"] },
   "kv_namespaces": [
     {
       // Per-source poll state (keys realtime:poll:<source>:<bbox>). The shared FIRMS_INGEST_STATE
