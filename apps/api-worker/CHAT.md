@@ -24,11 +24,11 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 
 ## Setup (once)
 
-> **Deploy account:** `wrangler.jsonc` targets the team account `7d56e968…` and its `default` AI Gateway. ONE deployment serves the chat copilot and the archival API: plain `npx wrangler deploy` (there is no `-e archive` environment any more). `account_id` in `wrangler.jsonc` wins over `CLOUDFLARE_ACCOUNT_ID`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is still mock (`FIRE_DATA_SOURCE`).
+> **Deploy account:** `wrangler.jsonc` has no `account_id`, so wrangler deploys to the logged-in account (or `CLOUDFLARE_ACCOUNT_ID`) and uses its `default` AI Gateway. One deployment serves the chat copilot and the archival API: plain `npx wrangler deploy`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is still mock (`FIRE_DATA_SOURCE`).
 
 1. `pnpm install` at the repo root.
 2. `npx wrangler login`. The `AI` binding has no local implementation, so even under `wrangler dev` it runs against (and bills) the account you are logged in to.
-3. **Create the AI Gateway** named as `AI_GATEWAY_ID` (`default` on the team account) in the Cloudflare dashboard (AI → AI Gateway → Create gateway), in the same account. Without it every chat turn fails with `code 2001: Please configure AI Gateway`. Recommended gateway settings: rate limit 30 req/min, caching on.
+3. **Create the AI Gateway** named as `AI_GATEWAY_ID` (`default`) in the Cloudflare dashboard (AI → AI Gateway → Create gateway), in the same account. Without it every chat turn fails with `code 2001: Please configure AI Gateway`. The public demo sets a rate limit of 20 requests per minute.
 4. Secrets: `cp .dev.vars.example .dev.vars` and set `TAVILY_API_KEY`. For production, run `npx wrangler secret put TAVILY_API_KEY`.
 
 ## Run locally
@@ -71,7 +71,7 @@ Both turns also FAIL on a bare (plain-text) URL that no web tool returned and on
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
-| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://skywalkers77-fire.pages.dev,https://*.skywalkers77-fire.pages.dev,https://nasa-fire-web.pages.dev` (the last one is the old account's fallback site; drop it after submission). Also enforced on the agent WebSocket (other origins get 403). |
+| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev`. Also enforced on the agent WebSocket (other origins get 403). |
 
 **Demo setting: `CHAT_FALLBACK_MODEL=""`.** With the fallback disabled, a failing `CHAT_MODEL` call shows the user an error ("could not answer right now, please try again") instead of an answer from `glm-4.7-flash`, the only model that drifted into Chinese after the language rule was added (see the comparison below). For a public demo, an error on retry is better than a Chinese answer. Set it in `wrangler.jsonc` (`"CHAT_FALLBACK_MODEL": ""`) or with `wrangler dev --var CHAT_FALLBACK_MODEL:`. Leaving the variable out keeps the default fallback. Each turn logs `copilot_turn_done` with the model that answered, so a drifted reply can be traced to a model in the worker logs (`wrangler tail`) or in AI Gateway.
 

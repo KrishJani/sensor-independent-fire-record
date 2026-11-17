@@ -1,18 +1,26 @@
-# `api-worker` — Unified Harmonization API & Emergency Copilot
+# `api-worker`: archival API and fire copilot
 
-User-facing Cloudflare Worker built with Hono.
+A Cloudflare Worker built with Hono. Full spec: [`SPEC.md`](SPEC.md). Copilot details: [`CHAT.md`](CHAT.md).
 
 ## Endpoints
-- **`POST /api/calendar`**
-  - Accepts a GeoJSON polygon or bounding box (`bbox`) + optional year range.
-  - Queries historical `_SP` cells from **PlanetScale Postgres** (via `env.HYPERDRIVE`) and live `_NRT` cells from **D1** (`env.NRT_DB`) concurrently via `Promise.all()`.
-  - Deduplicates any overlapping dates (preferring `_SP` over `_NRT`).
-  - Runs `@repo/harmonizer` to compute local monthly calibration factors ($\alpha_m$) across the 2012–2025 sensor overlap window and returns the `Year × Month` matrix, anomaly Z-scores, and GeoJSON grid summary.
-- **Chat copilot: `/agents/fire-copilot-agent/<sessionId>`** (WebSocket + HTTP via the Agents SDK)
-  - `FireCopilotAgent` (`AIChatAgent`) calls the model through **Cloudflare AI Gateway** (`env.AI`). Transcript, long-term memories and the last map context live in the session's Durable Object SQLite.
-  - Answers are grounded in the user's active AOI via data tools (calendar, spots, month-to-date). Web news comes from `web_search` / `web_fetch`. Data is **mocked** until LiveFireData lands.
-  - See [`CHAT.md`](CHAT.md) for setup, configuration and the frontend contract.
+- **`POST /api/calendar`** (archival only): a Year × Month calendar for a `scope` (`us` or a region id,
+  precomputed), a `bbox` or a GeoJSON `geometry`. Areas are rebuilt from Postgres `cell_days` (through
+  `env.HYPERDRIVE`) with each region's own daily rule and α; anomalies come from `@repo/harmonizer`.
+  Areas mostly outside the harmonized US regions get `422 outside_regions`.
+- **`GET /api/export/calendar.csv`**: the same calendar as CSV.
+- **`GET /api/archival/spots`**: map layers (0.5° bins, 0.05° cells or detections) for a bbox and date range.
+- **`GET /api/realtime/spots`**: the same from D1 (last 92 days of NRT data).
+- **`GET /api/prone`**, **`GET /api/prone/summary`**: fire-prone tiles.
+- **`GET /api/meta`**, **`GET /api/health`**: loaded archive bounds and data versions; connectivity.
+  `archival.detail` is `false` after a summary-only load (`backfill load --summary-only`); the spots
+  endpoint and calendars for a bbox or geometry then answer `404 detail_not_loaded`.
+- **Chat copilot: `/agents/fire-copilot-agent/<sessionId>`** (WebSocket and HTTP through the Agents SDK).
+  `FireCopilotAgent` (`AIChatAgent`) calls the model through Cloudflare AI Gateway (`env.AI`). The
+  transcript, long-term memories and the last map context live in the session's Durable Object SQLite.
+  The calendar, hot spot and month-to-date tools return demo data (`FIRE_DATA_SOURCE=mock`) and answers
+  say so; `get_live_incidents` reads realtime-worker over the `REALTIME` service binding.
 
-## Implementation Rules
-- Always instantiate a fresh Postgres client per request using `env.HYPERDRIVE.connectionString` (never in global scope).
-- Cache `/api/calendar` responses in the Cloudflare Cache API keyed by rounded polygon hash + latest D1 ingest timestamp.
+## Implementation notes
+- A new Postgres client per request from `env.HYPERDRIVE.connectionString`, closed after the response.
+- Archival and realtime responses are cached with the Cache API, keyed by the normalized request and the
+  KV data version (`data:version:archival` or `data:version:realtime`), so a new load invalidates them.

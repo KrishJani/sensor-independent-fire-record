@@ -2,7 +2,7 @@
 // Asks the demo questions (scripts/demo-questions.md) against a running api-worker + realtime-worker,
 // one fresh chat session per question, with the map context set to a quebec-2023-06 replay.
 //
-//   HOST=nasa-fire-api.hemanth3292.workers.dev RT_HOST=nasa-fire-realtime.hemanth3292.workers.dev node scripts/demo-chat.mjs
+//   HOST=nasa-fire-api.<subdomain>.workers.dev RT_HOST=nasa-fire-realtime.<subdomain>.workers.dev node scripts/demo-chat.mjs
 //
 // Env: HOST (api, default localhost:8787), RT_HOST (realtime, default localhost:8789),
 //      AT=done (default: wait for the replay to finish, deterministic) | now (ask while it runs) |
