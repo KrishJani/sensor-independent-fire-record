@@ -46,6 +46,7 @@ const { positionals, values } = parseArgs({
     all: { type: 'boolean', default: false },
     prone: { type: 'boolean', default: false },
     'no-kv': { type: 'boolean', default: false },
+    'summary-only': { type: 'boolean', default: false },
     quiet: { type: 'boolean', default: false },
   },
 });
@@ -179,18 +180,22 @@ async function main() {
       return;
     }
     case 'load': {
-      // node --env-file=.env scripts/backfill/src/cli.ts load --region <id> | --group us | --global | --all [--prone] [--no-kv]
+      // node --env-file=.env scripts/backfill/src/cli.ts load --region <id> | --group us | --global | --all [--prone] [--no-kv] [--summary-only]
       // After a successful load, data:version:archival is bumped in KV so the API's caches miss (skip with --no-kv).
+      // --summary-only: from the files in git alone (no detections or cell_days); with --all it skips the global layer.
+      const summaryOnly = values['summary-only']!;
       const sql = await connect();
       try {
         await migrate(sql, log);
         const explicitRegion = process.argv.includes('--region');
         if (values.all) {
-          for (const r of cfg.regions) await loadRegion(sql, cfg, r, log);
+          for (const r of cfg.regions) await loadRegion(sql, cfg, r, log, summaryOnly);
           for (const g of [...new Set(cfg.regions.map((r) => r.group).filter(Boolean))] as string[]) await loadGroup(sql, g, log);
-          await loadGlobal(sql, cfg, log);
+          if (summaryOnly) log('summary-only: global layer skipped');
+          else await loadGlobal(sql, cfg, log);
+          if (values.prone) await loadProne(sql, values.group!, log);
         } else {
-          if (explicitRegion) await loadRegion(sql, cfg, region, log);
+          if (explicitRegion) await loadRegion(sql, cfg, region, log, summaryOnly);
           if (process.argv.includes('--group')) await loadGroup(sql, values.group!, log);
           if (values.global) await loadGlobal(sql, cfg, log);
           if (process.argv.includes('--prone')) await loadProne(sql, values.group!, log);
