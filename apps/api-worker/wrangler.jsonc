@@ -38,18 +38,18 @@
   },
   "d1_databases": [
     // Shared with ingest-worker (read-only here).
-    { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "<D1_DATABASE_ID>" }
+    { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "c8180d94-c37d-44d1-bd36-350979b47633" }
   ],
   "hyperdrive": [
     // "firms-pg" → archival Postgres; shared with ingest-worker. Origin limit 15 (packages/db/README.md).
     // Created with: npx wrangler hyperdrive create firms-pg --connection-string="<POSTGRES_URL>"
     // Local dev reads CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (the dev scripts set it from ../../.env DATABASE_URL).
-    { "binding": "HYPERDRIVE", "id": "<HYPERDRIVE_ID>" }
+    { "binding": "HYPERDRIVE", "id": "e56c5b88b27541fbb876c5da8acc377b" }
   ],
   "kv_namespaces": [
     // Namespace title "FIRMS_INGEST_STATE": data versions, ingest flags (ingest:*). realtime-worker
     // shares it under realtime:poll:*. Created with: npx wrangler kv namespace create FIRMS_INGEST_STATE
-    { "binding": "INGEST_STATE", "id": "<FIRMS_INGEST_STATE_KV_ID>" }
+    { "binding": "INGEST_STATE", "id": "50c1f81afca340b0b98915472b609b01" }
   ],
   "ai": {
     "binding": "AI",

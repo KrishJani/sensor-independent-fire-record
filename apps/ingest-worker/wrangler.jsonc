@@ -28,7 +28,7 @@
       "binding": "NRT_DB",
       "database_name": "firms-nrt-cells",
       // Shared with api-worker. Created with: npx wrangler d1 create firms-nrt-cells
-      "database_id": "<D1_DATABASE_ID>",
+      "database_id": "c8180d94-c37d-44d1-bd36-350979b47633",
       "migrations_dir": "../../packages/db/d1"
     }
   ],
@@ -36,7 +36,7 @@
     {
       "binding": "HYPERDRIVE",
       // Same id as api-worker.
-      "id": "<HYPERDRIVE_ID>"
+      "id": "e56c5b88b27541fbb876c5da8acc377b"
     }
   ],
   "kv_namespaces": [
@@ -44,7 +44,7 @@
       "binding": "INGEST_STATE",
       // Namespace title "FIRMS_INGEST_STATE" (the binding name stays INGEST_STATE). Same id in api-worker (read-only there). Created with:
       //   npx wrangler kv namespace create FIRMS_INGEST_STATE
-      "id": "<FIRMS_INGEST_STATE_KV_ID>"
+      "id": "50c1f81afca340b0b98915472b609b01"
     }
   ]
   // secret: FIRMS_MAP_KEY  →  npx wrangler secret put FIRMS_MAP_KEY   (local: apps/ingest-worker/.dev.vars)

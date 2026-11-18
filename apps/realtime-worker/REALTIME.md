@@ -309,8 +309,8 @@ The demo deployment runs on Krish Jani's Cloudflare account with AI Gateway `nas
 
 | Worker / site | URL |
 |---|---|
-| realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.<subdomain>.workers.dev |
-| api-worker (`nasa-fire-api`, copilot and archival API) | https://nasa-fire-api.<subdomain>.workers.dev |
+| realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.krishjani01.workers.dev |
+| api-worker (`nasa-fire-api`, copilot and archival API) | https://nasa-fire-api.krishjani01.workers.dev |
 | web (Pages `unified-burn-record`) | https://fire.krishjani.com |
 
 Resources: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGEST_STATE`, shared with api-worker; realtime keys are `realtime:poll:*`) and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario; R2 is read first), D1 `firms-nrt-cells` and Hyperdrive `firms-pg` (api-worker). Secrets: `FIRMS_MAP_KEY` and `REPLAY_TOKEN` (realtime), `TAVILY_API_KEY` (api).
@@ -322,5 +322,5 @@ Resources: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGES
 ```sh
 pnpm fetch-replay-fixture --upload-only --store=r2   # or --store=kv
 npx wrangler deploy --dry-run && npx wrangler deploy
-HOST=nasa-fire-realtime.<subdomain>.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
+HOST=nasa-fire-realtime.krishjani01.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
 ```

@@ -51,14 +51,14 @@
       // Per-source poll state (keys realtime:poll:<source>:<bbox>). The shared FIRMS_INGEST_STATE
       // namespace; ingest-worker / api-worker use ingest:*, data:version:* and cache:* there, so no overlap.
       "binding": "INGEST_STATE",
-      "id": "<FIRMS_INGEST_STATE_KV_ID>"
+      "id": "50c1f81afca340b0b98915472b609b01"
     },
     {
       // Replay scenarios when R2 is not bound (scenarios/<id>.json.gz, gzipped JSON; uploaded by
       // `pnpm fetch-replay-fixture --store=kv`) and the replay brief cache (brief-cache/...).
       // Created with: npx wrangler kv namespace create REPLAY_KV
       "binding": "REPLAY_KV",
-      "id": "<REPLAY_KV_ID>"
+      "id": "2b27515098bb4b93baa7a2010f5c6fb5"
     }
   ],
   "queues": {
