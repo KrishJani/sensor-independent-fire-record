@@ -112,6 +112,13 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detai
         : actual(value(m, series));
     return { years, allYears, byKey, color, min: vals[0] ?? 0, max: vals.at(-1) ?? 0 };
   }, [data, series, measure, yearRange]);
+  // CSV request for the current area; null while it is not known yet (e.g. "This view" before the
+  // first bounds) or not exportable (drawn shapes; areas built from cell-days without the detailed archive).
+  const csv: { scope: string } | { bbox: Bbox } | null =
+    scope === 'us' ? { scope: 'us' }
+    : scope === 'region' && region ? (detail ? { bbox: region.bbox } : { scope: region.id })
+    : scope === 'view' && viewBox && detail ? { bbox: viewBox }
+    : null;
   const areaOptions = [...SCOPES, ...(region ? [{ id: 'region' as const, label: region.name }] : []), ...(drawn ? [DRAWN] : [])];
 
   return (
@@ -134,8 +141,8 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detai
                 </select>
               </span>
             )}
-            {data && !error && scope !== 'drawn' && (
-              <a className="text-button" href={api.calendarCsvUrl(scope === 'us' ? { scope: 'us' } : scope === 'region' && !detail ? { scope: region!.id } : { bbox: scope === 'region' ? region!.bbox : viewBox! })}>
+            {data && !error && csv && (
+              <a className="text-button" href={api.calendarCsvUrl(csv)}>
                 CSV
               </a>
             )}
