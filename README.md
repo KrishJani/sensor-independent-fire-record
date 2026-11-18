@@ -24,7 +24,7 @@ NASA FIRMS publishes active fire hot spots from two sensor families. MODIS (2000
 The app gives a user:
 
 - A burning activity calendar: a Year x Month matrix of harmonized fire activity for the US or one of its nine regions, with anomalies against the 2001 to 2025 median and CSV export.
-- An FRP record: peak Fire Radiative Power per month, labelled by sensor.
+- An FRP record: peak Fire Radiative Power per month for each region, labelled by sensor.
 - An archival map with fire-prone areas and region outlines. Detailed hot spots, calendars for drawn areas and the world layer need the full archive, which this deployment does not load; the map says so.
 - Live incidents: FIRMS near-real-time detections over North America, polled hourly and grouped into incidents, each with weather, nearby places, historical context and a short AI brief. The live feed covers the last 48 hours.
 - A replay of the June 2023 Quebec fires through the same pipeline at high speed. Any visitor can start, pause, stop and change its speed.
@@ -171,6 +171,7 @@ The public demo runs with these limits:
 - The copilot's calendar and hot spot tools use demo data (synthetic calendar figures and a five-day FIRMS sample from California), and its answers say so.
 - The deployed archive is summary-level only: calendars, FRP, alpha and fire-prone areas. Detailed hot spots, calendars for drawn areas and the world layer are not loaded.
 - The ingest-worker is not deployed, so the archive is fixed at its loaded version (through October 2026 for California, 2025 for the other regions).
+- The United States calendar has no peak FRP in the loaded summary data; the regional calendars have it.
 
 ## Data sources and acknowledgements
 
