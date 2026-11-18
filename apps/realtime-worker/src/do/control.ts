@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { cooldownLeftMs } from "../limits";
 import type { ReplayInfo } from "./replay";
 
 /** Wall-clock window for the global brief budget. */
@@ -11,7 +12,9 @@ const STARTING_GRACE_MS = 60_000;
 export type ReplayClaim =
   | { action: "start"; id: string }
   | { action: "existing"; id: string; info: ReplayInfo | null }
-  | { action: "busy"; id: string; scenario: string };
+  | { action: "busy"; id: string; scenario: string }
+  /** A new replay started less than REPLAY_START_COOLDOWN_MS ago (joining is not limited). */
+  | { action: "cooldown"; retryAfterS: number };
 
 export interface BriefGrant {
   ok: boolean;
@@ -20,7 +23,7 @@ export interface BriefGrant {
 }
 
 /**
- * Global singleton (DO name "global"): the one replay slot and the daily AI brief budget,
+ * Global singleton (DO name "global"): the one replay slot, the replay start cooldown and the daily AI brief budget,
  * shared by every stream. Kept separate from the per-stream Clusterers so the limits hold
  * across all of them.
  */
@@ -33,12 +36,26 @@ export class Control extends DurableObject<Env> {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS replay_slot (k INTEGER PRIMARY KEY CHECK (k = 1), id TEXT NOT NULL, scenario TEXT NOT NULL, claimed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS brief_log (t INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS brief_log_t ON brief_log (t);
     `);
   }
 
   private slot(): { id: string; scenario: string; claimed_at: number } | null {
     return this.sql.exec<{ id: string; scenario: string; claimed_at: number }>("SELECT id, scenario, claimed_at FROM replay_slot WHERE k = 1").toArray()[0] ?? null;
+  }
+  private lastStartAt(): number | null {
+    const v = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'lastStartAt'").toArray()[0]?.v;
+    return v === undefined ? null : Number(v);
+  }
+  /** Claims the slot for a new replay, unless one started within the cooldown. */
+  private startOrCooldown(id: string, scenario: string): ReplayClaim {
+    const now = Date.now();
+    const left = cooldownLeftMs(this.lastStartAt(), now);
+    if (left > 0) return { action: "cooldown", retryAfterS: Math.ceil(left / 1000) };
+    this.setSlot(id, scenario);
+    this.sql.exec("INSERT INTO meta (k, v) VALUES ('lastStartAt', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", String(now));
+    return { action: "start", id };
   }
   private setSlot(id: string, scenario: string) {
     this.sql.exec(
@@ -51,15 +68,13 @@ export class Control extends DurableObject<Env> {
 
   /**
    * At most one active replay overall. Same scenario already running → "existing" (reuse it);
-   * a different scenario running → "busy"; otherwise the slot is claimed for `id` → "start".
+   * a different scenario running → "busy"; a new replay started within the cooldown → "cooldown";
+   * otherwise the slot is claimed for `id` → "start".
    */
   async claimReplay(args: { id: string; scenario: string }): Promise<ReplayClaim> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const cur = this.slot();
-      if (!cur) {
-        this.setSlot(args.id, args.scenario);
-        return { action: "start", id: args.id };
-      }
+      if (!cur) return this.startOrCooldown(args.id, args.scenario);
       const stub = this.env.REPLAY.get(this.env.REPLAY.idFromName(cur.id));
       let info = (await stub.status()) as ReplayInfo | null;
       // Another claim may have run while we awaited; re-check against the slot we inspected.
@@ -76,8 +91,7 @@ export class Control extends DurableObject<Env> {
           ? { action: "existing", id: cur.id, info }
           : { action: "busy", id: cur.id, scenario: cur.scenario };
       }
-      this.setSlot(args.id, args.scenario);
-      return { action: "start", id: args.id };
+      return this.startOrCooldown(args.id, args.scenario);
     }
     throw new Error("replay slot is contended; retry");
   }

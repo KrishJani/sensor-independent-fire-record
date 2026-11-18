@@ -25,7 +25,7 @@ export type ServerMessage =
   | { type: "incident.brief"; id: string; brief: Brief }
   | { type: "detections"; points: MapPoint[]; replace?: boolean }
   | { type: "clock"; t: number }
-  | { type: "replay.status"; status: string; progress: number }
+  | { type: "replay.status"; status: string; progress: number; speed?: number }
   | { type: "error"; message: string }
   /** Every frame the hub sends is either a single message or a batch of them (one per flush). */
   | { type: "batch"; messages: ServerMessage[] };
@@ -38,5 +38,5 @@ export interface PublishPayload {
   points?: MapPoint[];
   clock?: number;
   briefs?: { id: string; brief: Brief }[];
-  replayStatus?: { status: string; progress: number };
+  replayStatus?: { status: string; progress: number; speed?: number };
 }

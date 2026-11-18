@@ -16,6 +16,8 @@ export interface EnrichParams {
   cachedBrief?: Brief;
   /** Replays: on a cache miss, store the new brief under this REPLAY_KV key. */
   briefCacheKey?: string;
+  /** Replays: the scenario's brief cache is full, so no model call (see Clusterer.dispatchEnrichments). */
+  skipBrief?: boolean;
 }
 
 type StepResult<T> = { status: "ok"; data: T } | { status: "failed"; error: string } | { status: "skipped"; reason: string; coverage?: number };
@@ -56,7 +58,7 @@ export interface Enrichment {
   completedAt: number;
 }
 
-const UA = "unified-burn-record-realtime/1.0 (NASA Space Apps 2026 demo; https://github.com/KrishJani/unified-burn-record)";
+const UA = "sensor-independent-fire-record-realtime/1.0 (NASA Space Apps 2026 demo; https://github.com/KrishJani/sensor-independent-fire-record)";
 
 
 async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<unknown> {
@@ -153,6 +155,7 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
         console.log(JSON.stringify({ msg: "brief_cache_hit", incident: p.incidentId }));
         return { status: "ok", data: { ...p.cachedBrief, text: cleanBrief(p.cachedBrief.text) || p.cachedBrief.text, cached: true } };
       }
+      if (p.skipBrief) return { status: "skipped", reason: "replay brief cache is full; no new model calls" };
       const prompt = buildBriefPrompt({ summary: p.summary, stream: p.stream, weather, places, history });
       const models = briefModels(this.env);
       const maxTokens = Number(this.env.BRIEF_MAX_TOKENS) || DEFAULT_BRIEF_MAX_TOKENS;

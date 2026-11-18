@@ -88,6 +88,12 @@ export class Incident extends DurableObject<Env> {
     };
   }
 
+  /** Deletes this incident's storage (live pruning, replay purge). */
+  async purge(): Promise<void> {
+    this.state = null;
+    await this.ctx.storage.deleteAll();
+  }
+
   async summary(): Promise<IncidentSummary | null> {
     return this.state ? summarize(this.state) : null;
   }

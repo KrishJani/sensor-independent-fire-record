@@ -74,7 +74,7 @@ async function firms(source, dayRange, date) {
     const wait = lastCall + GAP_MS - Date.now();
     if (wait > 0) await sleep(wait);
     lastCall = Date.now();
-    const res = await fetch(url, { headers: { "User-Agent": "skywalkers77-realtime-fixture/1.0" } });
+    const res = await fetch(url, { headers: { "User-Agent": "sensor-independent-fire-record-fixture/1.0" } });
     const text = await res.text();
     if (res.status === 429 || res.status >= 500) {
       console.warn(`  ${source} ${date}: HTTP ${res.status}, retrying (${attempt}/3)`);

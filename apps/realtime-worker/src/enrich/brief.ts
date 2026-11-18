@@ -89,7 +89,12 @@ export function cleanBrief(raw: string): string {
  */
 export const BRIEF_CACHE_VERSION = "v6"; // v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
-  return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey}/${level}`;
+  return `${briefCachePrefix(scenario, stableKey)}${level}`;
+}
+
+/** KV list prefix for one scenario's cached briefs, or one incident's within it. */
+export function briefCachePrefix(scenario: string, stableKey?: string): string {
+  return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey ? `${stableKey}/` : ""}`;
 }
 
 const DEFAULT_BRIEF_MODEL = "@cf/moonshotai/kimi-k2.6";

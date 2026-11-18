@@ -3,18 +3,21 @@ import { assignDetections, type ClusterStore, type IncidentRef } from "../cluste
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
 import { INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
-import { briefCacheKey } from "../enrich/brief";
+import { briefCacheKey, briefCachePrefix } from "../enrich/brief";
+import { briefCacheFull, incidentsToPrune, LIVE_RETENTION_MS, pickCachedLevel, type PruneRow } from "../limits";
 import type { Brief, MapPoint } from "../protocol";
 import { briefMinAreaKm2, incidentId } from "../streams";
 import type { IncidentIngestResult } from "./incident";
 
-/** Dedupe ids are kept this long (stream time) before pruning. */
-const DEDUPE_RETENTION_MS = 10 * 24 * 3600_000;
+/** Dedupe ids are kept this long (stream time) before pruning. Live polls overlap by at most ~3 h. */
+const DEDUPE_RETENTION_MS = LIVE_RETENTION_MS;
 const INCIDENT_FANOUT = 24;
 /** Max enrichment workflows started per ingest batch, so the largest queued incidents go first. */
 const ENRICH_DISPATCH_PER_BATCH = 2;
 /** The live stream's ENRICH_MAX_PER_STREAM applies per rolling 24 h of wall clock. */
 const LIVE_ENRICH_WINDOW_MS = 24 * 3600_000;
+/** Incident DOs deleted per purgeStream() call (keeps each call well under the subrequest limit). */
+const PURGE_CHUNK = 400;
 
 export interface IngestResult {
   stream: string;
@@ -181,7 +184,7 @@ export class Clusterer extends DurableObject<Env> {
     // After the summaries are stored, so the queue is ranked by current area.
     await this.dispatchEnrichments(stream, streamT);
 
-    if (streamT !== null && res.fresh.length > 0 && streamT - (Number(this.meta("prunedAt") ?? 0)) > 24 * 3600_000) {
+    if (streamT !== null && res.fresh.length > 0 && streamT - (Number(this.meta("prunedAt") ?? 0)) > 3600_000) {
       this.sql.exec("DELETE FROM detections WHERE t < ?", streamT - DEDUPE_RETENTION_MS);
       this.setMeta("prunedAt", String(streamT));
     }
@@ -263,16 +266,28 @@ export class Clusterer extends DurableObject<Env> {
       const scenario = this.meta("scenario");
       const cacheKey = stream !== "live" && scenario && q.stable_key ? briefCacheKey(scenario, q.stable_key, q.level) : null;
       let cachedBrief: Brief | null = null;
-      if (cacheKey) {
+      let skipBrief = false;
+      if (cacheKey && scenario && q.stable_key) {
         try {
           cachedBrief = await this.env.REPLAY_KV.get<Brief>(cacheKey, "json");
+          if (!cachedBrief) {
+            // Tick timing and speed change which doubling levels a run reaches: reuse another level of this incident.
+            const same = await this.env.REPLAY_KV.list({ prefix: briefCachePrefix(scenario, q.stable_key) });
+            const level = pickCachedLevel(same.keys.map((k) => Number(k.name.split("/").pop())), q.level);
+            if (level !== null) cachedBrief = await this.env.REPLAY_KV.get<Brief>(briefCacheKey(scenario, q.stable_key, level), "json");
+          }
+          if (!cachedBrief) {
+            // Once the scenario's cache is full, replays make no new model calls.
+            const all = await this.env.REPLAY_KV.list({ prefix: briefCachePrefix(scenario) });
+            skipBrief = briefCacheFull(all.keys.length, perStreamMax);
+          }
         } catch (err) {
           console.warn(JSON.stringify({ msg: "brief_cache_get_failed", key: cacheKey, error: String(err) }));
         }
-        this.bump(cachedBrief ? "brief_cache_hits" : "brief_cache_misses", 1);
+        this.bump(cachedBrief ? "brief_cache_hits" : skipBrief ? "brief_cache_full_skips" : "brief_cache_misses", 1);
       }
       let grant: { used: number } = { used: -1 };
-      if (!cachedBrief) {
+      if (!cachedBrief && !skipBrief) {
         const g = await this.control().tryConsumeBrief(dailyMax);
         if (!g.ok) {
           this.bump("enrich_deferred_daily_budget", 1);
@@ -295,10 +310,10 @@ export class Clusterer extends DurableObject<Env> {
             reason: q.reason as "significant" | "area_doubled",
             streamT: at,
             summary: { ...q.s, asOf: at },
-            ...(cachedBrief ? { cachedBrief } : cacheKey ? { briefCacheKey: cacheKey } : {})
+            ...(cachedBrief ? { cachedBrief } : skipBrief ? { skipBrief } : cacheKey ? { briefCacheKey: cacheKey } : {})
           }
         });
-        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, briefsUsed24h: grant.used, queued: ranked.length }));
+        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, skipBrief, briefsUsed24h: grant.used, queued: ranked.length }));
       } catch (err) {
         console.error(JSON.stringify({ msg: "enrich_start_failed", incident: q.incident_id, error: String(err) }));
       }
@@ -358,6 +373,49 @@ export class Clusterer extends DurableObject<Env> {
       window: stream === "live" ? "24h" : "stream"
     };
     return { stream, streamT: this.streamT(), counters, incidents: inc, merges, enrich };
+  }
+
+  /**
+   * Live only (called from the cron): deletes detections older than `cutoffT` and incidents with no
+   * detection since then (with the incidents merged into them), including their cells, Incident DOs
+   * and LiveHub rows. The enrich log keeps 24 h (the ENRICH_MAX_PER_STREAM window).
+   */
+  async prune(cutoffT: number): Promise<{ detections: number; incidents: number }> {
+    if (this.meta("stream") !== "live") return { detections: 0, incidents: 0 };
+    const detections = this.sql.exec("DELETE FROM detections WHERE t < ?", cutoffT).rowsWritten;
+    const rows: PruneRow[] = this.sql.exec<{ id: string; last_t: number; merged_into: string | null }>("SELECT id, last_t, merged_into FROM incidents").toArray();
+    const ids = [...incidentsToPrune(rows, cutoffT)];
+    this.ctx.storage.transactionSync(() => {
+      for (const id of ids) {
+        this.sql.exec("DELETE FROM cells WHERE incident_id = ?", id);
+        this.sql.exec("DELETE FROM enrich_queue2 WHERE incident_id = ?", id);
+        this.sql.exec("DELETE FROM incidents WHERE id = ?", id);
+      }
+      this.sql.exec("DELETE FROM merges WHERE t < ?", cutoffT);
+      this.sql.exec("DELETE FROM enrich_log WHERE t < ?", Date.now() - LIVE_ENRICH_WINDOW_MS);
+    });
+    await this.purgeIncidents(ids);
+    if (ids.length) await this.hub("live").forget(ids);
+    return { detections, incidents: ids.length };
+  }
+
+  /**
+   * Replays: deletes up to PURGE_CHUNK Incident DOs of this stream per call; once none are left,
+   * deletes this DO's storage. Returns how many incidents remain (call again until 0).
+   */
+  async purgeStream(): Promise<number> {
+    const ids = this.sql.exec<{ id: string }>("SELECT id FROM incidents LIMIT ?", PURGE_CHUNK).toArray().map((r) => r.id);
+    await this.purgeIncidents(ids);
+    for (const id of ids) this.sql.exec("DELETE FROM incidents WHERE id = ?", id);
+    const left = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM incidents").one().n;
+    if (left === 0) await this.ctx.storage.deleteAll();
+    return left;
+  }
+
+  private async purgeIncidents(ids: string[]) {
+    for (let i = 0; i < ids.length; i += INCIDENT_FANOUT) {
+      await Promise.all(ids.slice(i, i + INCIDENT_FANOUT).map((id) => this.incidentStub(id).purge()));
+    }
   }
 
   /** Replay DO: records the scenario id (brief cache key). */

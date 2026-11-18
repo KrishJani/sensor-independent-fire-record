@@ -25,7 +25,7 @@ export class LiveHub extends DurableObject<Env> {
   private pendingBriefs = new Map<string, Brief>();
   private pendingPoints: MapPoint[] = [];
   private pendingClock: number | null = null;
-  private pendingReplay: { status: string; progress: number } | null = null;
+  private pendingReplay: { status: string; progress: number; speed?: number } | null = null;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private lastFlush = 0;
 
@@ -132,6 +132,23 @@ export class LiveHub extends DurableObject<Env> {
     }
     if (p.replayStatus) this.pendingReplay = p.replayStatus;
     this.scheduleFlush();
+  }
+
+  /** Live: drops incidents the Clusterer pruned, so new sockets no longer get them. */
+  async forget(ids: string[]): Promise<void> {
+    for (const id of ids) this.sql.exec("DELETE FROM incidents WHERE id = ?", id);
+  }
+
+  /** Replays: deletes this stream's storage once the replay has ended (see Replay.purgeIfDue). */
+  async purge(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, "replay ended");
+      } catch {
+        /* already closed */
+      }
+    }
+    await this.ctx.storage.deleteAll();
   }
 
   async stats() {

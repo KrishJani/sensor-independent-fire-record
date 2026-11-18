@@ -1,5 +1,5 @@
 /**
- * Live polling (Cron, every 30 min in wrangler.jsonc): FIRMS NRT area API → new rows → DETECTIONS_QUEUE.
+ * Live polling (Cron, hourly in wrangler.jsonc): FIRMS NRT area API → new rows → DETECTIONS_QUEUE.
  * The queue consumer forwards them to the "live" Clusterer.
  */
 
@@ -16,6 +16,7 @@ const ROWS_PER_MESSAGE = 1500;
 /** Messages per sendBatch: 4 × ~75 KB stays under the 256 KB batch limit. */
 const MESSAGES_PER_SEND = 3;
 const FIRMS_GAP_MS = 300;
+const DAY_RANGE = 2;
 
 export interface DetectionsMessage {
   stream: "live";
@@ -73,10 +74,12 @@ async function pollSource(env: Env, key: string, source: string, bbox: Bbox, now
   const sk = stateKey(source, bbox);
   const prev = await env.INGEST_STATE.get<PollState>(sk, "json");
   try {
-    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/${source}/${bbox.join(",")}/1`;
+    // Day range 2 (today and yesterday, UTC): range 1 is today only, so it is empty just after 00:00 UTC and
+    // misses late passes of the previous day. The `since` filter and the Clusterer's dedupe drop the overlap.
+    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/${source}/${bbox.join(",")}/${DAY_RANGE}`;
     let res: Response | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
-      res = await fetch(url, { headers: { "User-Agent": "skywalkers77-realtime/1.0" } });
+      res = await fetch(url, { headers: { "User-Agent": "sensor-independent-fire-record-realtime/1.0" } });
       if (res.status !== 429 && res.status < 500) break;
       await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
     }

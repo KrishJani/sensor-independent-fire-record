@@ -452,3 +452,41 @@ describe("cleanBrief: remarks about missing facts", () => {
       .toBe("The area with detections is 354.7 km2. Wind is 10.3 km/h from the north.");
   });
 });
+
+import { briefCacheFull, cooldownLeftMs, incidentsToPrune, pickCachedLevel, REPLAY_START_COOLDOWN_MS } from "../src/limits";
+import { briefCacheKey, briefCachePrefix } from "../src/enrich/brief";
+describe("demo limits", () => {
+  it("replay start cooldown", () => {
+    expect(cooldownLeftMs(null, 1_000)).toBe(0);
+    expect(cooldownLeftMs(1_000, 1_000 + REPLAY_START_COOLDOWN_MS - 1)).toBe(1);
+    expect(cooldownLeftMs(1_000, 1_000 + REPLAY_START_COOLDOWN_MS)).toBe(0);
+  });
+  it("reuses another cached level of the same incident", () => {
+    expect(pickCachedLevel([], 0)).toBeNull();
+    expect(pickCachedLevel([0], 2)).toBe(0);
+    expect(pickCachedLevel([0, 1, 3], 2)).toBe(1);
+    expect(pickCachedLevel([2, 3], 1)).toBe(2);
+    expect(pickCachedLevel([Number.NaN, 1], 0)).toBe(1);
+  });
+  it("brief cache is full at ENRICH_MAX_PER_STREAM", () => {
+    expect(briefCacheFull(9, 10)).toBe(false);
+    expect(briefCacheFull(10, 10)).toBe(true);
+  });
+  it("cache key starts with the incident prefix, which starts with the scenario prefix", () => {
+    const key = briefCacheKey("quebec-2023-06", "abc", 2);
+    expect(key.startsWith(briefCachePrefix("quebec-2023-06", "abc"))).toBe(true);
+    expect(briefCachePrefix("quebec-2023-06", "abc").startsWith(briefCachePrefix("quebec-2023-06"))).toBe(true);
+    expect(Number(key.split("/").pop())).toBe(2);
+  });
+  it("prunes quiet incidents with their merge chains, keeps those merged into active ones", () => {
+    const cutoff = 100;
+    const rows = [
+      { id: "a", last_t: 50, merged_into: null }, // quiet survivor
+      { id: "b", last_t: 40, merged_into: "a" }, // merged into a
+      { id: "c", last_t: 30, merged_into: "b" }, // chain through b
+      { id: "d", last_t: 200, merged_into: null }, // active
+      { id: "e", last_t: 20, merged_into: "d" } // old, but merged into an active incident
+    ];
+    expect([...incidentsToPrune(rows, cutoff)].sort()).toEqual(["a", "b", "c"]);
+  });
+});

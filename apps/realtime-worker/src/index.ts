@@ -5,6 +5,8 @@ import { isAllowedOrigin, parseAllowedOrigins } from "./origins";
 import { consumeDetections, NRT_SOURCES, pollOnce, watchBboxes, type DetectionsMessage, type PollState } from "./live/poll";
 import type { IncidentDetail } from "./do/incident";
 import type { IncidentStatus } from "./incidentModel";
+import { LIVE_RETENTION_MS } from "./limits";
+import { MAX_SPEED } from "./do/replay";
 import { KNOWN_SCENARIOS } from "./replay/scenarios";
 import { isStream, streamOfIncident } from "./streams";
 
@@ -25,7 +27,7 @@ app.use("*", (c, next) =>
   cors({
     origin: (origin) => (isAllowedOrigin(origin, allowed(c.env)) ? origin : null),
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "x-replay-token"],
+    allowHeaders: ["Content-Type"],
     maxAge: 600
   })(c, next)
 );
@@ -35,25 +37,10 @@ const hub = (env: Env, stream: string) => env.LIVE_HUB.get(env.LIVE_HUB.idFromNa
 const replay = (env: Env, id: string) => env.REPLAY.get(env.REPLAY.idFromName(id));
 const control = (env: Env) => env.CONTROL.get(env.CONTROL.idFromName("global"));
 
-/** Constant-time string comparison (both sides hashed so lengths match). */
-async function sameSecret(a: string, b: string): Promise<boolean> {
-  const enc = new TextEncoder();
-  const [ha, hb] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(a)), crypto.subtle.digest("SHA-256", enc.encode(b))]);
-  return (crypto.subtle as SubtleCrypto & { timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean }).timingSafeEqual(ha, hb);
-}
-
-/**
- * When the REPLAY_TOKEN secret is set, pause/resume/stop need a matching x-replay-token header.
- * Starting a replay is public: it reuses the running replay, only one runs at a time, and replay
- * briefs come from the cache after the first run.
- */
-app.use("/realtime/replay/:id/*", async (c, next) => {
-  const token = (c.env as Env & { REPLAY_TOKEN?: string }).REPLAY_TOKEN;
-  if (c.req.method !== "POST" || !token) return next();
-  const given = c.req.header("x-replay-token") ?? "";
-  if (!given || !(await sameSecret(given, token))) return c.json(err("unauthorized", "missing or invalid x-replay-token"), 401);
-  return next();
-});
+const parseSpeed = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 1 && n <= MAX_SPEED ? n : null;
+};
 
 app.get("/realtime/health", async (c) => {
   const live = await clusterer(c.env, "live").stats();
@@ -90,13 +77,16 @@ app.get("/realtime/incidents/:id", async (c) => {
 });
 
 // ---- Replay -----------------------------------------------------------------
+// Open to every visitor: start, pause, resume, stop and speed. Limits: one replay at a time
+// (starting while it runs joins it), at most one new replay per REPLAY_START_COOLDOWN_MS globally,
+// and replay briefs come from the brief cache after the first run (see Clusterer.dispatchEnrichments).
 
 app.post("/realtime/replay", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { scenario?: string; speed?: number };
   const scenario = body.scenario ?? "quebec-2023-06";
   if (!/^[a-z0-9-]{3,64}$/.test(scenario)) return c.json(err("bad_scenario", "invalid scenario id"), 400);
-  const speed = Number(body.speed ?? c.env.REPLAY_DEFAULT_SPEED ?? 12000);
-  if (!Number.isFinite(speed) || speed < 1 || speed > 1_000_000) return c.json(err("bad_speed", "speed must be 1..1000000 (stream seconds per real second)"), 400);
+  const speed = parseSpeed(body.speed ?? c.env.REPLAY_DEFAULT_SPEED ?? 12000);
+  if (speed === null) return c.json(err("bad_speed", `speed must be 1..${MAX_SPEED} (stream seconds per real second)`), 400);
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 10);
   // One active replay overall: reuse a running replay of the same scenario, refuse a different one.
   const claim = await control(c.env).claimReplay({ id, scenario });
@@ -104,6 +94,10 @@ app.post("/realtime/replay", async (c) => {
     const info = claim.info ?? (await replay(c.env, claim.id).status());
     if (!info) return c.json(err("replay_starting", "a replay of this scenario is starting; retry in a few seconds"), 409);
     return c.json({ ...info, reused: true }, 200);
+  }
+  if (claim.action === "cooldown") {
+    c.header("Retry-After", String(claim.retryAfterS));
+    return c.json(err("replay_cooldown", `a replay was started recently; try again in ${claim.retryAfterS} s`), 429);
   }
   if (claim.action === "busy")
     return c.json(err("replay_busy", `replay ${claim.id} (${claim.scenario}) is running; only one replay can run at a time`), 409);
@@ -135,6 +129,17 @@ for (const action of ["pause", "resume", "stop"] as const) {
   });
 }
 
+app.post("/realtime/replay/:id/speed", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-z0-9]{6,32}$/.test(id)) return c.json(err("bad_id", "invalid replay id"), 400);
+  const body = (await c.req.json().catch(() => ({}))) as { speed?: number };
+  const speed = parseSpeed(body.speed);
+  if (speed === null) return c.json(err("bad_speed", `speed must be 1..${MAX_SPEED} (stream seconds per real second)`), 400);
+  const info = await replay(c.env, id).setSpeed(speed);
+  if (!info) return c.json(err("not_found", "no such replay"), 404);
+  return c.json(info);
+});
+
 // ---- WebSocket ----------------------------------------------------------------
 
 app.get("/realtime/ws", async (c) => {
@@ -156,6 +161,15 @@ export default {
         (r) => console.log(JSON.stringify({ job: "realtime_poll_done", sources: r.length, queued: r.reduce((a, x) => a + x.queued, 0) })),
         (e) => console.error(JSON.stringify({ job: "realtime_poll_failed", error: String(e) }))
       )
+    );
+    // Live storage stays bounded: detections and quiet incidents older than 48 h are deleted.
+    ctx.waitUntil(
+      clusterer(env, "live")
+        .prune(Date.now() - LIVE_RETENTION_MS)
+        .then(
+          (r) => console.log(JSON.stringify({ job: "realtime_prune_done", ...r })),
+          (e) => console.error(JSON.stringify({ job: "realtime_prune_failed", error: String(e) }))
+        )
     );
   },
   async queue(batch, env) {

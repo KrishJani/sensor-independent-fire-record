@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { fromCompact, withStream, type CompactRow, type Detection } from "../detection";
+import { REPLAY_PURGE_AFTER_MS } from "../limits";
 import { loadScenario, type ScenarioOrigin } from "../replay/scenarios";
 import { replayStream } from "../streams";
 
@@ -31,10 +32,14 @@ export interface ReplayInfo {
   error: string | null;
 }
 
+/** Allowed replay speeds, stream seconds per real second (the API validates against this). */
+export const MAX_SPEED = 1_000_000;
+
 /**
  * One per replay. Copies the scenario into its SQLite on start, then an alarm loop advances stream
  * time by speed × real elapsed time and feeds every detection up to that time into the stream's
- * Clusterer, in time order.
+ * Clusterer, in time order. REPLAY_PURGE_AFTER_MS after it ends, the replay deletes its own storage
+ * and its stream's Clusterer, Incident and LiveHub storage.
  */
 export class Replay extends DurableObject<Env> {
   private sql: SqlStorage;
@@ -108,7 +113,7 @@ export class Replay extends DurableObject<Env> {
     info.status = "paused";
     this.save(info);
     await this.ctx.storage.deleteAlarm();
-    await this.hub(info.stream).publish({ replayStatus: { status: info.status, progress: info.progress } });
+    await this.hub(info.stream).publish({ replayStatus: this.statusMsg(info) });
     return info;
   }
 
@@ -122,21 +127,34 @@ export class Replay extends DurableObject<Env> {
     return info;
   }
 
+  /** Changes the speed of a running or paused replay; the clock continues from where it is. */
+  async setSpeed(speed: number): Promise<ReplayInfo | null> {
+    const info = this.info();
+    if (info?.status !== "running" && info?.status !== "paused") return info;
+    info.speed = speed;
+    info.expectedDurationS = Math.round((info.endT - info.startT) / speed / 1000);
+    this.save(info);
+    await this.hub(info.stream).publish({ replayStatus: this.statusMsg(info) });
+    return info;
+  }
+
   async stop(): Promise<ReplayInfo | null> {
     const info = this.info();
     if (!info || info.status === "done" || info.status === "stopped") return info;
     info.status = "stopped";
     info.finishedAt = Date.now();
     this.save(info);
-    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.setAlarm(info.finishedAt + REPLAY_PURGE_AFTER_MS);
     await this.releaseSlot(info.id);
-    await this.hub(info.stream).publish({ replayStatus: { status: info.status, progress: info.progress } });
+    await this.hub(info.stream).publish({ replayStatus: this.statusMsg(info) });
     return info;
   }
 
   async alarm(): Promise<void> {
     const info = this.info();
-    if (!info || info.status !== "running") return;
+    if (!info) return;
+    if (info.status === "done" || info.status === "stopped" || info.status === "error") return this.purgeIfDue(info);
+    if (info.status !== "running") return;
     const now = Date.now();
     const lastTick = Number(this.getMeta("lastTick") ?? now);
     this.setMeta("lastTick", now);
@@ -156,23 +174,53 @@ export class Replay extends DurableObject<Env> {
       if (detections.length) await clusterer.ingest(info.stream, detections);
       await clusterer.advanceClock(info.stream, info.streamT);
 
-      const finished = info.emitted >= info.total && info.streamT >= info.endT;
+      // pause/stop/setSpeed can run while this tick awaits the Clusterer: keep what they changed.
+      const latest = this.info();
+      if (latest) {
+        info.speed = latest.speed;
+        info.expectedDurationS = latest.expectedDurationS;
+        if (latest.status !== "running") {
+          info.status = latest.status;
+          info.finishedAt = latest.finishedAt;
+        }
+      }
+      const finished = info.status === "running" && info.emitted >= info.total && info.streamT >= info.endT;
       if (finished) {
         info.status = "done";
         info.finishedAt = now;
       }
       this.save(info);
-      await this.hub(info.stream).publish({
-        clock: info.streamT,
-        replayStatus: { status: info.status, progress: info.progress }
-      });
-      if (finished) await this.releaseSlot(info.id);
-      else await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+      await this.hub(info.stream).publish({ clock: info.streamT, replayStatus: this.statusMsg(info) });
+      if (finished) {
+        await this.releaseSlot(info.id);
+        await this.ctx.storage.setAlarm(now + REPLAY_PURGE_AFTER_MS);
+      } else if (info.status === "running") await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     } catch (err) {
       console.error(JSON.stringify({ msg: "replay_tick_failed", id: info.id, error: String(err) }));
       // Keep going: retry this window on the next tick instead of burning the alarm's retry budget.
-      await this.ctx.storage.setAlarm(Date.now() + TICK_MS * 2);
+      if (this.info()?.status === "running") await this.ctx.storage.setAlarm(Date.now() + TICK_MS * 2);
     }
+  }
+
+  /**
+   * Deletes this replay's stream (Clusterer, its Incident DOs, LiveHub) and then this DO's own
+   * storage. Runs from the alarm REPLAY_PURGE_AFTER_MS after the replay ended.
+   */
+  private async purgeIfDue(info: ReplayInfo) {
+    const due = (info.finishedAt ?? info.createdAt) + REPLAY_PURGE_AFTER_MS;
+    if (Date.now() < due) {
+      await this.ctx.storage.setAlarm(due);
+      return;
+    }
+    const clusterer = this.env.CLUSTERER.get(this.env.CLUSTERER.idFromName(info.stream));
+    for (let left = 1, calls = 0; left > 0 && calls < 50; calls++) left = await clusterer.purgeStream();
+    await this.hub(info.stream).purge();
+    await this.ctx.storage.deleteAll();
+    console.log(JSON.stringify({ msg: "replay_purged", id: info.id, stream: info.stream }));
+  }
+
+  private statusMsg(info: ReplayInfo) {
+    return { status: info.status, progress: info.progress, speed: info.speed };
   }
 
   /** Frees the global one-active-replay slot (see Control). */
