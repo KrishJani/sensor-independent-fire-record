@@ -8,7 +8,7 @@
   "vars": {
     // CORS + WebSocket origins (same as api-worker). Exact origins, plus "https://*.<suffix>" for
     // exactly one subdomain label (Pages preview URLs). See src/origins.ts.
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev",
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev",
     // Default replay speed: stream seconds per real second (see REALTIME.md).
     "REPLAY_DEFAULT_SPEED": "12000",
     // Live polling areas, ";"-separated w,s,e,n boxes. Default: North America.
@@ -44,8 +44,9 @@
     // api-worker, for the historical calendar in enrichment. Optional: skipped when unavailable.
     { "binding": "API", "service": "nasa-fire-api" }
   ],
-  // Live polling: FIRMS NRT every 30 minutes (demo cost cap; the code works with any interval).
-  "triggers": { "crons": ["*/30 * * * *"] },
+  // Live polling: FIRMS NRT hourly (demo cost cap; the code works with any interval). The same tick
+  // prunes live detections and incidents older than 48 h.
+  "triggers": { "crons": ["0 * * * *"] },
   "kv_namespaces": [
     {
       // Per-source poll state (keys realtime:poll:<source>:<bbox>). The shared FIRMS_INGEST_STATE

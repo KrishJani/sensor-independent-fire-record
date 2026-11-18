@@ -1,10 +1,12 @@
-# Unified Burn Record
+# Sensor-Independent Burning Activity Record
+
+Cross-calibrating MODIS and VIIRS into one sensor-independent burning activity calendar.
 
 A wildfire map and burning activity calendar that puts 25 years of MODIS and VIIRS satellite hot spots on one consistent scale, with live incident tracking and a chat assistant, running on Cloudflare.
 
-Live demo: https://fire.krishjani.com
+Live demo: https://world-fires.pages.dev
 
-![Quebec June 2023 fires in the replay: incident list, replay clock and incident clusters on the map](docs/images/quebec-replay.jpg)
+![Quebec June 2023 fires in the replay: incident list, replay speed and controls, and incident clusters on the map](docs/images/quebec-replay.jpg)
 
 Team project built at NASA Space Apps Challenge 2026 by Krish Jani, [Riddhi Raina Prasad](https://github.com/riddhixraina), and [Hemanth](https://github.com/itsmrhem). My contribution:
 
@@ -24,8 +26,8 @@ The app gives a user:
 - A burning activity calendar: a Year x Month matrix of harmonized fire activity for the US or one of its nine regions, with anomalies against the 2001 to 2025 median and CSV export.
 - An FRP record: peak Fire Radiative Power per month, labelled by sensor.
 - An archival map with fire-prone areas and region outlines. Detailed hot spots, calendars for drawn areas and the world layer need the full archive, which this deployment does not load; the map says so.
-- Live incidents: FIRMS near-real-time detections over North America, polled on a cron and grouped into incidents, each with weather, nearby places, historical context and a short AI brief.
-- A replay of the June 2023 Quebec fires through the same pipeline at high speed.
+- Live incidents: FIRMS near-real-time detections over North America, polled hourly and grouped into incidents, each with weather, nearby places, historical context and a short AI brief. The live feed covers the last 48 hours.
+- A replay of the June 2023 Quebec fires through the same pipeline at high speed. Any visitor can start, pause, stop and change its speed.
 - A copilot: a chat assistant that reads the current map view. Its live-incident tool reads the realtime stream. Its calendar and hot spot tools return demo data, and every answer that uses them says so.
 
 ## Architecture
@@ -51,14 +53,14 @@ flowchart LR
   rt --> r2[("R2 / KV replay scenarios")]
   rt --> kv
 
-  cronIng["Cron every 3 h"] --> ing["ingest-worker<br/>nasa-fire-ingest"]
+  cronIng["Cron every 3 h"] --> ing["ingest-worker<br/>nasa-fire-ingest<br/>(not deployed in the demo)"]
   ing -- "FIRMS NRT" --> d1
   ing -- "FIRMS SP" --> hd
   ing --> kv
   backfill["scripts/backfill<br/>(run locally)"] --> pg
 ```
 
-The web app is a static site on Pages that talks to two Workers. The api-worker serves the archival API from Postgres (through Hyperdrive) and hosts the chat copilot, one Durable Object per chat session. The realtime-worker polls FIRMS on a cron, sends detections through a Queue to a Clusterer Durable Object that groups them into incidents, and pushes updates to browsers over WebSockets. New or growing incidents start an enrichment Workflow that calls Open-Meteo, OpenStreetMap place lookups, the api-worker (for the historical calendar) and Workers AI. The ingest-worker keeps a rolling 92-day near-real-time table in D1 and moves older data into Postgres. The historical archive is built offline by `scripts/backfill` and loaded into Postgres.
+The web app is a static site on Pages that talks to two Workers. The api-worker serves the archival API from Postgres (through Hyperdrive) and hosts the chat copilot, one Durable Object per chat session. The realtime-worker polls FIRMS hourly, sends detections through a Queue to a Clusterer Durable Object that groups them into incidents, and pushes updates to browsers over WebSockets. New or growing incidents start an enrichment Workflow that calls Open-Meteo, OpenStreetMap place lookups, the api-worker (for the historical calendar) and Workers AI. The ingest-worker keeps a rolling 92-day near-real-time table in D1 and moves older data into Postgres. The historical archive is built offline by `scripts/backfill` and loaded into Postgres.
 
 ## Cloudflare products used
 
@@ -145,22 +147,22 @@ pnpm dev:web                    # http://localhost:5173
    node --env-file=.env scripts/backfill/src/cli.ts load --all --summary-only --prone
    ```
    The full load (detections and cell-days, several GB) needs the backfill outputs regenerated from FIRMS first; see [scripts/backfill/README.md](scripts/backfill/README.md).
-3. Set secrets with `npx wrangler secret put`: `FIRMS_MAP_KEY` and optionally `REPLAY_TOKEN` on realtime-worker, optionally `TAVILY_API_KEY` on api-worker, `FIRMS_MAP_KEY` on ingest-worker.
+3. Set secrets with `npx wrangler secret put`: `FIRMS_MAP_KEY` on realtime-worker, optionally `TAVILY_API_KEY` on api-worker, `FIRMS_MAP_KEY` on ingest-worker.
 4. Deploy the Workers. The api-worker and realtime-worker bind each other, so the first deploy on a new account deploys realtime-worker without its `services` block, then api-worker, then realtime-worker again with the full config.
 5. Upload the replay scenario: `pnpm --filter realtime-worker fetch-replay-fixture --store=r2` (or `--store=kv`).
-6. Put the Worker URLs in `apps/web/.env.production`, then build and deploy the web app:
+6. Put the Worker URLs in `apps/web/.env.production` and the site origin in `ALLOWED_ORIGINS` of both Workers, then build and deploy the web app:
    ```sh
    VITE_MAPBOX_TOKEN=<public token> pnpm --filter web build
-   npx wrangler pages deploy apps/web/dist --project-name unified-burn-record --branch main
+   cd apps/web && npx wrangler pages deploy dist --project-name world-fires --branch main
    ```
 
 ## Demo cost controls
 
 The public demo runs with these limits:
 
-- Live FIRMS polling every 30 minutes over North America.
+- Live FIRMS polling once an hour over North America. Live detections and quiet incidents are deleted after 48 hours, and an ended replay deletes its storage after 1 hour.
 - AI incident briefs: at most 50 per day across all streams (`BRIEF_DAILY_MAX`) and 10 per stream (`ENRICH_MAX_PER_STREAM`), 120 output tokens each, reasoning off.
-- Replay: one replay at a time; briefs for a replay are cached after the first run. Pause, resume and stop need `REPLAY_TOKEN`.
+- Replay: open to every visitor, with no key. One replay runs at a time, and starting it while it runs joins it. A new replay can start at most once every 30 seconds across all visitors. Briefs are cached per scenario: the Quebec replay makes at most 10 model calls in total, and later runs reuse the cached briefs with no new calls.
 - Chat: reasoning off, at most 8 model steps and 4096 output tokens per turn, and an AI Gateway rate limit of 60 requests per minute with spend limits of $2 a day and $5 a month.
 - The ingest-worker is not deployed, so there is no 3-hourly ingest cron.
 

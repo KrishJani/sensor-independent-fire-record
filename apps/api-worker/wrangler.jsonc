@@ -28,7 +28,7 @@
     "FIRE_DATA_SOURCE": "mock",
     // CORS + agent WebSocket origins. Exact origins, plus "https://*.<suffix>" for exactly one
     // subdomain label (Pages preview URLs). See src/origins.ts.
-    "ALLOWED_ORIGINS": "http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev",
+    "ALLOWED_ORIGINS": "http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev",
     // Archival harmonizer settings.
     "CALIBRATION_START_YEAR": "2013",
     "CALIBRATION_END_YEAR": "2021",

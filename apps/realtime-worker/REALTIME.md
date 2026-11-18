@@ -4,7 +4,7 @@ This worker turns NASA FIRMS hotspots into **fire incidents** and streams them t
 
 | Stream | Input | Use |
 |---|---|---|
-| `live` | FIRMS NRT polled every 30 min (VIIRS S-NPP, NOAA-20, NOAA-21, MODIS) | The Realtime tab |
+| `live` | FIRMS NRT polled hourly, last 2 UTC days (VIIRS S-NPP, NOAA-20, NOAA-21, MODIS); detections and quiet incidents are deleted after 48 h | The Realtime tab |
 | `replay:<id>` | A stored historical scenario played back fast (default: Quebec, 1–10 June 2023, in about 75 s) | Demos, and development without live fires |
 
 Streams never mix. All time logic (the active window, growth, inactive status) uses **detection time** (`acq_date` + `acq_time`, UTC), so a replay behaves exactly like live. "Now" for a stream is its **stream time**: the latest detection time it has seen.
@@ -73,7 +73,7 @@ Always unwrap batches first. The server coalesces updates and sends at most one 
 | `incident.brief` | `{ id, brief: Brief }` (below) | An AI brief is ready, or was refreshed after the area doubled |
 | `detections` | `{ points: [lon, lat, frpMw, tMs, conf][], replace?: true }` | New detections inside your viewport. `conf` is 0 (low), 1 (nominal) or 2 (high). With `replace: true`, the points replace your heat layer (on connect and after a viewport change); otherwise append them. |
 | `clock` | `{ t: number }` | Replay only: stream time advanced (each tick, about 2/s) |
-| `replay.status` | `{ status: "running" \| "paused" \| "stopped" \| "done", progress: 0..1 }` | Replay only |
+| `replay.status` | `{ status: "running" \| "paused" \| "stopped" \| "done", progress: 0..1, speed }` | Replay only |
 | `error` | `{ message }` | A bad client message |
 
 `Brief`:
@@ -157,7 +157,7 @@ Map layers:
 
 ## 3. REST
 
-All responses are JSON. Errors are `{ error: { code, message } }` with status 400, 404 or 500. CORS is limited to `ALLOWED_ORIGINS`.
+All responses are JSON. Errors are `{ error: { code, message } }` with status 400, 404, 409, 429 or 500. CORS is limited to `ALLOWED_ORIGINS`.
 
 | Method and path | Purpose |
 |---|---|
@@ -167,9 +167,15 @@ All responses are JSON. Errors are `{ error: { code, message } }` with status 40
 | `POST /realtime/replay` body `{ scenario?: "quebec-2023-06", speed?: number }` | Starts a replay and returns `ReplayInfo` with `reused: false` (201). Only **one replay runs at a time** across the whole worker: if one is already running (or paused) for the same scenario, you get that one back with `reused: true` (200) and `speed` is ignored; if a different scenario is running you get 409 `replay_busy`. `speed` is stream seconds per real second; the default `REPLAY_DEFAULT_SPEED` is 12000, so 10 days take about 75 s. Use `stream` from the response for the WebSocket. |
 | `GET /realtime/replay/:id` | `ReplayInfo` plus `clusterer` stats |
 | `POST /realtime/replay/:id/pause` · `/resume` · `/stop` | Replay control. Returns `ReplayInfo`. A replay paused for more than 30 min (since it started) gives up its slot to the next start. |
+| `POST /realtime/replay/:id/speed` body `{ speed: number }` | Changes the speed of a running or paused replay. Returns `ReplayInfo`; viewers get the new speed in `replay.status`. |
 | `GET /realtime/ws?stream=` | WebSocket (§2) |
 
-Starting a replay (`POST /realtime/replay`) is **public**: it reuses the running replay, only one replay runs at a time, and replay briefs come from the brief cache after the first run, so it costs nothing to repeat. When the `REPLAY_TOKEN` secret is set (production), `pause`, `resume` and `stop` need the header `x-replay-token: <token>`, otherwise 401 `unauthorized`. `GET` routes and the WebSocket stay open. Locally the secret is unset and no header is needed.
+Every replay route is **public**: any visitor can start, pause, resume, stop and change speed. The limits are server side:
+
+- One replay runs at a time. Starting the scenario that is already running joins it.
+- A new replay starts at most once per 30 s across the whole worker (`REPLAY_START_COOLDOWN_MS` in `src/limits.ts`). A start inside that window gets 429 `replay_cooldown` with `Retry-After`. Joining the running replay is not limited.
+- Replays make no new model calls once the scenario's brief cache is full (see the brief cache below).
+- An ended replay deletes its storage after 1 h (`REPLAY_PURGE_AFTER_MS`): the Replay, Clusterer, Incident and LiveHub Durable Objects of that stream.
 
 `ReplayInfo`:
 
@@ -207,11 +213,20 @@ Budgets (every run makes one AI call; re-briefs count):
 - `ENRICH_MAX_PER_STREAM` (10 in the demo deployment; 30 when unset): per replay stream, and per rolling 24 h (wall clock) for `live`.
 - `BRIEF_DAILY_MAX` (50 in the demo deployment, about 1,750 neurons; 60 when unset): across **all** streams per rolling 24 h, tracked in the `Control` Durable Object.
 
-**Replay brief cache.** Replays are deterministic, so a brief written during one replay is reused by later replays of the same scenario. The key in `REPLAY_KV` is `brief-cache/v1/<scenario>/<first detection id of the incident>/<level>` (level 0 = first brief, n = n-th area doubling). A hit skips the model call and does **not** count against `BRIEF_DAILY_MAX` (it still counts toward the per-stream cap, because the Workflow still fetches weather and places). Cached briefs carry `cached: true` and keep the `asOf` of the replay that wrote them; because tick timing varies a little between runs, their numbers can differ slightly from the incident's state at that moment. Bump `BRIEF_CACHE_VERSION` in `src/enrich/brief.ts` when the prompt changes. Clusterer counters `brief_cache_hits` / `brief_cache_misses` (in `GET /realtime/replay/:id`) give the hit rate.
+**Replay brief cache.** A brief written during one replay is reused by later replays of the same scenario. The key in `REPLAY_KV` is `brief-cache/<BRIEF_CACHE_VERSION>/<scenario>/<first detection id of the incident>/<level>` (level 0 = first brief, n = n-th area doubling). A hit skips the model call and does **not** count against `BRIEF_DAILY_MAX` (it still counts toward the per-stream cap, because the Workflow still fetches weather and places). Cached briefs carry `cached: true` and keep the `asOf` of the replay that wrote them.
+
+Tick timing and speed change which incidents win the 2-per-batch dispatch slots and which doubling levels they reach, so a later run can ask for a key the first run never wrote. The Clusterer then (1) reuses another cached level of the same incident, and (2) once the scenario holds `ENRICH_MAX_PER_STREAM` cached briefs, enriches the incident without a brief (`brief.status: "skipped"`) instead of calling the model. So a scenario costs at most `ENRICH_MAX_PER_STREAM` model calls in total (10 in the demo), however often it is replayed. Bump `BRIEF_CACHE_VERSION` in `src/enrich/brief.ts` when the prompt changes. Clusterer counters `brief_cache_hits`, `brief_cache_misses` (model calls) and `brief_cache_full_skips` (in `GET /realtime/replay/:id`) show what happened.
 
 What does not fit stays queued and is retried on later batches. `GET /realtime/replay/:id` → `clusterer.enrich` and `/realtime/health` → `briefBudget` show the usage.
 
 A failed step is recorded and does not fail the run.
+
+### Storage retention
+
+- Live: each cron tick calls `Clusterer.prune(now - 48 h)`. It deletes dedupe ids older than that, every incident with no detection in 48 h (with the incidents merged into it), their cells, queued enrichments and Incident Durable Objects, and their rows in the LiveHub. Merge records older than 48 h and enrich-log rows older than 24 h go too. The LiveHub keeps map points for 48 h of stream time.
+- Replays: an ended replay deletes its Replay, Clusterer, Incident and LiveHub storage after 1 h.
+- KV: poll state is one key per source and box, overwritten on each poll. The brief cache holds at most `ENRICH_MAX_PER_STREAM` briefs per scenario and cache version.
+- R2: the code does not delete the raw NRT responses under `raw/nrt/` (about 1 MB per poll). Cap them with a bucket lifecycle rule: `npx wrangler r2 bucket lifecycle add nasa-fire-realtime raw-nrt-expiry raw/nrt/ --expire-days 2`.
 
 ```ts
 {
@@ -266,7 +281,7 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 
 | Name | Kind | Default | Notes |
 |---|---|---|---|
-| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://fire.krishjani.com,https://unified-burn-record.pages.dev`. CORS and WebSocket origin check. |
+| `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev`. CORS and WebSocket origin check. |
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | Same as api-worker |
@@ -276,7 +291,6 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `BRIEF_MIN_AREA_KM2` | var | `200` | Replays only brief incidents with at least this `affectedAreaKm2` |
 | `BRIEF_REASONING_EFFORT` | var | `none` | Sent to kimi models only. `""` = model default. kimi-k2.6 accepts `high` or `none` (`low`/`medium` map to `high`). |
 | `BRIEF_MAX_TOKENS` | var | `120` | Brief output budget |
-| `REPLAY_TOKEN` | secret | unset | When set, replay pause/resume/stop need `x-replay-token` (start is public). `wrangler secret put REPLAY_TOKEN` in production; leave unset locally. |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
 Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` and `REPLAY_KV` (replay scenarios when R2 is not bound, and the replay brief cache); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`; **optional**: comment out `r2_buckets` on an account without R2 and scenarios come from `REPLAY_KV` while the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).
@@ -292,7 +306,7 @@ pnpm dev                                # :8789, --test-scheduled, shared state 
 pnpm fetch-replay-fixture               # once: Quebec archive → data/quebec-2023-06.json(.gz) → KV, or R2 if bound (local + remote)
 pnpm fetch-replay-fixture --upload-only # re-upload the existing data file without calling FIRMS
 pnpm replay-smoke                       # replay + WebSocket checks (SCENARIO, SPEED, HOST, WAIT_BRIEFS_S=120)
-curl "http://localhost:8789/__scheduled?cron=*/30+*+*+*+*"   # one live poll (or /cdn-cgi/local/scheduled)
+curl "http://localhost:8789/__scheduled?cron=0+*+*+*+*"   # one live poll and prune (or /cdn-cgi/local/scheduled)
 pnpm test && pnpm typecheck
 pnpm typegen                            # after editing wrangler.jsonc
 ```
@@ -311,9 +325,9 @@ The demo deployment runs on Krish Jani's Cloudflare account with AI Gateway `nas
 |---|---|
 | realtime-worker (`nasa-fire-realtime`) | https://nasa-fire-realtime.krishjani01.workers.dev |
 | api-worker (`nasa-fire-api`, copilot and archival API) | https://nasa-fire-api.krishjani01.workers.dev |
-| web (Pages `unified-burn-record`) | https://fire.krishjani.com |
+| web (Pages `world-fires`) | https://world-fires.pages.dev |
 
-Resources: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGEST_STATE`, shared with api-worker; realtime keys are `realtime:poll:*`) and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario; R2 is read first), D1 `firms-nrt-cells` and Hyperdrive `firms-pg` (api-worker). Secrets: `FIRMS_MAP_KEY` and `REPLAY_TOKEN` (realtime), `TAVILY_API_KEY` (api).
+Resources: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGEST_STATE`, shared with api-worker; realtime keys are `realtime:poll:*`) and `REPLAY_KV`, R2 `nasa-fire-realtime` (Quebec scenario; R2 is read first), D1 `firms-nrt-cells` and Hyperdrive `firms-pg` (api-worker). Secrets: `FIRMS_MAP_KEY` (realtime), `TAVILY_API_KEY` (api).
 
 `wrangler.jsonc` has no `account_id`: deploys go to the logged-in account, or `CLOUDFLARE_ACCOUNT_ID` when set.
 
@@ -322,5 +336,5 @@ Resources: Queue `nasa-fire-detections`, KV `FIRMS_INGEST_STATE` (binding `INGES
 ```sh
 pnpm fetch-replay-fixture --upload-only --store=r2   # or --store=kv
 npx wrangler deploy --dry-run && npx wrangler deploy
-HOST=nasa-fire-realtime.krishjani01.workers.dev REPLAY_TOKEN=... WAIT_BRIEFS_S=180 pnpm replay-smoke
+HOST=nasa-fire-realtime.krishjani01.workers.dev WAIT_BRIEFS_S=180 pnpm replay-smoke
 ```
