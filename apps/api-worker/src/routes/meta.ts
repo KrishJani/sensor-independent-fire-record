@@ -2,6 +2,7 @@ import { HARMONIZER_VERSION } from '@repo/harmonizer';
 import regionsConfig from '../../../../config/regions.json';
 import { db, type Ctx } from '../lib/db.ts';
 import { dataVersion } from '../lib/cache.ts';
+import { detailLoaded } from '../lib/detail.ts';
 
 export const REGIONS = regionsConfig.regions as { id: string; name: string; group?: string; bbox: [number, number, number, number]; exclude?: string[] }[];
 export const CONFIG = regionsConfig;
@@ -18,12 +19,13 @@ export async function archiveBounds(env: Env, ctx: Ctx) {
 export async function meta(env: Env, ctx: Ctx) {
   const today = new Date().toISOString().slice(0, 10);
   const retention = Number(env.D1_RETENTION_DAYS ?? 92);
-  const [bounds, va, vr, nrtAt, latest] = await Promise.all([
+  const [bounds, va, vr, nrtAt, latest, detail] = await Promise.all([
     archiveBounds(env, ctx),
     dataVersion(env, 'archival'),
     dataVersion(env, 'realtime'),
     env.INGEST_STATE!.get('ingest:nrt:last_success_at'),
     Promise.all(['TERRA', 'AQUA', 'SNPP', 'NOAA20', 'NOAA21'].map(async (s) => [s, await env.INGEST_STATE!.get(`ingest:sp:latest_date:${s}`)] as const)),
+    detailLoaded(env, ctx),
   ]);
   const byId = new Map(bounds.map((b) => [b.region_id, b]));
   const groups = [...new Set(REGIONS.map((r) => r.group).filter(Boolean))] as string[];
@@ -36,6 +38,8 @@ export async function meta(env: Env, ctx: Ctx) {
       maxDate: bounds.map((b) => b.to).sort().at(-1) ?? null,
       dataVersion: Number(va),
       latestBySatellite: Object.fromEntries(latest),
+      // false after a summary-only load: no map hot spots, drawn-area calendars or world layer.
+      detail,
     },
     realtime: { minDate: addDays(today, -retention), maxDate: today, updatedAt: nrtAt, dataVersion: Number(vr) },
     harmonizerVersion: HARMONIZER_VERSION,

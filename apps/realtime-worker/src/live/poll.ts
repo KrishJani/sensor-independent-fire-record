@@ -1,5 +1,5 @@
 /**
- * Live polling (Cron, every 10 min): FIRMS NRT area API → new rows → DETECTIONS_QUEUE.
+ * Live polling (Cron, every 30 min in wrangler.jsonc): FIRMS NRT area API → new rows → DETECTIONS_QUEUE.
  * The queue consumer forwards them to the "live" Clusterer.
  */
 

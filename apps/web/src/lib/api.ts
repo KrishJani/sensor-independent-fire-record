@@ -13,6 +13,10 @@ export class ApiError extends Error {
 export const isOutsideCoverage = (e: unknown) => e instanceof ApiError && e.code === 'outside_regions';
 export const OUTSIDE_COVERAGE_TEXT = 'Outside harmonized coverage (US regions only). The map shows raw detections here.';
 
+/** The API's 404 when only the summary archive is loaded (api-worker lib/detail.ts). */
+export const isDetailMissing = (e: unknown) => e instanceof ApiError && e.code === 'detail_not_loaded';
+export const DETAIL_MISSING_TEXT = 'Detailed hot spots are not loaded in this deployment.';
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
@@ -28,7 +32,8 @@ export type Level = 'coarse' | 'cells' | 'points';
 export interface Meta {
   regions: { id: string; name: string; group: string | null; bbox: Bbox; archival: { minDate: string; maxDate: string } | null }[];
   groups: { id: string; regions: string[]; archival: { minDate: string; maxDate: string | null } }[];
-  archival: { minDate: string; maxDate: string | null; dataVersion: number };
+  /** detail: false when only the summary archive is loaded (no map hot spots, drawn-area calendars or world layer). */
+  archival: { minDate: string; maxDate: string | null; dataVersion: number; detail?: boolean };
   realtime: { minDate: string; maxDate: string; updatedAt: string | null; dataVersion: number };
   harmonizerVersion: string;
 }
@@ -68,6 +73,13 @@ export interface CalendarResponse {
   summary: { peakMonth: string | null; peakYear: number | null; criticalMonths: number[]; criticalMonthNames: string[] };
 }
 export type CalendarRequest = { scope: string } | { bbox: Bbox } | { geometry: GeoJSON.Polygon };
+
+let metaPromise: Promise<Meta> | null = null;
+/** /api/meta, fetched once and shared by every caller (retried after a failure). */
+export function getMeta(): Promise<Meta> {
+  metaPromise ??= api.meta().catch((e) => { metaPromise = null; throw e; });
+  return metaPromise;
+}
 
 export const api = {
   meta: () => call<Meta>('/api/meta'),

@@ -49,7 +49,7 @@ export async function dbCheck(sql: any, log: (m: string) => void) {
   const aoi = await sql`select year, month, satellite, sum(cell_days)::int as cell_days from cell_months
     where grid_row between 2560 and 2579 and grid_col between 1160 and 1179 group by year, month, satellite`;
   const ms = Date.now() - t0;
-  if (ms < 1500) log(`✓ 1°×1° AOI, 2000–2025 from cell_months: ${aoi.length} rows in ${ms} ms (target < 1500 ms; this includes network to PlanetScale)`);
+  if (ms < 1500) log(`✓ 1°×1° AOI, 2000–2025 from cell_months: ${aoi.length} rows in ${ms} ms (target < 1500 ms; this includes network to the database)`);
   else fail(`1°×1° AOI took ${ms} ms (target < 1500 ms)`);
   return ok;
 }

@@ -2,7 +2,7 @@
 
 This is the public Cloudflare Worker, built with Hono. It serves the web app:
 
-- **Archival** data comes from **PlanetScale Postgres** through the **shared Hyperdrive** (`env.HYPERDRIVE`).
+- **Archival** data comes from **Postgres** (Neon in this deployment) through the **shared Hyperdrive** (`env.HYPERDRIVE`).
 - **Realtime** data comes from **D1** (`env.NRT_DB`).
 - **Chat** goes through **AI Gateway** (`env.AI`). Conversation memory lives in a Durable Object agent (`env.FireCopilotAgent`).
 
@@ -239,7 +239,7 @@ The system prompt, rebuilt every turn, includes today's date, the map context an
 - `/api/archival/spots` p95: under 400 ms cold, under 50 ms cached.
 - `/api/realtime/spots` p95: under 200 ms.
 - `/api/calendar` (1°×1° AOI, 2000–2025): under 1.5 s cold. To meet this, Postgres `cell_months` is used for long ranges, and `cell_days` only for ranges under 1 year or for polygon precision at the edges.
-- Placement `smart`, so the worker runs near PlanetScale.
+- Placement `smart`, so the worker runs near the database.
 
 ## 6. Tests
 

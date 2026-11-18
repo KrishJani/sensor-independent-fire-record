@@ -3,7 +3,7 @@
 This is a Cloudflare Worker with a **Cron Trigger** and no public routes. It keeps both storage tiers up to date:
 
 - **Realtime (NRT) → D1**, every **3 hours**. D1 holds a rolling window of exactly the last **92 days** (`D1_RETENTION_DAYS`).
-- **Archival (SP) → PlanetScale Postgres** through the **shared Hyperdrive**, at most once every **24 hours**. The gate is a KV flag.
+- **Archival (SP) → Postgres** through the **shared Hyperdrive**, at most once every **24 hours**. The gate is a KV flag.
 - **Handover (D1 → Postgres)**, on the same 24-hour gate. Dates that leave the 92-day window move to Postgres: they are dropped if SP already covers them, and otherwise copied as provisional `tier = 'NRT'` rows that SP replaces later.
 
 **Tier boundary (decided 2026-11-15):** the boundary is a fixed date, `today − 92 days`. **Realtime** reads D1 for the last 92 days. **Archival** reads Postgres for everything older. Each endpoint reads one store, so no date is counted twice. FIRMS SP lags NRT by roughly 2–3 months, so if SP publication ever falls more than 92 days behind, the handover keeps those dates in Postgres as provisional NRT instead of dropping them.

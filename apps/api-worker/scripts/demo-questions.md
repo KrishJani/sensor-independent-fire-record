@@ -26,6 +26,6 @@ Run against the deployed workers:
 
 ```sh
 cd apps/api-worker
-HOST=nasa-fire-api.hemanth3292.workers.dev RT_HOST=nasa-fire-realtime.hemanth3292.workers.dev node scripts/demo-chat.mjs
+HOST=nasa-fire-api.<subdomain>.workers.dev RT_HOST=nasa-fire-realtime.<subdomain>.workers.dev node scripts/demo-chat.mjs
 # AT=early asks right after starting a fresh replay (empty-result path); OUT=file.json saves the runs.
 ```

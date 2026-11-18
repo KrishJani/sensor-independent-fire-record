@@ -146,6 +146,23 @@ node --env-file=.env scripts/backfill/src/cli.ts load --all            # every r
 node --env-file=.env scripts/backfill/src/cli.ts load --group us --prone
 ```
 
+### Summary-only load (from a fresh clone)
+
+The per-year `detections/` and `cell_days/` files are not in git, so a fresh clone cannot run the full
+load. `--summary-only` loads what is in git: regions, α, availability, static masks, the daily,
+monthly and annual calendars, and (with `--prone`) the fire-prone tiles. It skips the global layer.
+It needs well under 100 MB of Postgres.
+
+```bash
+node --env-file=.env scripts/backfill/src/cli.ts load --all --summary-only --prone
+```
+
+Region and US calendars, FRP, prone areas and CSV export then work. The API reports
+`archival.detail: false` in `/api/meta`, and the web app shows "Detailed hot spots are not loaded in
+this deployment" in place of map hot spots, calendars for drawn areas and the world layer.
+
+### Full load
+
 Each region loads in one transaction and is checked against its `manifest.json`. After a successful
 load the loader sets `data:version:archival` in the `FIRMS_INGEST_STATE` KV namespace (account and
 namespace read from `apps/api-worker/wrangler.jsonc`, written with `wrangler kv key put --remote`).

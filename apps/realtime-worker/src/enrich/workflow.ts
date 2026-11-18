@@ -56,7 +56,7 @@ export interface Enrichment {
   completedAt: number;
 }
 
-const UA = "skywalkers77-fire-realtime/1.0 (NASA Space Apps 2026 demo; https://github.com/skywalkers77)";
+const UA = "unified-burn-record-realtime/1.0 (NASA Space Apps 2026 demo; https://github.com/KrishJani/unified-burn-record)";
 
 
 async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<unknown> {

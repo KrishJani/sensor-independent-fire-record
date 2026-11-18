@@ -10,6 +10,7 @@
 import { cellInRegion, type Bbox } from '@repo/harmonizer';
 import { db, type Ctx } from '../lib/db.ts';
 import { ApiError, parseBbox, parseDate } from '../lib/http.ts';
+import { requireDetail } from '../lib/detail.ts';
 import { REGIONS } from './meta.ts';
 
 // deg² per level. coarse covers the whole globe (world zoom); every level caps its feature count
@@ -60,6 +61,7 @@ export async function spots(env: Env, ctx: Ctx, q: URLSearchParams) {
   if (!['ALL', 'VIIRS', 'MODIS'].includes(sensor)) throw new ApiError(400, 'sensor_invalid', 'sensor must be all, viirs or modis');
   const from = parseDate(q.get('from'), '2000-11-01', 'from');
   const to = parseDate(q.get('to'), new Date().toISOString().slice(0, 10), 'to');
+  await requireDetail(env, ctx);
   const sql = db(env, ctx);
   const r0 = Math.floor((bbox[1] + 90) * 20), r1 = Math.ceil((bbox[3] + 90) * 20) - 1, c0 = Math.floor((bbox[0] + 180) * 20), c1 = Math.ceil((bbox[2] + 180) * 20) - 1;
   const ym0 = +from.slice(0, 4) * 100 + +from.slice(5, 7), ym1 = +to.slice(0, 4) * 100 + +to.slice(5, 7);

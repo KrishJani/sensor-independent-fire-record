@@ -18,7 +18,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 2. **Serve** a burning activity calendar (Year × Month) for any area of interest (AOI) inside a **harmonized region** (`config/regions.json`), with anomalies against the multi-year median. Each calendar is shown **before and after harmonization** (§7.1).
 3. **Show** fire spots on an interactive map, **globally**, on both tabs. The map fetches the spots for the visible area as the user pans and zooms. Outside harmonized regions the map shows raw sensor activity, labelled by satellite (decided 2026-11-15).
 4. **Separate** two data tiers:
-   - **Archival** = FIRMS Standard Processing (`_SP`), stored in **PlanetScale Postgres**.
+   - **Archival** = FIRMS Standard Processing (`_SP`), stored in **Postgres** (Neon in this deployment).
    - **Realtime** = FIRMS Near Real-Time (`_NRT`), stored in **Cloudflare D1**.
 5. **Export** hotspots and the calendar as CSV.
 6. **Assist** emergency managers with a chat copilot (AI Gateway + agent memory), grounded in the AOI the user is currently viewing.
@@ -36,7 +36,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 ```
                          ┌───────────────────────────────┐
   FIRMS Archive download │  scripts/backfill (Node, once) │──► data/harmonized/**.csv  (checked in)
-  (MODIS_SP, VIIRS_SP)──►│  uses @repo/harmonizer         │──► PlanetScale Postgres (--load)
+  (MODIS_SP, VIIRS_SP)──►│  uses @repo/harmonizer         │──► Postgres (--load)
                          └───────────────────────────────┘
 
   FIRMS Area API          ┌───────────────────────────────┐
@@ -56,7 +56,7 @@ The web app (`apps/web`) and the backfill script (`scripts/backfill`) are specif
 
 | Resource | Binding | ingest-worker | api-worker |
 |---|---|---|---|
-| PlanetScale Postgres (via **one shared Hyperdrive config**) | `HYPERDRIVE` | read/write | read-only |
+| Postgres (via **one shared Hyperdrive config**) | `HYPERDRIVE` | read/write | read-only |
 | D1 `firms-nrt-cells` | `NRT_DB` | read/write | read-only |
 | KV `INGEST_STATE` | `INGEST_STATE` | read/write (flags, locks) | read-only (data version, SP boundary) |
 | Workers AI / AI Gateway | `AI` | — | yes |
@@ -131,7 +131,7 @@ Migrations are in `packages/db/postgres/` and `packages/db/d1/`.
 
 ## 6. Backfill script: `scripts/backfill`
 
-This is a one-time, re-runnable Node script (`pnpm --filter backfill start`). It produces the historical harmonized dataset, **checks it into git**, and optionally loads it into PlanetScale.
+This is a one-time, re-runnable Node script (`pnpm --filter backfill start`). It produces the historical harmonized dataset, **checks it into git**, and optionally loads it into Postgres.
 
 ### 6.1 Inputs
 
@@ -302,7 +302,7 @@ sample_api/               Golden test fixtures
 ## 10. Milestones
 
 1. **Harmonizer and tests** against `sample_api/`.
-2. **Backfill** for `california`. Commit `data/harmonized/california/**`. Load into PlanetScale.
+2. **Backfill** for `california`. Commit `data/harmonized/california/**`. Load into Postgres.
 3. **api-worker:** `/api/meta`, `/api/archival/spots`, `/api/calendar` (archival).
 4. **web:** map with fetch-on-move, Archival tab, calendar box, calendar drawer, CSV export.
 5. **ingest-worker:** NRT every 3 h into D1, SP gated to 24 h into Postgres, KV flags.

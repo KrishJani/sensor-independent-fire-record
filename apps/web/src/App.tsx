@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
-import { api } from './lib/api';
+import { getMeta } from './lib/api';
 import { DatePicker } from './components/DatePicker';
 import { MapView } from './components/MapView';
 import { TabSwitcher } from './components/TabSwitcher';
@@ -65,7 +65,7 @@ export function App() {
   const [archivalMax, setArchivalMax] = useState<ISODate | null>(null);
   // Archival bounds come from the API (what is actually loaded), not from a hardcoded window.
   useEffect(() => {
-    api.meta().then((m) => m.archival.maxDate && setArchivalMax(m.archival.maxDate as ISODate)).catch(() => {});
+    getMeta().then((m) => m.archival.maxDate && setArchivalMax(m.archival.maxDate as ISODate)).catch(() => {});
   }, []);
   const windows = useMemo(() => {
     const archival = dateWindow('archival');

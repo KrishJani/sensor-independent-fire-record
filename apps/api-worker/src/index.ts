@@ -1,7 +1,7 @@
-// nasa-fire-api: chat copilot (FireCopilotAgent, /agents/*), archival API (PlanetScale via Hyperdrive),
+// nasa-fire-api: chat copilot (FireCopilotAgent, /agents/*), archival API (Postgres via Hyperdrive),
 // realtime reads (D1). Spec: apps/api-worker/SPEC.md. Harmonization math: @repo/harmonizer.
 //
-// One deployment (wrangler.jsonc, account 7d56e968…) serves the copilot and the archival endpoints. A config
+// One deployment (wrangler.jsonc) serves the copilot and the archival endpoints. A config
 // without HYPERDRIVE + INGEST_STATE (e.g. a local chat-only setup) still works: the archival routes answer
 // 503 archival_not_configured instead of failing.
 import { routeAgentRequest } from "agents";

@@ -1,4 +1,4 @@
-// Load checked-in outputs into the archival Postgres (PlanetScale) over a DIRECT connection
+// Load checked-in outputs into the archival Postgres over a DIRECT connection
 // (DATABASE_URL in .env; Hyperdrive is for Workers). Idempotent: each region/scope is replaced inside one
 // transaction (delete, then COPY), so re-running never duplicates and a failure leaves the old data.
 //
@@ -6,6 +6,9 @@
 //                         α model + α applied, daily/monthly/annual calendars, static mask, manifest, validation
 //   load --group us       group calendars (daily, monthly, annual)
 //   load --global         global 0.5° map layer + global static mask + flare-inventory cells
+//   --summary-only        regions only: skip detections, cell_days and cell_months, which are not in git.
+//                         Calendars, α, availability, masks and prone tiles load; map hot spots and
+//                         calendars for drawn areas need the full load.
 //
 // Every load ends with row-count checks against the manifests.
 
@@ -24,7 +27,7 @@ export async function connect(): Promise<Sql> {
   const raw = process.env.DATABASE_URL;
   if (!raw) throw new Error('DATABASE_URL is not set (add it to .env; run with node --env-file=.env)');
   const u = new URL(raw);
-  // PlanetScale strings carry sslrootcert=system (a libpq hint); postgres.js would send it to the server.
+  // Some providers' strings carry sslrootcert=system (a libpq hint); postgres.js would send it to the server.
   u.searchParams.delete('sslrootcert');
   const { default: postgres } = await import('postgres');
   return postgres(u.toString(), { max: 4, ssl: 'require', onnotice: () => {}, connect_timeout: 30, idle_timeout: 60 });
@@ -81,16 +84,19 @@ const ix = (h: string[], name: string) => {
   return i;
 };
 
-export async function loadRegion(sql: Sql, cfg: RegionsConfig, region: Region, log: (m: string) => void) {
+const BULK = /^missing (cell_days|detections)\//;
+
+export async function loadRegion(sql: Sql, cfg: RegionsConfig, region: Region, log: (m: string) => void, summaryOnly = false) {
   const D = join(REPO_ROOT, 'data/harmonized', region.id);
   const v = verifyOutputs(D);
-  if (!v.ok) throw new Error(`${region.id}: outputs fail verify — not loading:\n  ${v.problems.join('\n  ')}`);
+  const problems = summaryOnly ? v.problems.filter((p) => !BULK.test(p)) : v.problems;
+  if (problems.length) throw new Error(`${region.id}: outputs fail verify — not loading:\n  ${problems.join('\n  ')}`);
   const manifest = JSON.parse(readFileSync(join(D, 'manifest.json'), 'utf8'));
   const validation = JSON.parse(readFileSync(join(D, 'validation.json'), 'utf8'));
   const model = JSON.parse(readFileSync(join(D, 'alpha_model.json'), 'utf8')).model;
   const ihDir = join(D, 'industrial_heat');
   const ihManifest = existsSync(join(ihDir, 'manifest.json')) ? JSON.parse(readFileSync(join(ihDir, 'manifest.json'), 'utf8')) : null;
-  if (!ihManifest) log(`${region.id}: no industrial_heat/ (run \`backfill industrial-heat --region ${region.id}\`); loading fire only`);
+  if (!ihManifest && !summaryOnly) log(`${region.id}: no industrial_heat/ (run \`backfill industrial-heat --region ${region.id}\`); loading fire only`);
   const files = (sub: string, re: RegExp) => (existsSync(join(D, sub)) ? readdirSync(join(D, sub)).filter((n) => re.test(n)).sort().map((n) => join(D, sub, n)) : []);
   const t0 = Date.now();
   const counts: Record<string, number> = {};
@@ -111,25 +117,27 @@ export async function loadRegion(sql: Sql, cfg: RegionsConfig, region: Region, l
       validation: tx.json(validation),
     })}`;
 
-    // detections: fire, then industrial heat (with reason)
-    const detCols = ['lat', 'lon', 'acq_date', 'acq_time', 'satellite', 'sensor', 'tier', 'confidence', 'frp_mw', 'day_night', 'fire_type', 'version', 'cell_id', 'hv'];
-    counts.fire = await copyFiles(tx, 'detections', [...detCols, 'region_id', 'heat_class'], files('detections', /^\d{4}\.csv\.gz$/), (f) => [...f.slice(0, 14), region.id, 'fire']);
-    counts.industrial = await copyFiles(tx, 'detections', [...detCols, 'heat_reason', 'region_id', 'heat_class'], files('industrial_heat', /^\d{4}\.csv\.gz$/), (f) => [...f.slice(0, 15), region.id, 'industrial']);
+    if (!summaryOnly) {
+      // detections: fire, then industrial heat (with reason)
+      const detCols = ['lat', 'lon', 'acq_date', 'acq_time', 'satellite', 'sensor', 'tier', 'confidence', 'frp_mw', 'day_night', 'fire_type', 'version', 'cell_id', 'hv'];
+      counts.fire = await copyFiles(tx, 'detections', [...detCols, 'region_id', 'heat_class'], files('detections', /^\d{4}\.csv\.gz$/), (f) => [...f.slice(0, 14), region.id, 'fire']);
+      counts.industrial = await copyFiles(tx, 'detections', [...detCols, 'heat_reason', 'region_id', 'heat_class'], files('industrial_heat', /^\d{4}\.csv\.gz$/), (f) => [...f.slice(0, 15), region.id, 'industrial']);
 
-    // cell_days (drop grid_lat/grid_lon: row/col are generated from cell_id)
-    counts.cell_days = await copyFiles(
-      tx, 'cell_days',
-      ['acq_date', 'cell_id', 'satellite', 'sensor', 'tier', 'n_detections', 'n_passes', 'peak_frp_mw', 'sum_frp_mw', 'first_time', 'last_time', 'hv', 'region_id'],
-      files('cell_days', /^\d{4}\.csv$/),
-      (f) => [f[0], f[1], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13], region.id],
-    );
-    await tx`
-      insert into cell_months (region_id, year, month, cell_id, satellite, sensor, cell_days, n_detections, peak_frp_mw, last_date)
-      select region_id, extract(year from acq_date)::smallint, extract(month from acq_date)::smallint, cell_id, satellite, min(sensor),
-             count(*)::smallint, sum(n_detections)::int, max(peak_frp_mw), max(acq_date)
-      from cell_days where region_id = ${region.id}
-      group by region_id, 2, 3, cell_id, satellite`;
-    counts.cell_months = (await tx`select count(*)::int as n from cell_months where region_id = ${region.id}`)[0].n;
+      // cell_days (drop grid_lat/grid_lon: row/col are generated from cell_id)
+      counts.cell_days = await copyFiles(
+        tx, 'cell_days',
+        ['acq_date', 'cell_id', 'satellite', 'sensor', 'tier', 'n_detections', 'n_passes', 'peak_frp_mw', 'sum_frp_mw', 'first_time', 'last_time', 'hv', 'region_id'],
+        files('cell_days', /^\d{4}\.csv$/),
+        (f) => [f[0], f[1], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13], region.id],
+      );
+      await tx`
+        insert into cell_months (region_id, year, month, cell_id, satellite, sensor, cell_days, n_detections, peak_frp_mw, last_date)
+        select region_id, extract(year from acq_date)::smallint, extract(month from acq_date)::smallint, cell_id, satellite, min(sensor),
+               count(*)::smallint, sum(n_detections)::int, max(peak_frp_mw), max(acq_date)
+        from cell_days where region_id = ${region.id}
+        group by region_id, 2, 3, cell_id, satellite`;
+      counts.cell_months = (await tx`select count(*)::int as n from cell_months where region_id = ${region.id}`)[0].n;
+    }
 
     counts.availability = await copyFiles(tx, 'source_availability', ['satellite', 'acq_date', 'region_id'], [join(D, 'source_availability.csv')], (f) => [f[0], f[1], region.id]);
 
@@ -173,9 +181,13 @@ export async function loadRegion(sql: Sql, cfg: RegionsConfig, region: Region, l
     counts.static_mask = await copyFiles(tx, 'static_mask', ['cell_id', 'grid_lat', 'grid_lon', 'n_static', 'reason', 'region_id'], [join(D, 'static_mask.csv')], (f) => [f[0], f[1], f[2], f[3], f[4] || 'static_type', region.id]);
   });
 
+  if (summaryOnly) {
+    log(`${region.id}: summary loaded in ${((Date.now() - t0) / 1000).toFixed(0)} s — ${Object.entries(counts).map(([k, n]) => `${k} ${n.toLocaleString()}`).join(', ')} (no detections or cell_days)`);
+    return counts;
+  }
   // Checks against the manifests (outside the transaction: what is now committed).
-  const problems: string[] = [];
-  const want = (name: string, got: number, exp: number | undefined) => { if (exp !== undefined && got !== exp) problems.push(`${name}: loaded ${got}, manifest says ${exp}`); };
+  const loadProblems: string[] = [];
+  const want = (name: string, got: number, exp: number | undefined) => { if (exp !== undefined && got !== exp) loadProblems.push(`${name}: loaded ${got}, manifest says ${exp}`); };
   want('fire detections', counts.fire, manifest.counts.detections);
   want('cell_days', counts.cell_days, manifest.counts.cell_days);
   if (ihManifest) want('industrial detections', counts.industrial, Object.values<number>(ihManifest.counts).reduce((a, b) => a + b, 0));
@@ -185,7 +197,7 @@ export async function loadRegion(sql: Sql, cfg: RegionsConfig, region: Region, l
   want('fire detections in db', db.fire, counts.fire);
   want('industrial detections in db', db.ind, counts.industrial);
   want('cell_days in db', db.cd, counts.cell_days);
-  if (problems.length) throw new Error(`${region.id}: load check FAILED\n  ${problems.join('\n  ')}`);
+  if (loadProblems.length) throw new Error(`${region.id}: load check FAILED\n  ${loadProblems.join('\n  ')}`);
   log(`${region.id}: loaded in ${((Date.now() - t0) / 1000).toFixed(0)} s — ${Object.entries(counts).map(([k, n]) => `${k} ${n.toLocaleString()}`).join(', ')} ✓ matches manifest`);
   return counts;
 }

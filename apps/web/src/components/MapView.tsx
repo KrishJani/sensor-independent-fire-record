@@ -17,14 +17,17 @@ import { useMeasure, fmtArea, fmtKm } from '../lib/measure';
 import { captureMap } from '../lib/capture';
 import { FireExplorer } from './FireExplorer';
 import { Toolbar } from './Toolbar';
-import { api } from '../lib/api';
+import { DETAIL_MISSING_TEXT, getMeta } from '../lib/api';
+import { useArchiveDetail } from '../lib/useArchiveDetail';
 import type { Tab } from '../lib/dataWindows';
 
-const INITIAL_CENTER: [number, number] = [-40, 22];
+// Shifted west so the incident panel covers the open Pacific, not North America.
+const INITIAL_CENTER: [number, number] = [-52, 28];
 const TERMINATOR_REFRESH_MS = 60_000;
 
+/** Flat Mercator world filling the screen: one world width (512 px at z0) covers the larger side. */
 function initialZoom(): number {
-  return window.innerWidth < 700 ? 0.6 : 1.6;
+  return Math.max(0, Math.log2(Math.max(window.innerWidth, window.innerHeight) / 512));
 }
 
 function applyAll(map: mapboxgl.Map, settings: MapSettings, scheme: ColorScheme) {
@@ -64,7 +67,8 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 900);
   // Collapsed until asked for: the toolbar toggle, a region click or an analysed area opens it.
   const [timelineOpen, setTimelineOpen] = useState(false);
-  const [regionArea, setRegionArea] = useState<{ bbox: [number, number, number, number]; name: string } | null>(null);
+  const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
+  const detail = useArchiveDetail();
   const scheme = useColorScheme();
 
   const latest = useRef({ settings, scheme });
@@ -145,6 +149,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
     enabled: tab === 'archival',
     tier: 'archival',
     version: 0,
+    detail,
     from,
     to,
     activity: settings.fireActivity,
@@ -159,7 +164,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
 
   // Harmonized region outlines (from /api/meta), redrawn after style changes.
   const [regions, setRegions] = useState<{ id: string; name: string; bbox: [number, number, number, number] }[] | null>(null);
-  useEffect(() => { api.meta().then((m) => setRegions(m.regions)).catch(() => {}); }, []);
+  useEffect(() => { getMeta().then((m) => setRegions(m.regions)).catch(() => {}); }, []);
   useEffect(() => {
     if (!map) return;
     const draw = () => { try { drawRegions(map, tab === 'archival' && settings.regionOutlines ? regions : null); } catch { /* style loading */ } };
@@ -178,7 +183,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
         .filter(({ bbox: [w, s, ee, n] }) => lng >= w && lng <= ee && lat >= s && lat <= n)
         .sort((a, b) => (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]) - (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]))[0];
       if (!hit) return;
-      setRegionArea({ bbox: hit.bbox, name: hit.name });
+      setRegionArea({ id: hit.id, bbox: hit.bbox, name: hit.name });
       setTimelineOpen(true);
     };
     map.on('click', onClick);
@@ -239,7 +244,9 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             showCoordinates={settings.coordinates}
             showScale={settings.scale}
           />
-          {tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
+          {tab === 'archival' && settings.fireActivity && layers.unavailable ? (
+            <div className="map-status material" role="status">{DETAIL_MISSING_TEXT}</div>
+          ) : tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
             <div className="map-status material" role="status">
               {layers.error ? `Couldn't load fire data: ${layers.error}` : layers.loading ? <Ember caption="Loading fires" /> : 'Showing the strongest results in view. Zoom in to see all.'}
             </div>
@@ -248,6 +255,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             <>
               <FireExplorer
                 tier="archival"
+                detail={detail !== false}
                 map={map}
                 settings={settings}
                 onChange={update}
@@ -256,7 +264,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 onClose={() => setExplorerOpen(false)}
                 onJump={(date, center, zoom) => { if (date) onPickDate(date); if (center) map.flyTo({ center, zoom: zoom ?? map.getZoom() }); }}
               />
-              {timelineOpen && <CalendarDrawer map={map} onPickMonth={onPickDate} onClose={() => setTimelineOpen(false)} drawn={analysed} region={regionArea} />}
+              {timelineOpen && <CalendarDrawer map={map} onPickMonth={onPickDate} onClose={() => setTimelineOpen(false)} drawn={analysed} region={regionArea} detail={detail !== false} />}
               {measure.mode !== 'off' && (
                 <div className="measure material" role="status" aria-label="Measurement">
                   <div className="measure__modes">

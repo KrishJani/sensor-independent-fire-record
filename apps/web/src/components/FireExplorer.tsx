@@ -5,7 +5,7 @@ import { Ember } from './Ember';
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type mapboxgl from 'mapbox-gl';
-import { api, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth } from '../lib/api';
+import { api, DETAIL_MISSING_TEXT, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth } from '../lib/api';
 import { flameRamp, INDUSTRIAL_COLOR, PRONE_COLORS, SENSOR_COLORS } from '../lib/fireLayers';
 import type { FireColoring, FireMode, MapSettings, RangePreset } from '../lib/mapSettings';
 import { Segmented, type SegmentedOption } from './Segmented';
@@ -34,6 +34,8 @@ interface Props {
   map: mapboxgl.Map;
   /** realtime: last 92 days from D1 (Day / Week / Month only, no archival events). */
   tier: 'archival' | 'realtime';
+  /** false when only the summary archive is loaded (no fire layers; notable events for the US only). */
+  detail?: boolean;
   settings: MapSettings;
   onChange(patch: Partial<MapSettings>): void;
   rangeLabel: string;
@@ -42,7 +44,7 @@ interface Props {
   onClose(): void;
 }
 
-export function FireExplorer({ map, tier, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
+export function FireExplorer({ map, tier, detail = true, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
   const coloringOptions: SegmentedOption<FireColoring>[] =
     s.fireMode === 'raw'
       ? [{ id: 'recency', label: 'Time' }, { id: 'intensity', label: 'Intensity' }, { id: 'sensor', label: 'Sensor' }]
@@ -65,7 +67,7 @@ export function FireExplorer({ map, tier, settings: s, onChange, rangeLabel, onJ
       <Section title="Fires & hotspots">
         <Toggle label="Show fire data" checked={s.fireActivity} onChange={(fireActivity) => onChange({ fireActivity })} />
         <Segmented<FireMode> options={MODES} value={s.fireMode} onChange={(fireMode) => onChange({ fireMode })} label="Display" className="segmented--fill" disabled={!s.fireActivity} />
-        <p className="explorer__note">{MODE_NOTE[s.fireMode]}</p>
+        <p className="explorer__note">{detail ? MODE_NOTE[s.fireMode] : DETAIL_MISSING_TEXT}</p>
         <Segmented<FireColoring> options={coloringOptions} value={coloring} onChange={(fireColoring) => onChange({ fireColoring })} label="Colour by" className="segmented--fill" disabled={!s.fireActivity || s.fireMode === 'activity'} />
         {s.fireMode === 'raw' && (
           <div className="explorer__sensors">
@@ -92,7 +94,7 @@ export function FireExplorer({ map, tier, settings: s, onChange, rangeLabel, onJ
         {tier === 'archival' && <Toggle label="Harmonized region outlines" checked={s.regionOutlines} onChange={(regionOutlines) => onChange({ regionOutlines })} />}
       </Section>
 
-      {tier === 'archival' && <NotableEvents map={map} onJump={onJump} />}
+      {tier === 'archival' && <NotableEvents map={map} onJump={onJump} detail={detail} />}
     </aside>
   );
 }
@@ -111,7 +113,7 @@ function Legend({ mode, coloring }: { mode: FireMode; coloring: FireColoring }) 
 }
 
 /** Notable events (archival): record months in view and the most significant fire-prone areas. */
-function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string, center?: [number, number], zoom?: number): void }) {
+function NotableEvents({ map, onJump, detail }: { map: mapboxgl.Map; onJump(date: string, center?: [number, number], zoom?: number): void; detail: boolean }) {
   const [months, setMonths] = useState<CalendarMonth[] | null>(null);
   const [outside, setOutside] = useState(false);
   const [prone, setProne] = useState<{ lat: number; lon: number; region_id: string; why: string }[] | null>(null);
@@ -125,7 +127,8 @@ function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string
       t = setTimeout(() => {
         const b = map.getBounds()!;
         const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => Math.round(v * 20) / 20) as Bbox;
-        const small = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) <= 400;
+        // A view's calendar is built from cell-days; without the detailed archive, use the US calendar.
+        const small = detail && (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) <= 400;
         ac.current?.abort();
         const c = (ac.current = new AbortController());
         setScopeLabel(small ? 'this view' : 'the United States');
@@ -144,7 +147,7 @@ function NotableEvents({ map, onJump }: { map: mapboxgl.Map; onJump(date: string
     map.on('moveend', load);
     api.proneSummary().then((p) => setProne(p.mostSignificant.slice(0, 4))).catch(() => setProne([]));
     return () => { clearTimeout(t); map.off('moveend', load); ac.current?.abort(); };
-  }, [map]);
+  }, [map, detail]);
 
   return (
     <Section title="Notable events" meta={scopeLabel}>

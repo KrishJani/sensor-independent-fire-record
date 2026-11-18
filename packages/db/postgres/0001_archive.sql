@@ -1,4 +1,4 @@
--- Archival tier (PlanetScale Postgres, via Hyperdrive in Workers; direct connection for `backfill load`).
+-- Archival tier (Postgres, via Hyperdrive in Workers; direct connection for `backfill load`).
 -- Written by: scripts/backfill (load), apps/ingest-worker (24 h SP job + D1 handover).
 -- Read by:    apps/api-worker.  Harmonization math lives in @repo/harmonizer; SQL only stores/aggregates.
 -- Grid: 0.05°, cell_id = row * 7200 + col (row = cell_id / 7200, col = cell_id % 7200).
