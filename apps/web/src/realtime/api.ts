@@ -1,5 +1,4 @@
 import { REALTIME_URL } from './config';
-import { presenterKey } from './presenter';
 import { normalizeIncident, type IncidentDetail, type ReplayInfo } from './types';
 
 export class ApiError extends Error {
@@ -24,12 +23,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/** Replay controls are open to every visitor (one replay at a time, see the realtime-worker). */
 function replayPost<T>(path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  // Start is public; pause/resume/stop need the presenter key (see presenter.ts).
-  const key = presenterKey();
-  if (key) headers['x-replay-token'] = key;
-  return request<T>(path, { method: 'POST', headers, body: JSON.stringify(body ?? {}) });
+  return request<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
 }
 
 export async function getIncident(id: string, signal?: AbortSignal): Promise<IncidentDetail> {
@@ -49,6 +49,9 @@ export const startReplay = (scenario: string, speed?: number) =>
 
 export const controlReplay = (id: string, action: 'pause' | 'resume' | 'stop') =>
   replayPost<ReplayInfo>(`/realtime/replay/${id}/${action}`);
+
+export const setReplaySpeed = (id: string, speed: number) =>
+  replayPost<ReplayInfo>(`/realtime/replay/${id}/speed`, { speed });
 
 /**
  * Join the replay of `scenario` that is already running (or paused), else start one.

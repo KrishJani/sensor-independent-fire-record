@@ -63,9 +63,16 @@ export function App() {
   }, [initial, update]);
 
   const [archivalMax, setArchivalMax] = useState<ISODate | null>(null);
+  // false: summary-only archive (no day-by-day hot spots); null while unknown.
+  const [archivalDetail, setArchivalDetail] = useState<boolean | null>(null);
   // Archival bounds come from the API (what is actually loaded), not from a hardcoded window.
   useEffect(() => {
-    getMeta().then((m) => m.archival.maxDate && setArchivalMax(m.archival.maxDate as ISODate)).catch(() => {});
+    getMeta()
+      .then((m) => {
+        if (m.archival.maxDate) setArchivalMax(m.archival.maxDate as ISODate);
+        setArchivalDetail(m.archival.detail !== false);
+      })
+      .catch(() => {});
   }, []);
   const windows = useMemo(() => {
     const archival = dateWindow('archival');
@@ -85,6 +92,19 @@ export function App() {
   const to = r.to > range.max ? range.max : r.to;
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [realtimeCtx, setRealtimeCtx] = useState<RealtimeContext | null>(null);
+  // Realtime: the date never drives the map (Live is a rolling window, a replay is its scenario).
+  const replayMode = tab === 'realtime' && realtimeCtx?.mode === 'replay';
+  const datePicker =
+    tab === 'archival'
+      ? {
+          notice:
+            archivalDetail === false
+              ? "Daily hot spots aren't loaded in this demo. Use the monthly calendar for history."
+              : undefined,
+        }
+      : replayMode
+        ? { label: 'June 2023', locked: 'This replay covers June 2023 only.' }
+        : { label: 'Last 48 hours', locked: 'Live shows detections from the last 48 hours.' };
 
   return (
     <div className="app">
@@ -108,13 +128,20 @@ export function App() {
       />
 
       <div className="overlay-top">
-        <TabSwitcher value={tab} onChange={setTab} />
+        <div className="overlay-top__start">
+          <TabSwitcher value={tab} onChange={setTab} />
+          <div className="brand material">
+            <span className="brand__name">World Fires</span>
+            <span className="brand__sub">Built at NASA Space Apps 2026</span>
+          </div>
+        </div>
         <DatePicker
           key={tab}
           value={selected}
           min={range.min}
           max={range.max}
           onChange={(date) => setDates((prev) => ({ ...prev, [tab]: date }))}
+          {...datePicker}
         />
       </div>
     </div>

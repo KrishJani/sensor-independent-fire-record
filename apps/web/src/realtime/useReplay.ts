@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, controlReplay, getReplay, startOrJoinReplay } from './api';
-import { clearPresenterKey, presenterKey } from './presenter';
+import { ApiError, controlReplay, getReplay, setReplaySpeed, startOrJoinReplay } from './api';
 import type { ReplayInfo } from './types';
 
 const STORAGE_KEY = 'skywalkers77.realtime.replay.v1';
@@ -27,12 +26,9 @@ function save(v: { mode: 'live' | 'replay'; id: string | null }) {
 function message(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'replay_busy') return `${e.message}. Stop it first or wait for it to finish.`;
-    if (e.status === 401) {
-      if (presenterKey()) {
-        clearPresenterKey();
-        return 'The presenter key was rejected. Open the presenter link again.';
-      }
-      return 'Only the presenter can start or control the replay right now.';
+    if (e.code === 'replay_cooldown') {
+      const s = /(\d+) s/.exec(e.message)?.[1];
+      return `A replay was started a moment ago. Try again in ${s ? `${s} seconds` : 'a few seconds'}.`;
     }
     return e.message;
   }
@@ -105,6 +101,10 @@ export function useReplay() {
     (action: 'pause' | 'resume' | 'stop') => (info ? run(() => controlReplay(info.id, action)) : null),
     [info, run],
   );
+  const setSpeed = useCallback(
+    (speed: number) => (info ? run(() => setReplaySpeed(info.id, speed)) : null),
+    [info, run],
+  );
 
-  return { mode, setMode, info, busy, error, start, control };
+  return { mode, setMode, info, busy, error, start, control, setSpeed };
 }

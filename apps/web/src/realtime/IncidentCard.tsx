@@ -51,6 +51,7 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
     ? candidates.reduce((a, b) => (briefTime(b) > briefTime(a) ? b : a))
     : null;
   const briefFailed = !shownBrief && enrichment?.brief?.status === 'failed';
+  const briefSkipped = !shownBrief && enrichment?.brief?.status === 'skipped';
   const nearest = titlePlace(places);
   const title = nearest ? `Near ${nearest.name}` : fmtLatLon(i.centroid);
 
@@ -153,7 +154,9 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
           <p className="rt-dim">
             {briefFailed
               ? 'The brief could not be generated.'
-              : 'Briefs are written for the largest incidents once enrichment runs.'}
+              : briefSkipped
+                ? 'Replays reuse the briefs written on the first run. This incident did not get one.'
+                : 'Briefs are written for the largest incidents once enrichment runs.'}
           </p>
         )}
       </section>

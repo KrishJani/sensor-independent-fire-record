@@ -108,7 +108,7 @@ export type ServerMessage =
   | { type: 'incident.brief'; id: string; brief: Brief }
   | { type: 'detections'; points: DetectionPoint[]; replace?: boolean }
   | { type: 'clock'; t: number }
-  | { type: 'replay.status'; status: ReplayStatus; progress: number }
+  | { type: 'replay.status'; status: ReplayStatus; progress: number; speed?: number }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 

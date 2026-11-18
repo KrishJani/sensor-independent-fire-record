@@ -12,7 +12,6 @@ import { SourceBadge, StatusChip } from './StatusChip';
 import { titlePlace, type Bbox, type StreamId } from './types';
 import { useIncidentDetail } from './useIncidentDetail';
 import { useRealtimeLayers } from './useRealtimeLayers';
-import { usePresenter } from './presenter';
 import { useReplay } from './useReplay';
 import { useRealtimeStream } from './useRealtimeStream';
 import './realtime.css';
@@ -25,6 +24,8 @@ const MODES = [
 
 /** What the chat copilot needs to know about the realtime tab. */
 export interface RealtimeContext {
+  /** Live feed or replay (the date picker is locked differently for each). */
+  mode: 'live' | 'replay';
   stream: StreamId | null;
   /** Selected incident or scenario, for the AOI label. */
   label: string | null;
@@ -57,7 +58,6 @@ interface Props {
 
 export function RealtimeView({ map, onContextChange }: Props) {
   const replay = useReplay();
-  const presenter = usePresenter();
   const [speed, setSpeed] = useState<SpeedId>('12000');
   const isReplay = replay.mode === 'replay';
   const stream: StreamId | null = isReplay ? (replay.info?.stream ?? null) : 'live';
@@ -95,8 +95,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
 
   const startScenario = (s: Scenario) => {
     fit(map, s.bounds, 7, 2400);
-    // Viewers start (or join) at the worker's default speed; only presenters pick one.
-    void replay.start(s.id, presenter ? Number(speed) : undefined);
+    void replay.start(s.id, Number(speed));
   };
 
   const nearestName =
@@ -108,11 +107,12 @@ export function RealtimeView({ map, onContextChange }: Props) {
     : (scenario?.title ?? null);
   useEffect(() => {
     onContextChange?.({
+      mode: replay.mode,
       stream,
       label: contextLabel,
       range: scenario ? { from: scenario.from, to: scenario.to } : null,
     });
-  }, [onContextChange, stream, contextLabel, scenario]);
+  }, [onContextChange, replay.mode, stream, contextLabel, scenario]);
 
   // Socket status for this stream, or the polled ReplayInfo; an ended state from either wins.
   const wsReplay = rt.replay?.stream === stream ? rt.replay : null;
@@ -125,11 +125,20 @@ export function RealtimeView({ map, onContextChange }: Props) {
   const replayProgress = ended(replayStatus)
     ? Math.max(wsReplay?.progress ?? 0, replay.info?.progress ?? 0)
     : (wsReplay?.progress ?? replay.info?.progress ?? 0);
+  // Speed changes reach every viewer over the socket; the polled ReplayInfo is the fallback.
+  const replaySpeed = wsReplay?.speed ?? replay.info?.speed ?? 12000;
   // Let the clock advance between server ticks only while the replay is actually playing.
-  rt.streamClock.rate = isReplay && replayStatus === 'running' ? (replay.info?.speed ?? 0) : 0;
+  rt.streamClock.rate = isReplay && replayStatus === 'running' ? replaySpeed : 0;
   const speedLabel =
-    SPEEDS.find((s) => Number(s.id) === replay.info?.speed)?.label ??
-    `${Math.round((replay.info?.speed ?? 12000) / 3600)} h/s`;
+    SPEEDS.find((s) => Number(s.id) === replaySpeed)?.label ?? `${Math.round(replaySpeed / 3600)} h/s`;
+  const replayActive = isReplay && !!replay.info && (replayStatus === 'running' || replayStatus === 'paused');
+  const speedValue = replayActive
+    ? (SPEEDS.find((s) => Number(s.id) === replaySpeed)?.id ?? speed)
+    : speed;
+  const changeSpeed = (v: SpeedId) => {
+    setSpeed(v);
+    if (replayActive) void replay.setSpeed(Number(v));
+  };
   const showHud = isReplay && replay.info;
   const showPicker =
     isReplay && (!replay.info || ['stopped', 'done', 'error'].includes(replayStatus));
@@ -145,7 +154,6 @@ export function RealtimeView({ map, onContextChange }: Props) {
           progress={replayProgress}
           speedLabel={speedLabel}
           busy={replay.busy}
-          presenter={presenter}
           note={replay.info.origin === 'bundled' ? replay.info.note : null}
           onPause={() => void replay.control('pause')}
           onResume={() => void replay.control('resume')}
@@ -194,19 +202,19 @@ export function RealtimeView({ map, onContextChange }: Props) {
                 <span className="rt-scenario__blurb">{s.blurb}</span>
               </button>
             ))}
-            {presenter && (
-              <div className="rt-speed">
-                <span className="rt-dim">Speed</span>
-                <Segmented
-                  options={SPEEDS}
-                  value={speed}
-                  onChange={(v: SpeedId) => setSpeed(v)}
-                  label="Replay speed"
-                  className="segmented--fill"
-                  disabled={replay.busy}
-                />
-              </div>
-            )}
+          </div>
+        )}
+        {isReplay && (showPicker || replayActive) && (
+          <div className="rt-panel__section rt-speed">
+            <span className="rt-dim">Speed</span>
+            <Segmented
+              options={SPEEDS}
+              value={speedValue}
+              onChange={changeSpeed}
+              label="Replay speed"
+              className="segmented--fill"
+              disabled={replay.busy}
+            />
           </div>
         )}
         {replay.error && isReplay && <p className="rt-error">{replay.error}</p>}
@@ -223,6 +231,13 @@ export function RealtimeView({ map, onContextChange }: Props) {
                 replay={isReplay}
                 onBack={() => setSelectedId(null)}
               />
+            ) : !isReplay && rt.connection === 'live' && ranked.length === 0 ? (
+              <div className="rt-empty rt-empty--live">
+                <p>No active fires in the live feed right now.</p>
+                <button type="button" className="rt-button" onClick={() => replay.setMode('replay')}>
+                  Watch the Quebec 2023 replay
+                </button>
+              </div>
             ) : (
               <IncidentList
                 incidents={ranked}
@@ -232,9 +247,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
                 emptyText={
                   rt.connection !== 'live'
                     ? 'Waiting for the realtime service…'
-                    : isReplay
-                      ? 'Incidents appear here as the replay forms them.'
-                      : 'No significant incidents in the live stream yet.'
+                    : 'Incidents appear here as the replay forms them.'
                 }
               />
             )}

@@ -21,19 +21,45 @@ interface Props {
   min: ISODate;
   max: ISODate;
   onChange(date: ISODate): void;
+  /** Shown instead of the date (e.g. "Last 48 hours"). */
+  label?: string;
+  /** The date cannot be changed here; trying to shows this note instead. */
+  locked?: string;
+  /** Shown in a small note after the date is changed. */
+  notice?: string;
 }
 
-export function DatePicker({ value, min, max, onChange }: Props) {
+const NOTE_MS = 4500;
+
+export function DatePicker({ value, min, max, onChange, label, locked, notice }: Props) {
   const [open, setOpen] = useState(false);
+  // n makes a repeated note restart its timer.
+  const [note, setNote] = useState<{ text: string; n: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const say = (text: string) => {
+    setOpen(false);
+    setNote((prev) => ({ text, n: (prev?.n ?? 0) + 1 }));
+  };
 
   useEffect(() => {
-    if (!open) return;
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), NOTE_MS);
+    return () => clearTimeout(t);
+  }, [note]);
+
+  useEffect(() => {
+    if (!open && !note) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setNote(null);
+      }
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setNote(null);
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -41,9 +67,14 @@ export function DatePicker({ value, min, max, onChange }: Props) {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, note]);
 
-  const step = (days: number) => onChange(clampDate(addDays(value, days), min, max));
+  const change = (date: ISODate) => {
+    if (locked) return say(locked);
+    onChange(date);
+    if (notice) say(notice);
+  };
+  const step = (days: number) => (locked ? say(locked) : change(clampDate(addDays(value, days), min, max)));
 
   return (
     <div className="datepicker" ref={rootRef}>
@@ -52,7 +83,7 @@ export function DatePicker({ value, min, max, onChange }: Props) {
           type="button"
           className="date-bar__step"
           aria-label="Previous day"
-          disabled={value <= min}
+          disabled={!locked && value <= min}
           onClick={() => step(-1)}
         >
           <ChevronLeft />
@@ -63,17 +94,17 @@ export function DatePicker({ value, min, max, onChange }: Props) {
           className="date-bar__value"
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => (locked ? say(locked) : (setNote(null), setOpen((o) => !o)))}
         >
           <CalendarIcon className="date-bar__icon" />
-          <span>{formatLong(value)}</span>
+          <span>{label ?? formatLong(value)}</span>
         </button>
         <span className="divider divider--vertical" />
         <button
           type="button"
           className="date-bar__step"
           aria-label="Next day"
-          disabled={value >= max}
+          disabled={!locked && value >= max}
           onClick={() => step(1)}
         >
           <ChevronRight />
@@ -86,10 +117,15 @@ export function DatePicker({ value, min, max, onChange }: Props) {
           min={min}
           max={max}
           onSelect={(d) => {
-            onChange(d);
             setOpen(false);
+            change(d);
           }}
         />
+      )}
+      {note && !open && (
+        <div key={note.n} className="date-note material" role="status">
+          {note.text}
+        </div>
       )}
     </div>
   );
