@@ -13,12 +13,12 @@
     "AI_GATEWAY_ID": "nasa-fire-copilot",
     // Chat copilot (see CHAT.md). CHAT_MODEL is a Workers AI id (@cf/...) or an
     // AI Gateway catalog id (<author>/<model>).
-    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
-    // Tried when CHAT_MODEL fails before producing output. "" disables it (demo setting: the glm
-    // fallback is the model that drifted into Chinese; see CHAT.md).
-    "CHAT_FALLBACK_MODEL": "",
-    // Chat reasoning: "none" = off (demo setting: ~11-15 s per turn instead of 45-140 s, see CHAT.md),
-    // "" = model default (kimi: high).
+    "CHAT_MODEL": "anthropic/claude-haiku-5.5",
+    // Tried when CHAT_MODEL fails before producing output (Workers AI retired kimi-k2.6 on
+    // 2026-11-20, HTTP 410). "" disables it. See CHAT.md.
+    "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
+    // Chat reasoning: "none" = off (sent as reasoning_effort null: honoured by the glm fallback,
+    // dropped for Claude Haiku, which does not reason unless asked). "" = model default. See CHAT.md.
     "CHAT_REASONING_EFFORT": "none",
     // AI Gateway response cache TTL (s) for chat model calls. "0" = off (default).
     "CHAT_CACHE_TTL": "0",

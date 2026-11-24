@@ -13,6 +13,9 @@
     "replay-smoke": "node scripts/replay-smoke.mjs"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^4.0.38",
+    "agents": "^0.33.0",
+    "ai": "^7.0.173",
     "hono": "^4.13.18"
   },
   "devDependencies": {

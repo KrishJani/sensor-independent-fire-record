@@ -248,20 +248,17 @@ A failed step is recorded and does not fail the run.
 
 #### Brief model settings
 
-Measured on 2026-11-15 against `@cf/moonshotai/kimi-k2.6` with a Quebec-sized prompt (Workers AI REST, no gateway cache):
+Briefs use `anthropic/claude-haiku-5.5` through AI Gateway (`createAI` + `generateText`, fallback `@cf/zai-org/glm-4.7-flash`), billed with the Anthropic key stored on the gateway (see `apps/api-worker/CHAT.md`, "Billing: BYOK"). Measured on 2026-11-24 over 10 Quebec replay briefs:
 
-| `reasoning_effort` | `max_tokens` | Latency per brief | Completion tokens | Neurons | Result |
-|---|---|---|---|---|---|
-| default (high) | 4096 | 29–55 s | 1,250–2,250 | 460–840 | OK (before) |
-| `low` | 4096 | 54–63 s | 2,240–2,800 | 820–1,030 | OK; `low` is mapped to `high` for this model |
-| `low` | 1024 | 23 s | 1,024 | 380 | **empty** (all tokens spent reasoning) |
-| `none` | 4096 | 2.1–2.2 s | 75–77 | 35 | OK |
-| `none` | 160 | 2.0–2.5 s | 73–75 | 34 | OK |
-| `none` | 100 | 2.5 s | 74–76 | 35 | OK |
-| `none` | 80 | 2.2–2.7 s | 71–74 | 34 | OK, but only a few tokens to spare |
-| `none` | 64 | 2.5–2.8 s | 64 | 30 | cut off mid-sentence |
+| | Haiku 5.5 |
+|---|---|
+| Latency per brief | 3.1–4.1 s |
+| Input tokens | 470–550 |
+| Output tokens | 460–670 (about 380–460 reasoning, about 80–200 text) |
+| `finishReason` | `stop` in 10 of 10 |
+| Cost | about $0.0003 per brief ($0.10 / $0.50 per million input / output tokens) |
 
-So the defaults are `BRIEF_REASONING_EFFORT=none` and `BRIEF_MAX_TOKENS=120`: about 20× faster and 20× fewer neurons than before. With reasoning off, a lower `max_tokens` saves nothing until it truncates the brief, so 120 keeps headroom over the ~75 tokens a brief uses. If a reply is cut off anyway, the trailing half-sentence is dropped. The reasoning setting is only sent to kimi models; the fallback model gets its own defaults.
+Haiku 5.5 reasons before it writes, and it cannot be switched off through the catalog path (any `reasoning_effort` level fails; `null` is dropped), so those tokens count against `BRIEF_MAX_TOKENS`. At the old value of 120 the first probe returned an **empty** brief (all 120 tokens reasoning, `finishReason: length`), so the default is now **1024**; real briefs use at most 670, and 1024 stays a hard ceiling on cost per brief. Haiku also rejects `temperature`, so the call sets none. The old kimi-k2.6 measurements (reasoning off, 75 tokens, 2 s) no longer apply because that model is retired. If a reply is cut off anyway, the trailing half-sentence is dropped. The replay brief cache key is versioned (`v8`), so briefs from earlier models are not reused.
 
 ---
 
@@ -285,12 +282,11 @@ If the context has no stream, the tool uses `live` and the map's AOI bbox. Resul
 | `REPLAY_DEFAULT_SPEED` | var | `12000` | Stream seconds per real second |
 | `WATCH_BBOXES` | var | `-170,15,-50,72` | `;`-separated `w,s,e,n` boxes polled live |
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | Same as api-worker |
-| `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `@cf/moonshotai/kimi-k2.6` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
+| `CHAT_MODEL` / `CHAT_FALLBACK_MODEL` | var | `anthropic/claude-haiku-5.5` / `@cf/zai-org/glm-4.7-flash` | Brief models, same pattern as api-worker. `CHAT_FALLBACK_MODEL=""` disables the fallback. |
 | `ENRICH_MAX_PER_STREAM` | var | `10` | Workflow runs (and AI calls) per replay stream, and per rolling 24 h for `live` |
 | `BRIEF_DAILY_MAX` | var | `50` | AI briefs per rolling 24 h across all streams (re-briefs count; cached replay briefs do not) |
 | `BRIEF_MIN_AREA_KM2` | var | `200` | Replays only brief incidents with at least this `affectedAreaKm2` |
-| `BRIEF_REASONING_EFFORT` | var | `none` | Sent to kimi models only. `""` = model default. kimi-k2.6 accepts `high` or `none` (`low`/`medium` map to `high`). |
-| `BRIEF_MAX_TOKENS` | var | `120` | Brief output budget |
+| `BRIEF_MAX_TOKENS` | var | `1024` | Brief output ceiling, reasoning tokens included (Haiku needs about 500) |
 | `FIRMS_MAP_KEY` | secret | — | `.dev.vars` locally; `wrangler secret put FIRMS_MAP_KEY` in production |
 
 Bindings: Durable Objects `CLUSTERER`, `INCIDENT`, `LIVE_HUB`, `REPLAY` and `CONTROL` (all SQLite-backed; `CONTROL` is one global instance holding the replay slot and the brief budget); KV `INGEST_STATE` and `REPLAY_KV` (replay scenarios when R2 is not bound, and the replay brief cache); R2 `REPLAY_DATA` (bucket `nasa-fire-realtime`; **optional**: comment out `r2_buckets` on an account without R2 and scenarios come from `REPLAY_KV` while the raw NRT CSV archive is skipped with a `realtime_poll_archive_skipped` log line); Queue `DETECTIONS_QUEUE` (`nasa-fire-detections`, producer and consumer); Workflow `INCIDENT_ENRICH` (`nasa-fire-incident-enrich`); `AI`; service `API` (api-worker, optional).

@@ -280,7 +280,7 @@ describe("incident aggregate", () => {
 
 describe("enrichment config", async () => {
   const { briefMinAreaKm2 } = await import("../src/streams");
-  const { briefModels, reasoningParams } = await import("../src/enrich/brief");
+  const { briefModels } = await import("../src/enrich/brief");
 
   it("min brief area applies to replays only", () => {
     expect(briefMinAreaKm2({ BRIEF_MIN_AREA_KM2: "200" }, "live")).toBe(0);
@@ -290,15 +290,12 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v6/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v8/quebec-2023-06/abc123/0");
   });
 
-  it("CHAT_FALLBACK_MODEL='' disables the fallback; reasoning effort only for kimi", () => {
+  it("CHAT_FALLBACK_MODEL='' disables the fallback", () => {
     expect(briefModels({ CHAT_MODEL: "@cf/a", CHAT_FALLBACK_MODEL: "@cf/b" })).toEqual(["@cf/a", "@cf/b"]);
     expect(briefModels({ CHAT_MODEL: "@cf/a", CHAT_FALLBACK_MODEL: "" })).toEqual(["@cf/a"]);
-    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "none" }, "@cf/moonshotai/kimi-k2.6")).toEqual({ reasoning_effort: "none" });
-    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "none" }, "@cf/zai-org/glm-4.7-flash")).toEqual({});
-    expect(reasoningParams({ BRIEF_REASONING_EFFORT: "" }, "@cf/moonshotai/kimi-k2.6")).toEqual({});
   });
 });
 

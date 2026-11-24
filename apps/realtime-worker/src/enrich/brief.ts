@@ -87,7 +87,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v6"; // v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
+export const BRIEF_CACHE_VERSION = "v8"; // v8: Claude Haiku 5.5 (v7 held glm fallback briefs; kimi briefs were v6); v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `${briefCachePrefix(scenario, stableKey)}${level}`;
 }
@@ -97,22 +97,17 @@ export function briefCachePrefix(scenario: string, stableKey?: string): string {
   return `brief-cache/${BRIEF_CACHE_VERSION}/${scenario}/${stableKey ? `${stableKey}/` : ""}`;
 }
 
-const DEFAULT_BRIEF_MODEL = "@cf/moonshotai/kimi-k2.6";
-/** Measured: 71–76 completion tokens per brief with reasoning off; 64 truncates. 120 leaves headroom. */
-export const DEFAULT_BRIEF_MAX_TOKENS = 120;
+/** AI Gateway catalog id (Claude Haiku 5.5); billed via Unified Billing or a key stored on the gateway. */
+const DEFAULT_BRIEF_MODEL = "anthropic/claude-haiku-5.5";
+/**
+ * Claude Haiku 5.5 always reasons first and those tokens count against the cap: at 120 a brief came back
+ * empty (finishReason "length", all 120 tokens reasoning). A brief is ~175 reasoning + ~45 text tokens; 1024 is the ceiling.
+ */
+export const DEFAULT_BRIEF_MAX_TOKENS = 1024;
 
 /** CHAT_MODEL, then CHAT_FALLBACK_MODEL unless it is set to "" (fallback disabled). */
 export function briefModels(env: Pick<Env, "CHAT_MODEL" | "CHAT_FALLBACK_MODEL">): string[] {
   const primary = env.CHAT_MODEL || DEFAULT_BRIEF_MODEL;
   const fallback = env.CHAT_FALLBACK_MODEL?.trim();
   return fallback && fallback !== primary ? [primary, fallback] : [primary];
-}
-
-/**
- * BRIEF_REASONING_EFFORT (default "none") for kimi models only. kimi-k2.6 supports "high" and
- * "none"; "low"/"medium" are accepted but mapped to "high". "" sends nothing (model default).
- */
-export function reasoningParams(env: Pick<Env, "BRIEF_REASONING_EFFORT">, model: string): { reasoning_effort?: string } {
-  const effort = (env.BRIEF_REASONING_EFFORT ?? "none").trim();
-  return effort && /kimi/i.test(model) ? { reasoning_effort: effort } : {};
 }

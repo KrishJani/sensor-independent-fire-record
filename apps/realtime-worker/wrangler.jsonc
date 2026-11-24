@@ -15,18 +15,17 @@
     "WATCH_BBOXES": "-170,15,-50,72",
     // Enrichment briefs: same gateway and models as api-worker (see apps/api-worker/CHAT.md).
     "AI_GATEWAY_ID": "nasa-fire-copilot",
-    "CHAT_MODEL": "@cf/moonshotai/kimi-k2.6",
-    "CHAT_FALLBACK_MODEL": "",
-    // "" disables the fallback (demo setting, see apps/api-worker/CHAT.md). Brief settings below are measured in REALTIME.md.
+    "CHAT_MODEL": "anthropic/claude-haiku-5.5",
+    // Workers AI fallback, tried when CHAT_MODEL fails. "" disables it. Brief settings below are measured in REALTIME.md.
+    "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
     // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
     "ENRICH_MAX_PER_STREAM": "10",
     // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count; cached replay briefs don't).
     "BRIEF_DAILY_MAX": "50",
     // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).
     "BRIEF_MIN_AREA_KM2": "200",
-    // kimi-k2.6 supports "high" | "none" ("low" is mapped to "high"). "none": ~2 s per brief instead of ~55 s.
-    "BRIEF_REASONING_EFFORT": "none",
-    "BRIEF_MAX_TOKENS": "120"
+    // Haiku reasons before it writes (~175 tokens) and that counts against the cap; 120 returned empty briefs.
+    "BRIEF_MAX_TOKENS": "1024"
   },
   "ai": {
     "binding": "AI",

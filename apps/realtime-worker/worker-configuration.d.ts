@@ -16,7 +16,6 @@ interface __BaseEnv_Env {
 	ENRICH_MAX_PER_STREAM: string;
 	BRIEF_DAILY_MAX: string;
 	BRIEF_MIN_AREA_KM2: string;
-	BRIEF_REASONING_EFFORT: string;
 	BRIEF_MAX_TOKENS: string;
 	FIRMS_MAP_KEY: string;
 	CLUSTERER: DurableObjectNamespace<import("./src/index").Clusterer>;
@@ -39,7 +38,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ALLOWED_ORIGINS" | "REPLAY_DEFAULT_SPEED" | "WATCH_BBOXES" | "AI_GATEWAY_ID" | "CHAT_MODEL" | "CHAT_FALLBACK_MODEL" | "ENRICH_MAX_PER_STREAM" | "BRIEF_DAILY_MAX" | "BRIEF_MIN_AREA_KM2" | "BRIEF_REASONING_EFFORT" | "BRIEF_MAX_TOKENS" | "FIRMS_MAP_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ALLOWED_ORIGINS" | "REPLAY_DEFAULT_SPEED" | "WATCH_BBOXES" | "AI_GATEWAY_ID" | "CHAT_MODEL" | "CHAT_FALLBACK_MODEL" | "ENRICH_MAX_PER_STREAM" | "BRIEF_DAILY_MAX" | "BRIEF_MIN_AREA_KM2" | "BRIEF_MAX_TOKENS" | "FIRMS_MAP_KEY">> {}
 }
 declare module "*.txt" {
 	const value: string;

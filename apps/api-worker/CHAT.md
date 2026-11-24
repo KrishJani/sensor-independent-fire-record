@@ -64,22 +64,30 @@ Both turns also FAIL on a bare (plain-text) URL that no web tool returned and on
 | Name | Kind | Default | Notes |
 |---|---|---|---|
 | `AI_GATEWAY_ID` | var | `nasa-fire-copilot` | The gateway must exist in the account. |
-| `CHAT_MODEL` | var | `@cf/moonshotai/kimi-k2.6` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
-| `CHAT_FALLBACK_MODEL` | var | `""` in `wrangler.jsonc` (code default when unset: `@cf/zai-org/glm-4.7-flash`) | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (the demo setting, below). |
-| `CHAT_REASONING_EFFORT` | var | `none` in `wrangler.jsonc` | `none`/`off` = reasoning off (demo setting, see "Latency" below); `""` = model default (kimi-k2.6: high); `low`/`medium`/`high` pass through (kimi maps low/medium to high). For kimi, "off" is sent as `reasoning_effort: "none"` by wrapping the AI binding (`withKimiReasoningOff`), because `agents/models` drops the off request for moonshotai models. |
+| `CHAT_MODEL` | var | `anthropic/claude-haiku-5.5` | A Workers AI id (`@cf/…`), an AI Gateway catalog id (`anthropic/claude-opus-4.8`, `openai/gpt-5.5`), or `dynamic/<route>`. |
+| `CHAT_FALLBACK_MODEL` | var | `@cf/zai-org/glm-4.7-flash` in `wrangler.jsonc` (same as the code default when unset) | Tried when `CHAT_MODEL` fails before producing output. Set to `""` to disable the fallback (below). |
+| `CHAT_REASONING_EFFORT` | var | `none` in `wrangler.jsonc` | `none`/`off` = reasoning off, sent as `reasoning_effort: null`: the glm fallback honours it, and `agents/models` drops it for Claude. **Claude Haiku 5.5 cannot be switched off through the catalog path** (it always reasons first; `low`/`medium`/`high` fail with a `thinking.type.enabled` error), so never set a level here while Haiku is the primary. `""` = model default. |
 | `CHAT_CACHE_TTL` | var | `0` (off) | AI Gateway response cache TTL in seconds for chat model calls (`createAI({ cacheTtl })`). Only identical requests hit, so it mainly helps repeated demo questions in fresh sessions. |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
 | `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
 | `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev`. Also enforced on the agent WebSocket (other origins get 403). |
 
-**Demo setting: `CHAT_FALLBACK_MODEL=""`.** With the fallback disabled, a failing `CHAT_MODEL` call shows the user an error ("could not answer right now, please try again") instead of an answer from `glm-4.7-flash`, the only model that drifted into Chinese after the language rule was added (see the comparison below). For a public demo, an error on retry is better than a Chinese answer. Set it in `wrangler.jsonc` (`"CHAT_FALLBACK_MODEL": ""`) or with `wrangler dev --var CHAT_FALLBACK_MODEL:`. Leaving the variable out keeps the default fallback. Each turn logs `copilot_turn_done` with the model that answered, so a drifted reply can be traced to a model in the worker logs (`wrangler tail`) or in AI Gateway.
+**Models (2026-11-24).** Workers AI retired `kimi-k2.6`, `kimi-k2.7-code` and `glm-5.3-flash` on 2026-11-20 (HTTP 410 "Model has been deprecated", even though the docs catalog still lists them), which made every turn fail. The primary is now Claude Haiku 5.5 through AI Gateway (`anthropic/claude-haiku-5.5`, the gateway's catalog spelling), and `@cf/zai-org/glm-4.7-flash` is the fallback. `toUserError` ([errors.ts](src/copilot/errors.ts)) reports a retired model, a spend limit, a quota, a rate limit and a missing gateway with their own messages.
+
+**Billing: BYOK.** Unified Billing was not funded on the account (`Insufficient unified billing credits`), so the Anthropic key is stored on the gateway: dashboard → AI → AI Gateway → `nasa-fire-copilot` → Provider Keys → Add API Key → Anthropic, alias `default`. A stored key takes precedence over Unified Billing, and the key is never in `wrangler.jsonc` or git. Anthropic bills the key directly; the balance on the Anthropic account is a hard cap in addition to the gateway rate and spend limits (60 requests/min, $2/day, $5/month), which are unchanged. To use Unified Billing instead, turn on gateway authentication, load credits (5% fee) and delete the stored key.
+
+**Cost (measured 2026-11-24, 9 turns).** A copilot turn is 2 model steps, about 15,000 input tokens (system prompt and tool definitions are about 6,200 per step) and about 1,000 output tokens (of which about 450 are reasoning): about **$0.002** at the catalog price of $0.10 per million input and $0.50 per million output tokens. Latency is 4–8 s per turn (model 4–7 s). Anthropic prompt caching would cut the input cost about 10× but is not enabled: the catalog path (`ai("anthropic/…")`) sends an OpenAI-style request with no `cache_control`, and the only route that carries it is the provider-native one (`ai(anthropic("claude-haiku-5-5"))` with `@ai-sdk/anthropic`), which would be a new dependency for about $0.0015 a turn.
+
+**Haiku parameters.** Haiku 5.5 rejects `temperature` ("not supported on this model"), so no call sets it. It cannot be told to skip reasoning through the catalog path, and reasoning tokens count against `max_tokens`/`maxOutputTokens` (the 4096 budget here is ample).
+
+**Optional: `CHAT_FALLBACK_MODEL=""`.** With the fallback disabled (the previous demo setting), a failing `CHAT_MODEL` call shows the user an error ("could not answer right now, please try again") instead of an answer from `glm-4.7-flash`, the only model that drifted into Chinese after the language rule was added (see the comparison below). For a public demo, an error on retry is better than a Chinese answer. Set it in `wrangler.jsonc` (`"CHAT_FALLBACK_MODEL": ""`) or with `wrangler dev --var CHAT_FALLBACK_MODEL:`. Leaving the variable out keeps the default fallback. Each turn logs `copilot_turn_done` with the model that answered, so a drifted reply can be traced to a model in the worker logs (`wrangler tail`) or in AI Gateway.
 
 **Switch the model:** set `CHAT_MODEL` in `wrangler.jsonc` (or `wrangler dev --var CHAT_MODEL:anthropic/claude-opus-4.8`). Catalog models bill via Unified Billing or a key stored on the gateway; no code change is needed.
 
 **Switch search:** set `WEB_SEARCH_PROVIDER` to `cloudflare` to use the Cloudflare Web Search API through `env.AI` and the gateway. It needs AI Gateway credits or a provider key on the gateway. `tavily` calls `https://api.tavily.com/search` directly with the secret key.
 
-## Latency (2026-11-15, deployed, kimi-k2.6)
+## Latency (2026-11-15, deployed, kimi-k2.6; retired, kept for the method and the comparison. Current Haiku 5.5 numbers are under "Models" above)
 
 Each turn is instrumented (`src/copilot/timing.ts`): every model step's time and token usage, and every tool call's time, are logged as `copilot_turn_timing` and sent to the client as a `message-metadata` chunk (`{ timing, reasoningEffort }`). Workers AI does not report reasoning tokens separately for kimi, so reasoning shows up as output tokens.
 
@@ -94,7 +102,7 @@ Demo questions after a finished Quebec replay (wall time per turn, client side):
 
 Tool time is small in every run (0.2–0.7 s for `get_live_incidents`); the model's final answer step is the cost, and reasoning multiplies it. `web_search` was not called by these questions, so it is not gated. With reasoning off the answers kept the right incident, numbers, places and wind (see `scripts/demo-questions.md` for what correct means). The chat smoke (archival + news questions) also passes with reasoning off.
 
-## Model comparison (2026-11-15)
+## Model comparison (2026-11-15; `kimi-k2.6` is retired, Claude Haiku 5.5 is now the default)
 
 `pnpm compare-models` with the two smoke questions. 21 runs in total over three rounds. The fixes landed between rounds, so failures in early rounds include problems that are now handled in code.
 

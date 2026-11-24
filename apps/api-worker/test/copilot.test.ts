@@ -559,13 +559,21 @@ describe("chat reasoning settings", async () => {
     expect(m.chatCacheTtl(undefined)).toBeUndefined();
     expect(m.chatCacheTtl("300")).toBe(300);
   });
-  it("adds reasoning_effort none to kimi chat requests only", async () => {
-    const seen: unknown[] = [];
-    const ai = { run: async (model: string, input: unknown) => (seen.push([model, input]), "ok"), other: () => "x" };
-    const w = m.withKimiReasoningOff(ai);
-    await w.run("@cf/moonshotai/kimi-k2.6", { messages: [] });
-    await w.run("@cf/zai-org/glm-4.7-flash", { messages: [] });
-    expect(seen).toEqual([["@cf/moonshotai/kimi-k2.6", { messages: [], reasoning_effort: "none" }], ["@cf/zai-org/glm-4.7-flash", { messages: [] }]]);
-    expect(w.other()).toBe("x");
+});
+
+describe("toUserError", async () => {
+  const { toUserError } = await import("../src/copilot/errors");
+  it("maps a deprecated/410 model error to a clear message", () => {
+    const real = new Error("AiError: Model has been deprecated: @cf/moonshotai/kimi-k2.6 was deprecated on 2026-11-20. (a6e79bad-362c-45b6-ab2f-2d87cebdd11b)");
+    expect(toUserError(real)).toMatch(/retired/);
+    expect(toUserError(new Error('responseBody: {"internalCode":5028,"httpCode":410}'))).toMatch(/retired/);
+    expect(toUserError("HTTP 410 Gone")).toMatch(/retired/);
+  });
+  it("maps the other known causes and falls back to the generic text", () => {
+    expect(toUserError(new Error("Please configure AI Gateway in the dashboard"))).toMatch(/not set up/);
+    expect(toUserError(new Error("daily free allocation of 10,000 neurons"))).toMatch(/quota/);
+    expect(toUserError(new Error("Rate limit exceeded"))).toMatch(/rate-limited/);
+    expect(toUserError(new Error("AI Gateway spend limit reached"))).toMatch(/spend limit/);
+    expect(toUserError(new Error("boom"))).toMatch(/could not answer/);
   });
 });

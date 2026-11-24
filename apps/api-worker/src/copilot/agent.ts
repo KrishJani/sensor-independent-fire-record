@@ -11,10 +11,11 @@ import {
 } from "ai";
 import { createFireData } from "../data/fireData";
 import { parseContext, type MapContext } from "./context";
+import { toUserError } from "./errors";
 import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
 import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
-import { chatCacheTtl, chatFallbacks, chatReasoningEffort, DEFAULT_MODEL, effortLabel, withKimiReasoningOff } from "./models";
+import { chatCacheTtl, chatFallbacks, chatReasoningEffort, DEFAULT_MODEL, effortLabel } from "./models";
 import { TurnTimer, type TurnTiming } from "./timing";
 import { buildSystemPrompt } from "./prompt";
 import { createRealtimeTools } from "./realtime";
@@ -72,8 +73,7 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
 
     const cacheTtl = chatCacheTtl(this.env.CHAT_CACHE_TTL);
     const effort = chatReasoningEffort(this.env.CHAT_REASONING_EFFORT);
-    const binding = effort === null ? withKimiReasoningOff(this.env.AI) : this.env.AI;
-    const ai = createAI({ binding, id: this.env.AI_GATEWAY_ID, ...(cacheTtl ? { cacheTtl } : {}) });
+    const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID, ...(cacheTtl ? { cacheTtl } : {}) });
     const primary = (this.env.CHAT_MODEL || DEFAULT_MODEL) as CloudflareLanguageModelId;
     const fallbacks = chatFallbacks(this.env.CHAT_FALLBACK_MODEL, primary) as CloudflareLanguageModelId[];
     const model = ai(primary, { fallback: fallbacks, ...(effort !== undefined ? { reasoningEffort: effort } : {}) });
@@ -133,15 +133,4 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     );
     return createUIMessageStreamResponse({ stream });
   }
-}
-
-/** Short, non-leaky error text for the chat UI (full error is in the worker log). */
-function toUserError(error: unknown): string {
-  const msg = error instanceof Error ? error.message : String(error);
-  if (/configure AI Gateway/i.test(msg))
-    return "The AI Gateway is not set up for this account (see CHAT.md → Setup).";
-  if (/daily free allocation|neurons/i.test(msg))
-    return "The AI quota for this account is used up for today (Workers AI free allocation). Try again tomorrow or upgrade to Workers Paid.";
-  if (/rate.?limit|429/i.test(msg)) return "The assistant is rate-limited right now. Please retry in a minute.";
-  return "The assistant could not answer right now. Please try again.";
 }

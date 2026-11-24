@@ -23,7 +23,7 @@ Harmonization math such as α, calendars and anomalies comes from `@repo/harmoni
 Vars:
 
 - `AI_GATEWAY_ID`
-- `CHAT_MODEL`, default `@cf/moonshotai/kimi-k2.6` (Workers AI id or AI Gateway catalog id), and `CHAT_FALLBACK_MODEL`, default `@cf/zai-org/glm-4.7-flash`. The model comparison is in `CHAT.md`.
+- `CHAT_MODEL`, default `anthropic/claude-haiku-5.5` (AI Gateway catalog id, billed with a key stored on the gateway; a Workers AI id also works), and `CHAT_FALLBACK_MODEL`, default `@cf/zai-org/glm-4.7-flash`. The model comparison is in `CHAT.md`.
 - `WEB_SEARCH_PROVIDER` (`tavily` | `cloudflare`), secret `TAVILY_API_KEY`
 - `FIRE_DATA_SOURCE` (`mock` until LiveFireData lands)
 - `CALIBRATION_START_YEAR`, `CALIBRATION_END_YEAR`, `BASELINE_START_YEAR`, `BASELINE_END_YEAR`

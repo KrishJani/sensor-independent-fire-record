@@ -161,9 +161,10 @@ pnpm dev:web                    # http://localhost:5173
 The public demo runs with these limits:
 
 - Live FIRMS polling once an hour over North America. Live detections and quiet incidents are deleted after 48 hours, and an ended replay deletes its storage after 1 hour.
-- AI incident briefs: at most 50 per day across all streams (`BRIEF_DAILY_MAX`) and 10 per stream (`ENRICH_MAX_PER_STREAM`), 120 output tokens each, reasoning off.
+- AI incident briefs: at most 50 per day across all streams (`BRIEF_DAILY_MAX`) and 10 per stream (`ENRICH_MAX_PER_STREAM`), at most 1024 output tokens each (Claude Haiku 5.5 reasons before it writes; a brief uses about 500, roughly $0.0003).
 - Replay: open to every visitor, with no key. One replay runs at a time, and starting it while it runs joins it. A new replay can start at most once every 30 seconds across all visitors. Briefs are cached per scenario: the Quebec replay makes at most 10 model calls in total, and later runs reuse the cached briefs with no new calls.
-- Chat: reasoning off, at most 8 model steps and 4096 output tokens per turn, and an AI Gateway rate limit of 60 requests per minute with spend limits of $2 a day and $5 a month.
+- Chat: Claude Haiku 5.5 through AI Gateway (about $0.002 per turn), at most 8 model steps and 4096 output tokens per turn, and an AI Gateway rate limit of 60 requests per minute with spend limits of $2 a day and $5 a month.
+- Models: both Workers use `anthropic/claude-haiku-5.5` with `@cf/zai-org/glm-4.7-flash` as the fallback. The Anthropic key is stored on the gateway (BYOK, see `apps/api-worker/CHAT.md`), never in the repo. The Anthropic account balance is a second cap on top of the gateway limits.
 - The ingest-worker is not deployed, so there is no 3-hourly ingest cron.
 
 ## Known limitations

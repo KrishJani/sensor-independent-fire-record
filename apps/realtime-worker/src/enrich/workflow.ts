@@ -3,7 +3,9 @@ import type { IncidentSummary } from "../incidentModel";
 import type { Brief } from "../protocol";
 import { compass, fetchPlaces, PLACES_RADIUS_KM, type Place, type PlacesSource } from "./places";
 export type { Place } from "./places";
-import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS, reasoningParams } from "./brief";
+import { createAI, type CloudflareLanguageModelId } from "agents/models/ai-sdk";
+import { generateText } from "ai";
+import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS } from "./brief";
 import { historyBbox, OUTSIDE_COVERAGE, summarizeCalendar, type CalendarResponse } from "./history";
 
 export interface EnrichParams {
@@ -157,38 +159,38 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
       }
       if (p.skipBrief) return { status: "skipped", reason: "replay brief cache is full; no new model calls" };
       const prompt = buildBriefPrompt({ summary: p.summary, stream: p.stream, weather, places, history });
-      const models = briefModels(this.env);
+      const [primary, ...fallbacks] = briefModels(this.env) as CloudflareLanguageModelId[];
       const maxTokens = Number(this.env.BRIEF_MAX_TOKENS) || DEFAULT_BRIEF_MAX_TOKENS;
-      let lastErr = "";
-      for (const model of models) {
-        const started = Date.now();
-        try {
-          const out = await this.env.AI.run(
-            model as keyof AiModels,
-            { messages: prompt, max_tokens: maxTokens, temperature: 0.2, ...reasoningParams(this.env, model) } as never,
-            { gateway: { id: this.env.AI_GATEWAY_ID } }
-          );
-          const latencyMs = Date.now() - started;
-          const text = cleanBrief(extractText(out));
-          console.log(JSON.stringify({ msg: "brief_model_done", incident: p.incidentId, model, latencyMs, ok: !!text, usage: (out as { usage?: unknown })?.usage ?? null }));
-          if (text) {
-            const data: Brief = { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs };
-            if (p.briefCacheKey) {
-              try {
-                await this.env.REPLAY_KV.put(p.briefCacheKey, JSON.stringify(data));
-              } catch (err) {
-                console.warn(JSON.stringify({ msg: "brief_cache_put_failed", key: p.briefCacheKey, error: String(err) }));
-              }
-            }
-            return { status: "ok", data };
+      const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
+      const [system, user] = prompt;
+      const started = Date.now();
+      try {
+        // No temperature: Claude Haiku 5.5 rejects it. reasoningEffort null = reasoning off on the glm
+        // fallback; Haiku ignores it and always thinks first (those tokens count against maxTokens).
+        const res = await generateText({
+          model: ai(primary, { fallback: fallbacks, reasoningEffort: null }),
+          system: system.content,
+          messages: [{ role: "user", content: user.content }],
+          maxOutputTokens: maxTokens
+        });
+        const latencyMs = Date.now() - started;
+        const model = res.response.modelId ?? primary;
+        const text = cleanBrief(res.text);
+        console.log(JSON.stringify({ msg: "brief_model_done", incident: p.incidentId, model, primary, latencyMs, ok: !!text, finishReason: res.finishReason, usage: res.usage ?? null }));
+        if (!text) throw new Error(`${model}: empty response (${res.finishReason})`);
+        const data: Brief = { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs };
+        if (p.briefCacheKey) {
+          try {
+            await this.env.REPLAY_KV.put(p.briefCacheKey, JSON.stringify(data));
+          } catch (err) {
+            console.warn(JSON.stringify({ msg: "brief_cache_put_failed", key: p.briefCacheKey, error: String(err) }));
           }
-          lastErr = `${model}: empty response (${JSON.stringify(out).slice(0, 200)})`;
-        } catch (err) {
-          lastErr = `${model}: ${err instanceof Error ? err.message : String(err)}`;
         }
-        console.warn(JSON.stringify({ msg: "brief_model_failed", incident: p.incidentId, error: lastErr }));
+        return { status: "ok", data };
+      } catch (err) {
+        console.warn(JSON.stringify({ msg: "brief_model_failed", incident: p.incidentId, error: err instanceof Error ? err.message : String(err) }));
+        throw err;
       }
-      throw new Error(lastErr || "no model configured");
     });
 
     const enrichment: Enrichment = { incidentId: p.incidentId, reason: p.reason, streamT: p.streamT, weather, places, history, brief, completedAt: Date.now() };
