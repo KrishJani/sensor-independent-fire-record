@@ -53,9 +53,10 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
         "You write short factual incident briefs for emergency managers, shown under a card that already lists the detection count, grid cells, area, growth, peak power, times, wind and nearby towns. " +
         "Do not repeat those numbers. Write 2 or 3 plain sentences in English that add what the card does not show. " +
         "Use only the facts given; do not add causes, forecasts, names of fires, or any number not given. " +
+        "Never interpret weather or infer fire behavior (no \"may slow\", \"could fuel\", \"favorable conditions\"). " +
         (hasContext
-          ? "Write exactly 3 sentences: (1) where the incident is (the nearest place, its type e.g. the village of X) and whether it is spreading, steady or cooling, in words; (2) what the wind and humidity mean for the next hours, only if given; (3) the regional context sentence, keeping its region name and numbers, and making clear it describes the whole region. "
-          : "Write 2 sentences: where the incident is (the nearest place, its type) and whether it is spreading, steady or cooling, then the wind and humidity if given. ") +
+          ? "Write exactly 3 sentences: (1) where the incident is (the nearest place, its type e.g. the village of X) and whether it is spreading, steady or cooling, in words; (2) the wind and humidity readings as given, only if given, stated as readings with no comment on what they mean for the fire; (3) the regional context sentence, keeping its region name and numbers, and making clear it describes the whole region. "
+          : "Write 2 sentences: where the incident is (the nearest place, its type) and whether it is spreading, steady or cooling, then the wind and humidity readings if given, stated as readings with no comment on what they mean for the fire. ") +
         'If you mention size call it "area with detections", never burned area. ' +
         "No coordinates. If a fact is not given, leave it out without saying it is missing. " +
         "Never give evacuation or safety advice. Do not use dashes as punctuation. No headings, no lists, no preamble."
@@ -63,6 +64,13 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
     { role: "user", content: `Facts:\n- ${facts.join("\n- ")}\n\nWrite the brief.` }
   ];
 }
+
+const FIRE_BEHAVIOR = /\b(?:fire (?:behaviou?r|growth|spread|activity)|(?:may|could|might|would|can|likely to|tends? to|tending to|helps? to|helping to) (?:slow|limit|fuel|drive|favou?r|support|suppress|dampen|reduce|increase|encourage|aid|hinder|push)|(?:favou?rable|unfavou?rable|dry|critical) (?:fire )?conditions)\b/i;
+/** ", which/that/conditions that ... <fire-behavior words> ..." up to the sentence end. */
+const INTERPRETATION_CLAUSE = new RegExp(
+  String.raw`(?:,\s*|\s+(?=which\b))(?:which|that|and these|these|conditions that|conditions which|both of which|a combination that)\b[^.!?]*?` + FIRE_BEHAVIOR.source + String.raw`[^.!?]*(?=[.!?])`,
+  "gi"
+);
 
 /**
  * Strip reasoning tags/markdown, replace em/en dashes, never say "burned area", drop advice
@@ -72,6 +80,8 @@ export function cleanBrief(raw: string): string {
   let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/[*#_`]/g, "").trim();
   t = t.replace(/\b(?:total )?(?:burned|burnt) area\b/gi, "area with detections");
   t = t.replace(/\s*[—–]\s*/g, ", ").replace(/,(\s*,)+/g, ",").replace(/\s+/g, " ");
+  // Weather is stated as readings only: cut interpretation clauses ("..., which tends to slow fire behavior").
+  t = t.replace(INTERPRETATION_CLAUSE, "");
   // Split only where a sentence end is followed by whitespace, so decimals ("47.8 km2") stay intact.
   const sentences = t.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
   // A reply cut off by max_tokens ends mid-sentence: drop the fragment if a full sentence precedes it.
@@ -79,6 +89,8 @@ export function cleanBrief(raw: string): string {
   const kept = sentences.filter(
     (x) =>
       !/evacuat|shelter in place|stay safe|leave the area|should (?:avoid|leave)/i.test(x) &&
+      // a sentence that only interprets (no reading in it) goes entirely
+      !(FIRE_BEHAVIOR.test(x) && !/\d/.test(x)) &&
       // the model sometimes remarks on facts it was not given ("No historical context was provided ...")
       !/\b(?:not|no|wasn't|were not|was not)\b[^.]*\b(?:provided|given|available)\b/i.test(x)
   );
@@ -90,7 +102,7 @@ export function cleanBrief(raw: string): string {
  * (its first detection id) + area-doubling level gets the same brief. Bump the version when the
  * prompt changes.
  */
-export const BRIEF_CACHE_VERSION = "v9"; // v9: briefs add region context instead of restating the card; v8: Claude Haiku 5.5 (v7 held glm fallback briefs; kimi briefs were v6); v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
+export const BRIEF_CACHE_VERSION = "v10"; // v10: weather stated as readings, no fire-behavior interpretation; v9: briefs add region context instead of restating the card; v8: Claude Haiku 5.5 (v7 held glm fallback briefs; kimi briefs were v6); v6: history instruction only when history exists; v5: outside-coverage wording; v4: archival history sentence (single-account deploy); v2: places within 75 km
 export function briefCacheKey(scenario: string, stableKey: string, level: number): string {
   return `${briefCachePrefix(scenario, stableKey)}${level}`;
 }

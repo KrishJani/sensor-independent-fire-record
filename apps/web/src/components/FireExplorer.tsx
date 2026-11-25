@@ -28,6 +28,8 @@ const MODE_NOTE: Record<FireMode, string> = {
   hotspots: 'Each marker is a 5.5 km cell that burned in this period, counted the same way for every year and sensor.',
   raw: 'The satellites’ own detections. Sensor-dependent (VIIRS sees about 2× more); use for provenance.',
 };
+/** A showcase period served as raw detections: the harmonized wording would be wrong for it. */
+const RAW_PERIOD_NOTE = 'These are raw VIIRS detections for this period, not harmonized, so they are not comparable with other years or with MODIS.';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 interface Props {
@@ -36,6 +38,8 @@ interface Props {
   tier: 'archival' | 'realtime';
   /** false when only the summary archive is loaded (no fire layers; notable events for the US only). */
   detail?: boolean;
+  /** true when the range shows a showcase period that is raw detections only (not harmonized). */
+  rawPeriod?: boolean;
   settings: MapSettings;
   onChange(patch: Partial<MapSettings>): void;
   rangeLabel: string;
@@ -44,7 +48,7 @@ interface Props {
   onClose(): void;
 }
 
-export function FireExplorer({ map, tier, detail = true, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
+export function FireExplorer({ map, tier, detail = true, rawPeriod = false, settings: s, onChange, rangeLabel, onJump, open, onClose }: Props) {
   const coloringOptions: SegmentedOption<FireColoring>[] =
     s.fireMode === 'raw'
       ? [{ id: 'recency', label: 'Time' }, { id: 'intensity', label: 'Intensity' }, { id: 'sensor', label: 'Sensor' }]
@@ -67,7 +71,7 @@ export function FireExplorer({ map, tier, detail = true, settings: s, onChange, 
       <Section title="Fires & hotspots">
         <Toggle label="Show fire data" checked={s.fireActivity} onChange={(fireActivity) => onChange({ fireActivity })} />
         <Segmented<FireMode> options={MODES} value={s.fireMode} onChange={(fireMode) => onChange({ fireMode })} label="Display" className="segmented--fill" disabled={!s.fireActivity} />
-        <p className="explorer__note">{detail ? MODE_NOTE[s.fireMode] : DETAIL_MISSING_TEXT}</p>
+        <p className="explorer__note">{!detail ? DETAIL_MISSING_TEXT : rawPeriod ? RAW_PERIOD_NOTE : MODE_NOTE[s.fireMode]}</p>
         <Segmented<FireColoring> options={coloringOptions} value={coloring} onChange={(fireColoring) => onChange({ fireColoring })} label="Colour by" className="segmented--fill" disabled={!s.fireActivity || s.fireMode === 'activity'} />
         {s.fireMode === 'raw' && (
           <div className="explorer__sensors">

@@ -276,6 +276,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
               <FireExplorer
                 tier="archival"
                 detail={detail !== false || !!rangeShowcase}
+                rawPeriod={rangeShowcase ? !rangeShowcase.harmonized : false}
                 map={map}
                 settings={settings}
                 onChange={update}

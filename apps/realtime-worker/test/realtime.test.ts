@@ -342,7 +342,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v9/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v10/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback", () => {
@@ -372,6 +372,15 @@ describe("brief", async () => {
     );
     expect(out).toBe("Fire grew to 120.5 km2, fast. Winds are 20 km/h. Humidity is 30%.");
     expect(out).not.toMatch(/[—–]/);
+  });
+
+  it("keeps weather readings but drops fire-behavior interpretation", () => {
+    expect(cleanBrief("Wind is 12 km/h from the NW with relative humidity of 65%, which tends to slow fire behavior. It is cooling."))
+      .toBe("Wind is 12 km/h from the NW with relative humidity of 65%. It is cooling.");
+    expect(cleanBrief("Wind is 30 km/h from the SW, conditions that could drive fire spread. It is active."))
+      .toBe("Wind is 30 km/h from the SW. It is active.");
+    expect(cleanBrief("It is active near the town of X. These conditions may slow fire growth overnight."))
+      .toBe("It is active near the town of X.");
   });
 
   it("drops a sentence cut off by max_tokens", () => {
