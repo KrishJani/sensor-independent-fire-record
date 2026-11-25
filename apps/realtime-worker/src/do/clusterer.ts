@@ -340,8 +340,9 @@ export class Clusterer extends DurableObject<Env> {
       this.sql.exec("DELETE FROM enrich_queue2 WHERE incident_id = ?", q.incident_id);
       this.sql.exec("INSERT INTO enrich_log (t, incident_id) VALUES (?, ?)", Date.now(), q.incident_id);
       this.bump("enrichments", 1);
-      const n = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM enrich_log WHERE incident_id = ?", q.incident_id).one().n;
-      const instanceId = `${q.incident_id.replace(/[^a-zA-Z0-9-]/g, "_")}-${n}`;
+      // Unique per attempt: a counter from enrich_log restarts when old rows are pruned and then collides with an
+      // old instance ("already exists"), which used to burn the slot without running anything.
+      const instanceId = `${q.incident_id.replace(/[^a-zA-Z0-9-]/g, "_")}-${Date.now().toString(36)}`;
       const at = Math.max(streamT ?? 0, q.s.asOf);
       try {
         await this.env.INCIDENT_ENRICH.create({
@@ -358,6 +359,13 @@ export class Clusterer extends DurableObject<Env> {
         console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, slotsUsed: this.enrichmentsUsed(stream), slotsMax: perStreamMax, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, skipBrief, briefsUsed24h: grant.used, queued: ranked.length }));
       } catch (err) {
         console.error(JSON.stringify({ msg: "enrich_start_failed", incident: q.incident_id, error: String(err) }));
+        // Nothing ran: give the slot back and keep the incident queued for the next batch.
+        this.sql.exec("DELETE FROM enrich_log WHERE rowid = (SELECT max(rowid) FROM enrich_log WHERE incident_id = ?)", q.incident_id);
+        this.sql.exec(
+          "INSERT OR IGNORE INTO enrich_queue2 (incident_id, reason, queued_t, stable_key, level) VALUES (?, ?, ?, ?, ?)",
+          q.incident_id, q.reason, at, q.stable_key, q.level
+        );
+        this.bump("enrich_start_failures", 1);
       }
     }
   }
