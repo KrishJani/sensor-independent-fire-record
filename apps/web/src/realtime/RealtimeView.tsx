@@ -67,7 +67,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => setSelectedId(null), [stream]);
 
-  const ranked = useMemo(() => visibleIncidents(rt.incidents.values()), [rt.incidents]);
+  const ranked = useMemo(() => visibleIncidents(rt.incidents.values(), rt.clock), [rt.incidents, rt.clock]);
   const selected = selectedId ? (rt.incidents.get(selectedId) ?? null) : null;
   const brief = selectedId ? (rt.briefs.get(selectedId) ?? null) : null;
   const { detail, error } = useIncidentDetail(

@@ -103,6 +103,16 @@ export function userOwnsArea(messages: UIMessage[]): boolean {
 }
 
 /** Rewrite "your area" to "this area", keeping the capitalisation of "your". */
+/** Internal incident ids ("live.2278", "replay-ab12cd34.7") are never shown to users. */
+export function hideIncidentIds(text: string): string {
+  return text.replace(/\b(?:live|replay-[a-z0-9]{6,32})\.\d+\b/g, "this incident");
+}
+
+/** ", ," and ",," left by joined fragments become one comma. */
+export function fixStrayCommas(text: string): string {
+  return text.replace(/,(?:\s*,)+/g, ",");
+}
+
 export function rewriteYourArea(text: string): string {
   return text.replace(/\b([Yy])our area\b/g, (_m, y: string) => (y === "Y" ? "This area" : "this area"));
 }
@@ -255,7 +265,7 @@ export function answerPostProcessor(opts: PostProcessOptions = {}): TransformStr
   const process = (s: string) => {
     let out = fixLines(s, (line) => removeUnknownBareUrls(filterLinks(line, known), known));
     if (rewriteArea) out = rewriteYourArea(out);
-    return out;
+    return fixStrayCommas(hideIncidentIds(out));
   };
 
   const emit = (controller: TransformStreamDefaultController<UIMessageChunk>, id: string, raw: string, end = false) => {

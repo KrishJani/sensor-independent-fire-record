@@ -89,7 +89,7 @@ export interface Place {
 
 export interface Enrichment {
   incidentId: string;
-  reason: 'significant' | 'area_doubled';
+  reason: 'significant' | 'area_grown' | 'area_doubled';
   streamT: number;
   completedAt: number;
   weather?: Ok<Weather> | NotOk;
@@ -102,6 +102,10 @@ export interface IncidentDetail {
   summary: IncidentSummary;
   enrichment: Enrichment | null;
   brief: Brief | null;
+  /** Consecutive failed brief attempts (older servers omit it). */
+  briefFails?: number;
+  /** Current weather reading for live incidents (shared with the copilot). */
+  weatherNow?: Weather | null;
   stream: string;
   streamT: number | null;
   dataSource: 'live' | 'replay';
@@ -153,6 +157,8 @@ import { activityAt, briefStaleness, type Activity } from '../../../realtime-wor
 export { briefStaleness };
 import { isPersistentHeat } from '../../../realtime-worker/src/status';
 export { isPersistentHeat };
+import { isGrowing } from '../../../realtime-worker/src/status';
+export { isGrowing };
 export const PERSISTENT_HELP =
   'Many detections on few cells at low power (at least 30 per cell, under 20 MW on average), unlike a spreading fire front; the cause is not determined.';
 

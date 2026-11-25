@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseBbox } from "./grid";
 import { isAllowedOrigin, parseAllowedOrigins } from "./origins";
+import { currentWeather } from "./enrich/currentWeather";
 import { consumeDetections, NRT_SOURCES, pollOnce, watchBboxes, type DetectionsMessage, type PollState } from "./live/poll";
 import type { IncidentDetail } from "./do/incident";
 import type { IncidentStatus } from "./incidentModel";
@@ -73,7 +74,9 @@ app.get("/realtime/incidents/:id", async (c) => {
   const streamT = await clusterer(c.env, stream).getStreamT();
   const detail = (await c.env.INCIDENT.get(c.env.INCIDENT.idFromName(id)).detail(streamT)) as IncidentDetail | null;
   if (!detail) return c.json(err("not_found", "no such incident"), 404);
-  return c.json({ ...detail, stream, streamT, dataSource: stream === "live" ? "live" : "replay" });
+  // Live: one current weather reading shared by the card and the copilot (replays keep their stream-time reading).
+  const weatherNow = stream === "live" ? await currentWeather(detail.summary.centroid[1], detail.summary.centroid[0]) : null;
+  return c.json({ ...detail, weatherNow, stream, streamT, dataSource: stream === "live" ? "live" : "replay" });
 });
 
 // ---- Replay -----------------------------------------------------------------

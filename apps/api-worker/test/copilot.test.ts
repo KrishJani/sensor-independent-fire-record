@@ -463,7 +463,25 @@ describe("get_live_incidents (realtime service binding)", async () => {
     expect(r.stream).toBe("live");
     expect(calls[0]).toContain("bbox=-123%2C38%2C-121%2C39");
     expect(calls[0]).toContain("stream=live");
-    expect(r.incidents[0]).toMatchObject({ affectedAreaKm2: 1718.9, peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestPlaces: ["Napa (12.1 km SW)"] });
+    expect(r.incidents[0]).toMatchObject({ gridCoverageKm2: 1718.9, name: "near Napa", peakFrp: "6718 MW (VIIRS)", brief: "The fire covers 1718.9 km2.", nearestPlaces: ["Napa (12.1 km SW)"] });
+  });
+
+  it("never returns internal ids, and uses the shared current weather reading", async () => {
+    const withWeather = {
+      async fetch(url: string) {
+        const u = new URL(url);
+        if (u.pathname === "/realtime/incidents") return Response.json({ streamT: Date.UTC(2026, 10, 25, 9), count: 1, incidents: [{ ...incident, id: "live.2278", activity: "cooling" }] });
+        return Response.json({
+          brief: { text: "Near Stanton, , the fire is steady." },
+          weatherNow: { time: "2026-11-25T09:00", windSpeedKmh: 14, windFrom: "NW", relativeHumidityPct: 40, temperatureC: 9 },
+          enrichment: { places: { status: "ok", data: [{ name: "Stanton", distanceKm: 3, direction: "N" }] }, weather: { status: "ok", data: { time: "2026-11-22T08:00", windSpeedKmh: 1, windFrom: "S", relativeHumidityPct: 1, temperatureC: 1 } } }
+        });
+      }
+    };
+    const r = (await getLiveIncidents(withWeather, {}, ctx)) as Record<string, any>;
+    expect(JSON.stringify(r)).not.toMatch(/live\.2278|"id"/);
+    expect(r.incidents[0]).toMatchObject({ activity: "cooling", brief: "Near Stanton, the fire is steady.", weather: { time: "2026-11-25T09:00", windKmh: 14 } });
+    expect(r.note).toMatch(/grid coverage/);
   });
 
   it("accepts a replay stream (from args or context) and labels it as a replay", async () => {
@@ -699,5 +717,13 @@ describe("D1 month-to-date and hotspot queries (sqlite stand-in for D1)", async 
     const none = await new LiveFireData({ NRT_DB: fakeD1(empty), D1_RETENTION_DAYS: "92" } as Env).getSpotsSummary({ mode: "realtime", bbox: [-92, 29, -90, 31], from: today, to: today });
     expect(none).toMatchObject({ available: false });
     expect((none as { message: string }).message).toMatch(/get_live_incidents/);
+  });
+});
+
+describe("answer post-processing of ids and punctuation", async () => {
+  const { hideIncidentIds, fixStrayCommas } = await import("../src/copilot/postprocess");
+  it("hides internal incident ids and collapses stray commas", () => {
+    expect(hideIncidentIds("live.2278 and replay-ab12cd34.7 grew; version 1.5 stays")).toBe("this incident and this incident grew; version 1.5 stays");
+    expect(fixStrayCommas("winds 12 km/h, , humidity 40%,, calm")).toBe("winds 12 km/h, humidity 40%, calm");
   });
 });

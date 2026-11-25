@@ -13,7 +13,7 @@ import {
   type Detection,
   type RawDetection
 } from "../src/detection";
-import { activityAt, briefStaleness, heatRank, isPersistentHeat, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
+import { activityAt, briefStaleness, compareIncidents, heatRank, isGrowing, isPersistentHeat, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
 import { volcanoNear } from "../src/volcano";
 import { cellAreaKm2, cellKey, cellOf, neighborCells, parseBbox } from "../src/grid";
 import {
@@ -618,5 +618,21 @@ describe("persistent heat label and list rank", () => {
     const list = [inc(1976, 11, 5000, { name: "Kilauea" }), inc(556, 7, 1400), inc(97, 20, 1000)];
     expect(list.map(heatRank)).toEqual([2, 1, 0]);
     expect([...list].sort((a, b) => heatRank(a) - heatRank(b)).map((i) => i.detections)).toEqual([97, 556, 1976]);
+  });
+});
+
+describe("growing tag and list order by activity", () => {
+  const now = Date.UTC(2026, 10, 25, 12);
+  const mk = (id: string, hoursAgo: number, area: number, growth = 0, extra: object = {}) => ({ id, detections: 50, cells: 10, frpTotalMw: 500, lastSeen: now - hoursAgo * H, affectedAreaKm2: area, growthKm2PerDay: growth, ...extra });
+  it("shows growing only when cells were gained in 24 h AND the incident is Active", () => {
+    expect(isGrowing(mk("a", 2, 100, 20), now)).toBe(true);
+    expect(isGrowing(mk("a", 11.9, 100, 20), now)).toBe(true);
+    expect(isGrowing(mk("c", 20, 100, 20), now)).toBe(false); // cooling
+    expect(isGrowing(mk("i", 37, 100, 20), now)).toBe(false); // inactive 37 h ago
+    expect(isGrowing(mk("a", 2, 100, 0), now)).toBe(false); // active but no new cells
+  });
+  it("orders wildfires Active, then Cooling, then Inactive, then by size", () => {
+    const list = [mk("big-inactive", 40, 900), mk("big-cooling", 20, 800), mk("small-active", 1, 50), mk("mid-active", 3, 300), mk("volcano", 1, 2000, 0, { volcano: { name: "Kilauea" } }), mk("persistent", 1, 1500, 0, { detections: 600, cells: 10, frpTotalMw: 600 * 3 })];
+    expect(list.sort((a, b) => compareIncidents(a, b, now)).map((i) => i.id)).toEqual(["mid-active", "small-active", "big-cooling", "big-inactive", "persistent", "volcano"]);
   });
 });

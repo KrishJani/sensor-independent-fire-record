@@ -18,7 +18,7 @@ export interface RealtimeFetcher {
 const ORIGIN = "https://realtime-worker";
 
 const INCIDENT_RULES =
-  'affectedAreaKm2 is the area of 0.05° grid cells that contain detections. It overstates the burned area: call it "area with detections", never "burned area" or "the fire covers". Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents.'; // host is ignored by service bindings
+  'gridCoverageKm2 is the area of the 0.05° grid cells that contain detections. It overstates the burned area: call it "grid coverage", never "burned area" or "the fire covers"; lead with detections and cells, and give grid coverage as secondary. Refer to an incident by its place ("near Napoleonville") or coordinates, NEVER by an internal id. activity is active (detected < 12 h ago), cooling (12 to 36 h) or inactive (older): say "last detected N hours ago" rather than "burning" for cooling or inactive incidents. heat "persistent_heat" or "volcanic" means the heat is not a wildfire front: say so and do not call it a fire. Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents.'; // host is ignored by service bindings
 
 interface IncidentSummary {
   id: string;
@@ -36,8 +36,13 @@ interface IncidentSummary {
   bbox: Bbox;
   growthKm2PerDay: number;
   sensors: Record<string, number>;
+  activity?: string;
+  frpTotalMw?: number;
+  volcano?: { name: string } | null;
 }
 
+const coords = ([lon, lat]: [number, number]) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"} ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
+const tidy = (s: string) => s.replace(/,(?:\s*,)+/g, ",");
 const iso = (t: number | null | undefined) => (typeof t === "number" ? new Date(t).toISOString().slice(0, 16) + "Z" : null);
 const round = (n: number, dp = 2) => Math.round(n * 10 ** dp) / 10 ** dp;
 
@@ -102,27 +107,31 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
   const r = await list({ status, bbox, limit: Math.min(args.limit ?? 10, 25) });
   if (!r.ok) return { error: "realtime_unavailable", message: `Realtime service error (HTTP ${r.status}).` };
 
+  const heatOf = (s: IncidentSummary) =>
+    s.volcano ? "volcanic" : s.frpTotalMw !== undefined && s.cells > 0 && s.detections / s.cells >= 30 && s.frpTotalMw / s.detections < 20 ? "persistent_heat" : "wildfire";
+  const ids: string[] = r.data.incidents.map((s) => s.id); // internal: used for detail calls only, never returned
   const incidents = r.data.incidents.map((s) => ({
-    id: s.id,
-    status: s.status,
-    affectedAreaKm2: s.affectedAreaKm2,
-    growthKm2PerDayLast24h: s.growthKm2PerDay,
+    location: coords(s.centroid),
+    ...(s.volcano ? { volcano: s.volcano.name } : {}),
+    heat: heatOf(s),
+    activity: s.activity ?? s.status,
     detections: s.detections,
-    activeCells: s.cells,
+    gridCells: s.cells,
+    gridCoverageKm2: s.affectedAreaKm2,
+    newGridCoverageKm2Last24h: s.growthKm2PerDay,
     peakFrp: `${s.frpMaxMw} MW (${s.frpMaxSensor ?? "sensor not recorded"})`,
     detectionsBySensor: s.sensors,
     firstSeen: iso(s.firstSeen),
     lastSeen: iso(s.lastSeen),
-    centroid: { lat: round(s.centroid[1], 3), lon: round(s.centroid[0], 3) },
-    ...(s.mergedInto ? { mergedInto: s.mergedInto } : {})
+    centroid: { lat: round(s.centroid[1], 3), lon: round(s.centroid[0], 3) }
   }));
 
   // Briefs, nearest places and weather for the 3 largest incidents (one detail call each).
   const details = await Promise.all(
-    incidents.slice(0, 3).map((i) =>
-      getJson<{ brief: { text: string; asOf?: string } | null; enrichment: { places?: PlacesStep; weather?: WeatherStep; streamT?: number } | null }>(
+    ids.slice(0, 3).map((id) =>
+      getJson<{ brief: { text: string; asOf?: string } | null; weatherNow?: NonNullable<WeatherStep["data"]> | null; enrichment: { places?: PlacesStep; weather?: WeatherStep; streamT?: number } | null }>(
         rt,
-        `/realtime/incidents/${encodeURIComponent(i.id)}`
+        `/realtime/incidents/${encodeURIComponent(id)}`
       ).catch(() => null)
     )
   );
@@ -130,13 +139,21 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
     if (!d?.ok) return;
     const target = incidents[idx] as Record<string, unknown>;
     if (d.data.brief?.text) {
-      target.brief = d.data.brief.text;
+      target.brief = tidy(d.data.brief.text);
       if (d.data.brief.asOf) target.briefAsOf = d.data.brief.asOf;
     }
     const places = describePlaces(d.data.enrichment?.places);
-    if (places) target.nearestPlaces = places;
+    if (places) {
+      target.nearestPlaces = places;
+      const first = Array.isArray(places) ? places[0]?.replace(/ \(.*$/, "") : null;
+      if (first) target.name = `near ${first}`;
+    }
+    // The same current reading the incident card shows (live); the stored enrichment reading otherwise.
+    const now = d.data.weatherNow;
     const w = d.data.enrichment?.weather;
-    if (w?.status === "ok" && w.data)
+    if (now)
+      target.weather = { time: now.time ?? null, windKmh: now.windSpeedKmh, windFrom: now.windFrom, relativeHumidityPct: now.relativeHumidityPct, temperatureC: now.temperatureC, note: "current reading, same as the incident card" };
+    else if (w?.status === "ok" && w.data)
       target.weather = {
         time: w.data.time ?? null,
         windKmh: w.data.windSpeedKmh,

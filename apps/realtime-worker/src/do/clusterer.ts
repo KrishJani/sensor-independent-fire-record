@@ -3,7 +3,7 @@ import { assignDetections, type ClusterStore, type IncidentRef } from "../cluste
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
 import { volcanoNear } from "../volcano";
-import { heatRank } from "../status";
+import { compareIncidents } from "../status";
 import { activityAt, INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
 import { briefCacheKey, briefCachePrefix } from "../enrich/brief";
 import { briefCacheFull, incidentsToPrune, LIVE_RETENTION_MS, pickCachedLevel, type PruneRow } from "../limits";
@@ -16,6 +16,8 @@ const DEDUPE_RETENTION_MS = LIVE_RETENTION_MS;
 const INCIDENT_FANOUT = 24;
 /** Max enrichment workflows started per ingest batch, so the largest queued incidents go first. */
 const ENRICH_DISPATCH_PER_BATCH = 2;
+/** Live: free slots are used up to this many per call (an hourly poll is one ingest), so the queue drains within the caps. */
+const LIVE_DISPATCH_PER_BATCH = 10;
 /** The live stream's ENRICH_MAX_PER_STREAM applies per rolling 24 h of wall clock. */
 const LIVE_ENRICH_WINDOW_MS = 24 * 3600_000;
 /** Live: how often (wall clock) quiet incidents are checked for a missing or out-of-date brief. */
@@ -248,7 +250,7 @@ export class Clusterer extends DurableObject<Env> {
       .toArray()
       .map((r) => JSON.parse(r.summary) as IncidentSummary)
       .filter((s) => !s.volcano && streamT - s.lastSeen <= INACTIVE_AFTER_MS)
-      .sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2)
+      .sort((a, b) => compareIncidents(a, b, streamT))
       .slice(0, SWEEP_MAX);
     const minAreaKm2 = briefMinAreaKm2(this.env, stream);
     const due: IncidentIngestResult[] = [];
@@ -283,6 +285,7 @@ export class Clusterer extends DurableObject<Env> {
       )
       .toArray();
     if (!queued.length) return;
+    const rankT = streamT ?? Math.max(...queued.map((q) => (q.summary ? (JSON.parse(q.summary) as IncidentSummary).asOf : 0)));
     const ranked = queued
       .filter((q) => {
         if (q.merged_into || !q.summary) {
@@ -292,11 +295,11 @@ export class Clusterer extends DurableObject<Env> {
         return true;
       })
       .map((q) => ({ ...q, s: JSON.parse(q.summary!) as IncidentSummary }))
-      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || heatRank(a.s) - heatRank(b.s) || b.s.affectedAreaKm2 - a.s.affectedAreaKm2);
+      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || compareIncidents(a.s, b.s, rankT));
 
     const perStreamMax = this.streamCap(stream);
     const dailyMax = Number(this.env.BRIEF_DAILY_MAX ?? 60);
-    for (const q of ranked.slice(0, ENRICH_DISPATCH_PER_BATCH)) {
+    for (const q of ranked.slice(0, stream === "live" ? LIVE_DISPATCH_PER_BATCH : ENRICH_DISPATCH_PER_BATCH)) {
       if (this.enrichmentsUsed(stream) >= perStreamMax) {
         this.bump("enrich_deferred_stream_cap", 1);
         return;
@@ -394,7 +397,8 @@ export class Clusterer extends DurableObject<Env> {
     let out = rows.map((r) => JSON.parse(r.summary) as IncidentSummary).map((s) => withStatus(s, streamT));
     if (q.bbox) out = out.filter((s) => bboxIntersects(s.bbox, q.bbox!));
     if (q.status && q.status !== "all") out = out.filter((s) => s.status === q.status);
-    out.sort((a, b) => heatRank(a) - heatRank(b) || b.affectedAreaKm2 - a.affectedAreaKm2 || b.lastSeen - a.lastSeen);
+    const rankT = streamT ?? Math.max(0, ...out.map((s) => s.asOf));
+    out.sort((a, b) => compareIncidents(a, b, rankT));
     return { stream: this.meta("stream"), streamT, incidents: out.slice(0, q.limit ?? 500) };
   }
 

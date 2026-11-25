@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { fmtAgo, fmtInt, fmtKm2, fmtMw } from './format';
 import { INCIDENT_FRP_STOPS, RAMP } from './layers';
-import { ACTIVITY_LABEL, activityOf, isPersistentHeat, PERSISTENT_HELP, type IncidentSummary } from './types';
+import { ACTIVITY_LABEL, activityOf, isGrowing, isPersistentHeat, PERSISTENT_HELP, type IncidentSummary } from './types';
 
 interface Props {
   incidents: IncidentSummary[];
@@ -41,7 +41,7 @@ export const IncidentList = memo(function IncidentList({ incidents, selectedId, 
             <span className="rt-list__main">
               <span className="rt-list__area">
                 {fmtInt(i.detections)} detections · {fmtInt(i.cells)} cells
-                {i.growthKm2PerDay > 0 && <span className="rt-list__growth">growing</span>}
+                {isGrowing(i, Math.max(clock ?? 0, i.asOf)) && <span className="rt-list__growth">growing</span>}
               </span>
               <span className="rt-list__meta">
                 <span className={`rt-list__act rt-list__act--${activity}`}>{ACTIVITY_LABEL[activity]}</span>

@@ -35,6 +35,8 @@ export interface IncidentDetail {
   enrichment: unknown | null;
   enrichments: IncidentState["enrichments"];
   brief: Brief | null;
+  /** Consecutive failed brief attempts since the last success (the card says "failed" only after retries). */
+  briefFails: number;
 }
 
 /** One per incident (DO name = incident id). Holds the aggregate, timeline, enrichment and brief. */
@@ -122,7 +124,8 @@ export class Incident extends DurableObject<Env> {
       timeline: tl,
       enrichments: this.state.enrichments,
       enrichment: enrichment ? JSON.parse(enrichment) : null,
-      brief
+      brief,
+      briefFails: this.state.briefFails ?? 0
     };
   }
 

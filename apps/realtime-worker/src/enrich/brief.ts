@@ -71,7 +71,7 @@ export function buildBriefPrompt(i: BriefInput): { role: "system" | "user"; cont
 export function cleanBrief(raw: string): string {
   let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/[*#_`]/g, "").trim();
   t = t.replace(/\b(?:total )?(?:burned|burnt) area\b/gi, "area with detections");
-  t = t.replace(/\s*[—–]\s*/g, ", ").replace(/\s+/g, " ");
+  t = t.replace(/\s*[—–]\s*/g, ", ").replace(/,(\s*,)+/g, ",").replace(/\s+/g, " ");
   // Split only where a sentence end is followed by whitespace, so decimals ("47.8 km2") stay intact.
   const sentences = t.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
   // A reply cut off by max_tokens ends mid-sentence: drop the fragment if a full sentence precedes it.

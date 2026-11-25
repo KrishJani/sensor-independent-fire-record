@@ -202,7 +202,7 @@ function num(v: unknown): number | null {
   return v === null || v === undefined || !Number.isFinite(n) ? null : n;
 }
 
-function toWeather(source: Weather["source"], time: string, c: Record<string, number | string>): Weather {
+export function toWeather(source: Weather["source"], time: string, c: Record<string, number | string>): Weather {
   const dir = num(c.wind_direction_10m);
   return {
     source,

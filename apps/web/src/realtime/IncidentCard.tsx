@@ -40,7 +40,8 @@ function Row({ label, children, help }: { label: string; children: ReactNode; he
 
 export function IncidentCard({ incident: i, detail, detailError, brief, clock, replay, onBack }: Props) {
   const enrichment = detail?.enrichment ?? null;
-  const weather = enrichment?.weather?.status === 'ok' ? enrichment.weather.data : null;
+  // Live: the current reading (same one the copilot uses); otherwise the reading stored with the enrichment.
+  const weather = detail?.weatherNow ?? (enrichment?.weather?.status === 'ok' ? enrichment.weather.data : null);
   const places = enrichment?.places?.status === 'ok' ? enrichment.places.data : null;
   const candidates = [
     brief,
@@ -125,6 +126,7 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
               <span className="rt-dim">
                 {' '}
                 · {Math.round(weather.temperatureC)}°C, RH {Math.round(weather.relativeHumidityPct)}%
+                {weather.time ? ` · read ${weather.time.slice(5, 10)} ${weather.time.slice(11, 16)} UTC` : ''}
               </span>
             </span>
           ) : (
@@ -176,11 +178,11 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
           </>
         ) : (
           <p className="rt-dim">
-            {briefFailed
-              ? 'The brief could not be generated.'
+            {briefFailed && (detail?.briefFails ?? 0) >= 3
+              ? `The brief could not be generated after ${detail?.briefFails} tries.`
               : briefSkipped
                 ? 'Replays reuse the briefs written on the first run. This incident did not get one.'
-                : 'Briefs are written for the largest incidents once enrichment runs.'}
+                : 'Brief pending: briefs are written in order of size within a daily limit.'}
           </p>
         )}
       </section>

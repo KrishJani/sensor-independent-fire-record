@@ -45,3 +45,27 @@ export function isPersistentHeat(i: { detections: number; cells: number; frpTota
 export function heatRank(i: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown }): number {
   return i.volcano ? 2 : isPersistentHeat(i) ? 1 : 0;
 }
+
+export const activityRank = (a: Activity): number => (a === "active" ? 0 : a === "cooling" ? 1 : 2);
+
+/** Show "growing" only for an incident that gained cells in the last 24 h AND is still active. */
+export function isGrowing(i: { growthKm2PerDay: number; lastSeen: number }, streamT: number): boolean {
+  return i.growthKm2PerDay > 0 && activityAt(i.lastSeen, streamT) === "active";
+}
+
+/**
+ * List order at stream time `streamT`: wildfires before persistent heat before volcanic heat; within each,
+ * Active before Cooling before Inactive; then larger grid coverage first, then most recently seen.
+ */
+export function compareIncidents(
+  a: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; lastSeen: number; affectedAreaKm2: number },
+  b: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; lastSeen: number; affectedAreaKm2: number },
+  streamT: number
+): number {
+  return (
+    heatRank(a) - heatRank(b) ||
+    activityRank(activityAt(a.lastSeen, streamT)) - activityRank(activityAt(b.lastSeen, streamT)) ||
+    b.affectedAreaKm2 - a.affectedAreaKm2 ||
+    b.lastSeen - a.lastSeen
+  );
+}
