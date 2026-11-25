@@ -547,7 +547,8 @@ describe("tool JSON schemas", async () => {
   memory.init();
   const tools = {
     ...createFireTools({ data: new MockFireData(), memory, getContext: () => null }),
-    ...createRealtimeTools({ fetch: async () => new Response("{}") }, () => null)
+    ...createRealtimeTools({ fetch: async () => new Response("{}") }, () => null),
+    ...(await import("../src/copilot/ui")).createUiTools()
   };
 
   // Workers AI validates tool parameters against JSON Schema 2020-12: array-form `items` (zod tuples) is rejected.
@@ -589,6 +590,46 @@ describe("get_app_help (site guide)", async () => {
   it("the prompt routes questions about the site through it", () => {
     const p = buildSystemPrompt({ today: "2026-11-25", context: null, memories: [], webSearchEnabled: true, dataSource: "live" });
     expect(p).toMatch(/## Questions about this site[\s\S]*call get_app_help first/);
+  });
+});
+
+describe("client-side UI tools", async () => {
+  const { createUiTools, contextFromUiResults, UI_TOOLS } = await import("../src/copilot/ui");
+  const { buildSystemPrompt } = await import("../src/copilot/prompt");
+  const tools = createUiTools();
+  const ctx = { tab: "realtime", aoi: null, from: "2023-06-01", to: "2023-06-10", realtimeStream: "replay:abc123def" };
+  const msg = (role: "user" | "assistant", parts: unknown[]) => ({ id: role, role, parts }) as never;
+
+  it("has no execute, so the browser runs them", () => {
+    for (const name of UI_TOOLS) expect((tools as Record<string, { execute?: unknown }>)[name].execute).toBeUndefined();
+  });
+
+  it("start_replay is only for explicit requests", () => {
+    expect(tools.start_replay.description).toMatch(/ONLY when the user explicitly asks/);
+  });
+
+  it("the continuation adopts the map context a UI tool reported", () => {
+    const done = { type: "tool-switch_view", state: "output-available", output: { ok: true, summary: "Switched to Replay", context: ctx } };
+    expect(contextFromUiResults([msg("user", []), msg("assistant", [done])])).toMatchObject({ realtimeStream: "replay:abc123def" });
+    // not after a new user message, not from other tools, not from a pending call
+    expect(contextFromUiResults([msg("assistant", [done]), msg("user", [])])).toBeNull();
+    expect(contextFromUiResults([msg("assistant", [{ ...done, type: "tool-get_calendar" }])])).toBeNull();
+    expect(contextFromUiResults([msg("assistant", [{ ...done, state: "input-available" }])])).toBeNull();
+  });
+
+  it("allows one map action per turn", async () => {
+    const { activeToolNames } = await import("../src/copilot/ui");
+    const all = ["get_calendar", ...UI_TOOLS];
+    const acted = { type: "tool-open_showcase", state: "output-available", output: { ok: true, summary: "Opened" } };
+    expect(activeToolNames(all, [msg("user", [])])).toEqual(all);
+    expect(activeToolNames(all, [msg("user", []), msg("assistant", [acted])])).toEqual(["get_calendar"]);
+  });
+
+  it("the prompt allows map actions and keeps start_replay explicit", () => {
+    const p = buildSystemPrompt({ today: "2026-11-25", context: null, memories: [], webSearchEnabled: true, dataSource: "live", realtimeEnabled: true });
+    expect(p).toMatch(/## Acting on the map/);
+    expect(p).toMatch(/start_replay only when the user explicitly asks/);
+    expect(p).not.toMatch(/You cannot start, pause/);
   });
 });
 

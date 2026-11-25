@@ -36,6 +36,12 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** What a start request did: started a new replay, joined the running one, is waiting out the cooldown, or failed. */
+export type StartResult =
+  | { kind: 'started' | 'joined'; info: ReplayInfo }
+  | { kind: 'cooldown'; seconds: number }
+  | { kind: 'error'; message: string };
+
 /**
  * Live/Replay mode plus the current replay. Mode and replay id survive switching tabs
  * (sessionStorage), and a running replay is rejoined rather than restarted.
@@ -109,7 +115,7 @@ export function useReplay() {
 
   /** Join the scenario if it is running, otherwise start it; during the cooldown, count down and retry. */
   const start = useCallback(
-    async (scenario: string, speed?: number): Promise<ReplayInfo | null> => {
+    async (scenario: string, speed?: number): Promise<StartResult> => {
       cancelPending();
       setModeState('replay');
       save({ mode: 'replay', id: load().id });
@@ -119,7 +125,7 @@ export function useReplay() {
         const r = await startOrJoinReplay(scenario, speed);
         setInfo(r);
         save({ mode: 'replay', id: r.id });
-        return r;
+        return { kind: r.reused ? 'joined' : 'started', info: r };
       } catch (e) {
         if (e instanceof ApiError && e.code === 'replay_cooldown') {
           const wait = Math.max(1, Number(/(\d+) s/.exec(e.message)?.[1] ?? 30));
@@ -135,10 +141,11 @@ export function useReplay() {
             void startRef.current(scenario, speed);
           }, 250) };
           pending.current = p;
-          return null;
+          return { kind: 'cooldown', seconds: wait };
         }
-        setError(message(e));
-        return null;
+        const m = message(e);
+        setError(m);
+        return { kind: 'error', message: m };
       } finally {
         setBusy(false);
       }

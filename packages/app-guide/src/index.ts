@@ -63,7 +63,7 @@ The site also tracks live fires across North America, replays the June 2023 Queb
 - **Read the calendar:** on Archival, open Calendar. Darker squares mean more fire activity. Choose "vs normal" to colour each month against its own median. Hover a month for details, click it to show that month on the map.
 - **Raw vs Harmonized:** in the calendar, Raw counts the satellites' own detections and jumps when VIIRS starts in 2012. Harmonized is the record you can compare across years. On the map, the Explorer's Activity and Hotspots modes are harmonized and Raw shows each detection with its sensor.
 - **Export CSV:** in the calendar, click CSV to download the months for the current area.
-- **Ask the copilot:** open the chat and ask in plain words, for example "What's the biggest fire right now?" It reads what is on the map.`,
+- **Ask the copilot:** open the chat and ask in plain words, for example "What's the biggest fire right now?" It reads what is on the map, and when you ask it can switch views, move the map, open a showcase period or start the replay. Each action shows as a short line in the chat.`,
   },
   {
     id: "terms",

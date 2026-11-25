@@ -12,7 +12,7 @@ import { SourceBadge, StatusChip } from './StatusChip';
 import { titlePlace, type Bbox, type StreamId } from './types';
 import { useIncidentDetail } from './useIncidentDetail';
 import { useRealtimeLayers } from './useRealtimeLayers';
-import { useReplay } from './useReplay';
+import { useReplay, type StartResult } from './useReplay';
 import { useRealtimeStream } from './useRealtimeStream';
 import './realtime.css';
 
@@ -55,7 +55,9 @@ function fit(map: mapboxgl.Map, [w, s, e, n]: Bbox, maxZoom: number, duration: n
  * A one-shot request from outside the panel (welcome card, copilot): show Live, show Replay, or start/join a
  * scenario. Handled once per id, then reported back with onRequestDone.
  */
-export type RealtimeRequest = { id: number; mode: 'live' } | { id: number; mode: 'replay'; scenario?: string };
+export type RealtimeRequest =
+  | { id: number; mode: 'live' }
+  | { id: number; mode: 'replay'; scenario?: string; onResult?(r: StartResult): void };
 
 interface Props {
   map: mapboxgl.Map;
@@ -103,7 +105,7 @@ export function RealtimeView({ map, onContextChange, request, onRequestDone }: P
 
   const startScenario = (s: Scenario) => {
     fit(map, s.bounds, 7, 2400);
-    void replay.start(s.id, Number(speed));
+    return replay.start(s.id, Number(speed));
   };
   const startRef = useRef(startScenario);
   startRef.current = startScenario;
@@ -114,7 +116,8 @@ export function RealtimeView({ map, onContextChange, request, onRequestDone }: P
     handled.current = request.id;
     if (request.mode === 'replay' && request.scenario) {
       const s = scenarioById(request.scenario);
-      if (s) startRef.current(s); // start() joins a running replay and waits out the cooldown
+      // start() joins a running replay and waits out the cooldown
+      if (s) void startRef.current(s).then((r) => request.onResult?.(r));
       else replay.setMode('replay');
     } else {
       replay.setMode(request.mode);
@@ -220,7 +223,7 @@ export function RealtimeView({ map, onContextChange, request, onRequestDone }: P
                 type="button"
                 className="rt-scenario"
                 disabled={replay.busy || replay.startsIn !== null}
-                onClick={() => startScenario(s)}
+                onClick={() => void startScenario(s)}
               >
                 <span className="rt-scenario__title">{s.title}</span>
                 <span className="rt-scenario__blurb">{s.blurb}</span>

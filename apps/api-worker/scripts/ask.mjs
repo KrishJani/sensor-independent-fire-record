@@ -4,8 +4,10 @@
 //   HOST=nasa-fire-api.<subdomain>.workers.dev node scripts/ask.mjs "What is this site?" "How do I export CSV?"
 //
 // Env: HOST (default localhost:8787), TAB (realtime | archival, default realtime),
-//      STREAM (default live; e.g. replay:<id>), MODE (live | replay, default from STREAM).
-// Client-side tools (tools the browser runs) are answered with { ok: true } and printed, as the web app would.
+//      STREAM (default live; e.g. replay:<id>).
+// UI tools (switch_view, open_showcase, fly_to, start_replay) run in the browser; here they are answered with
+// a simulated result in the web app's shape ({ ok, summary, context }) and nothing on the map changes.
+// START_REPLAY_RESULT=started|joined|cooldown picks what start_replay reports (default joined).
 
 import { randomUUID } from "node:crypto";
 import { AgentClient } from "agents/client";
@@ -28,8 +30,32 @@ const context =
         aoi: null,
         from: "2026-11-23",
         to: "2026-11-25",
-        realtime: { mode: process.env.MODE ?? (STREAM.startsWith("replay:") ? "replay" : "live"), stream: STREAM, label: null }
+        realtimeStream: STREAM
       };
+
+const UI_TOOLS = new Set(["switch_view", "open_showcase", "fly_to", "start_replay"]);
+const SHOWCASE = { "california-2020-08": "California, Aug–Sep 2020", "quebec-2023-06": "Quebec, 1–10 June 2023" };
+function simulateUi(name, input) {
+  const realtime = (stream) => ({ tab: "realtime", aoi: null, from: "2026-11-23", to: "2026-11-25", ...(stream ? { realtimeStream: stream } : {}) });
+  switch (name) {
+    case "switch_view": {
+      const label = { live: "Live", replay: "Replay", archival: "Archival" }[input.view];
+      const ctx = input.view === "archival" ? { tab: "archival", aoi: null, from: "2020-08-01", to: "2020-08-31" } : realtime(input.view === "live" ? "live" : null);
+      return { ok: true, summary: `Switched to ${label}`, context: ctx };
+    }
+    case "open_showcase":
+      return { ok: true, summary: `Opened ${SHOWCASE[input.period]}`, context: { tab: "archival", aoi: { bbox: [-124.5, 32.5, -114, 42] }, from: "2020-08-01", to: "2020-08-31" } };
+    case "fly_to":
+      return { ok: true, summary: `Moved the map to ${input.label}`, context: { ...context, aoi: { bbox: [input.lon - 3, input.lat - 2, input.lon + 3, input.lat + 2], label: input.label } } };
+    case "start_replay": {
+      const kind = process.env.START_REPLAY_RESULT ?? "joined";
+      const ctx = { ...realtime("replay:askstub01"), from: "2023-06-01", to: "2023-06-10" };
+      if (kind === "cooldown")
+        return { ok: true, summary: "Quebec 2023 replay starts in 18s", note: "Another replay was started moments ago; this one starts automatically in about 18 seconds.", context: realtime(null) };
+      return { ok: true, summary: kind === "started" ? "Started the Quebec 2023 replay" : "Joined the Quebec 2023 replay already running", context: ctx };
+    }
+  }
+}
 
 const client = new AgentClient({ agent: "FireCopilotAgent", name: `ask-${randomUUID()}`, host: HOST });
 let transcript = [];
@@ -47,7 +73,13 @@ client.addEventListener("message", (event) => {
     transcript = msg.messages;
     return;
   }
-  if (msg.type !== "cf_agent_use_chat_response" || !current || msg.id !== current.id) return;
+  // After a UI tool result the server continues the turn under a new request id, announced as a stream to
+  // resume; it only streams the chunks once acknowledged (useAgentChat does this in the browser).
+  if (msg.type === "cf_agent_stream_resuming") {
+    client.send(JSON.stringify({ type: "cf_agent_stream_resume_ack", id: msg.id }));
+    return;
+  }
+  if (msg.type !== "cf_agent_use_chat_response" || !current || (current.id !== null && msg.id !== current.id)) return;
   if (msg.body) {
     let chunk;
     try {
@@ -64,9 +96,24 @@ client.addEventListener("message", (event) => {
   }
   if (msg.done || msg.error) {
     const c = current;
+    if (msg.error) {
+      current = null;
+      return c.reject(new Error(msg.body ?? "request failed"));
+    }
+    const pending = c.tools.filter((t) => UI_TOOLS.has(t.name) && !t.answered);
+    if (pending.length) {
+      for (const t of pending) {
+        t.answered = true;
+        const output = simulateUi(t.name, t.input);
+        console.log(`  ⇠ ${t.name}: ${output.summary}`);
+        client.send(JSON.stringify({ type: "cf_agent_tool_result", toolCallId: t.id, toolName: t.name, output, autoContinue: true }));
+      }
+      c.id = null; // accept the continuation's response
+      c.text += c.text && !/\s$/.test(c.text) ? " " : "";
+      return;
+    }
     current = null;
-    if (msg.error) c.reject(new Error(msg.body ?? "request failed"));
-    else c.resolve(c);
+    c.resolve(c);
   }
 });
 

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { ChatIcon } from '../realtime/icons';
+import type { AppActions } from '../help/actions';
 import type { MapContext } from './context';
 import './chat.css';
 
@@ -19,13 +20,15 @@ function loadOpen(): boolean {
 interface Props {
   getContext(): MapContext;
   suggestions: string[];
+  /** For the copilot's client-side UI tools. */
+  actions: AppActions;
 }
 
 /**
  * Collapsible copilot drawer. The agent connection opens on first use and then stays
  * mounted (hidden when collapsed) so a streaming answer is not cut off.
  */
-export function ChatDrawer({ getContext, suggestions }: Props) {
+export function ChatDrawer({ getContext, suggestions, actions }: Props) {
   const [open, setOpen] = useState(loadOpen);
   const [used, setUsed] = useState(open);
 
@@ -55,7 +58,7 @@ export function ChatDrawer({ getContext, suggestions }: Props) {
       {used && (
         <div className="chat-drawer" hidden={!open}>
           <Suspense fallback={<section className="chat material" aria-busy="true" />}>
-            <ChatPanel getContext={getContext} suggestions={suggestions} onClose={() => toggle(false)} />
+            <ChatPanel getContext={getContext} suggestions={suggestions} actions={actions} onClose={() => toggle(false)} />
           </Suspense>
         </div>
       )}

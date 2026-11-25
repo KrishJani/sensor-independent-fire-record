@@ -21,6 +21,7 @@ import { TurnTimer, type TurnTiming } from "./timing";
 import { buildSystemPrompt } from "./prompt";
 import { createRealtimeTools } from "./realtime";
 import { createFireTools } from "./tools";
+import { activeToolNames, contextFromUiResults, createUiTools } from "./ui";
 import { createWebTools } from "./web";
 
 export interface CopilotState {
@@ -57,7 +58,8 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     onFinish: GenerateTextOnFinishCallback<ToolSet>,
     options?: OnChatMessageOptions
   ) {
-    const incoming = parseContext(options?.body?.context);
+    // A continuation after a client UI tool carries the old body; the tool's own report of the map wins then.
+    const incoming = contextFromUiResults(this.messages) ?? parseContext(options?.body?.context);
     if (incoming) {
       this.setState({ context: incoming, contextUpdatedAt: new Date().toISOString() });
     }
@@ -69,7 +71,8 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     const tools: ToolSet = timer.wrapTools({
       ...createFireTools({ data, memory: this.memory, getContext: () => this.state.context }),
       ...realtimeTools,
-      ...webTools
+      ...webTools,
+      ...createUiTools()
     });
 
     const cacheTtl = chatCacheTtl(this.env.CHAT_CACHE_TTL);
@@ -95,6 +98,7 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
         ignoreIncompleteToolCalls: true
       }),
       tools,
+      activeTools: activeToolNames(Object.keys(tools), this.messages),
       stopWhen: isStepCount(MAX_STEPS),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       prepareStep: ({ stepNumber }) =>

@@ -18,11 +18,11 @@ export function Welcome({ actions, onClose }: Props) {
         <h2 id="welcome-title">World Fires</h2>
         <p id="welcome-text">{TAGLINE}</p>
         <div className="welcome__actions">
-          <button type="button" className="welcome__primary" onClick={go(() => actions.showReplay('quebec-2023-06'))}>
+          <button type="button" className="welcome__primary" onClick={go(() => void actions.startReplay('quebec-2023-06'))}>
             Watch the Quebec 2023 replay
           </button>
           <button type="button" className="welcome__secondary" onClick={go(actions.showLive)}>See live fires</button>
-          <button type="button" className="welcome__secondary" onClick={go(() => actions.openShowcase('california-2020-08'))}>
+          <button type="button" className="welcome__secondary" onClick={go(() => void actions.openShowcase('california-2020-08'))}>
             Explore 25 years of history
           </button>
         </div>

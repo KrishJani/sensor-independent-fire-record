@@ -4,8 +4,10 @@ import { useAgentChat } from '@cloudflare/ai-chat/react';
 import type { UIMessage } from 'ai';
 import { API_URL } from '../realtime/config';
 import { CloseIcon, SendIcon, StopIcon } from '../realtime/icons';
+import type { AppActions } from '../help/actions';
 import type { MapContext } from './context';
 import { Markdown } from './Markdown';
+import { runUiTool, UI_TOOL_NAMES, type UiToolOutput } from './uiTools';
 
 const SESSION_KEY = 'copilotSessionId';
 
@@ -38,12 +40,27 @@ interface ToolPart {
   type: string;
   state?: string;
   toolName?: string;
+  output?: unknown;
 }
 
 function ToolChip({ part }: { part: ToolPart }) {
   const name = part.type === 'dynamic-tool' ? (part.toolName ?? 'tool') : part.type.slice(5);
-  const [running, done] = TOOL_LABELS[name] ?? [`Running ${name}`, `Ran ${name}`];
   const state = part.state ?? '';
+  // UI tools (the copilot acting on the map) show what they did: "Switched to Replay".
+  const ui = UI_TOOL_NAMES.has(name) ? (part.output as UiToolOutput | undefined) : undefined;
+  const [running, done] = ui?.summary
+    ? [ui.summary, ui.summary]
+    : UI_TOOL_NAMES.has(name)
+      ? ['Updating the map', 'Updated the map']
+      : (TOOL_LABELS[name] ?? [`Running ${name}`, `Ran ${name}`]);
+  if (ui && !ui.ok) {
+    return (
+      <span className="chat-tool is-done is-failed">
+        <span className="chat-tool__dot" aria-hidden="true" />
+        {ui.summary}
+      </span>
+    );
+  }
   const failed = state === 'output-error' || state === 'output-denied';
   const finished = state === 'output-available' || failed;
   return (
@@ -80,10 +97,13 @@ function Message({ message }: { message: UIMessage }) {
 interface PanelProps {
   getContext(): MapContext;
   suggestions: string[];
+  actions: AppActions;
   onClose(): void;
 }
 
-export default function ChatPanel({ getContext, suggestions, onClose }: PanelProps) {
+const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export default function ChatPanel({ getContext, suggestions, actions, onClose }: PanelProps) {
   const [id] = useState(sessionId);
   const api = new URL(API_URL);
   const agent = useAgent({
@@ -94,10 +114,25 @@ export default function ChatPanel({ getContext, suggestions, onClose }: PanelPro
   });
   const latestContext = useRef(getContext);
   latestContext.current = getContext;
+  const latestActions = useRef(actions);
+  latestActions.current = actions;
   const { messages, sendMessage, status, stop, clearHistory, error } = useAgentChat({
     agent,
     // Sent with every message; a function so it always reads the current map state.
     body: () => ({ context: latestContext.current() }),
+    // The copilot's UI tools run here, on the map; the result carries the map context after the action
+    // (the server continues the turn with it, since the continuation reuses the original request body).
+    onToolCall: async ({ toolCall, addToolOutput }) => {
+      if (!UI_TOOL_NAMES.has(toolCall.toolName)) return;
+      const out = await runUiTool(toolCall.toolName, toolCall.input, latestActions.current);
+      // Let the tab switch / replay stream reach React state before reading the context.
+      for (let i = 0; i < 10; i++) {
+        await settle(150);
+        const ctx = latestContext.current();
+        if (toolCall.toolName !== 'start_replay' || ctx.realtimeStream?.startsWith('replay:')) break;
+      }
+      addToolOutput({ toolCallId: toolCall.toolCallId, output: { ...out, context: latestContext.current() } });
+    },
   });
 
   const [draft, setDraft] = useState('');

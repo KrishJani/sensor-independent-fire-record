@@ -121,16 +121,41 @@ export function App() {
       setTab('realtime');
       setRtRequest({ id: ++requestId.current, mode: 'live' });
     },
-    showReplay(scenario) {
+    showReplay() {
       setTab('realtime');
-      setRtRequest({ id: ++requestId.current, mode: 'replay', scenario });
+      setRtRequest({ id: ++requestId.current, mode: 'replay' });
+    },
+    startReplay(scenario) {
+      setTab('realtime');
+      return new Promise((resolve) => {
+        // RealtimeView mounts with the tab and reports back; give up if the map never gets there.
+        const t = setTimeout(() => resolve({ kind: 'error', message: 'The realtime view did not open.' }), 20_000);
+        setRtRequest({ id: ++requestId.current, mode: 'replay', scenario, onResult: (r) => { clearTimeout(t); resolve(r); } });
+      });
+    },
+    showArchival() {
+      setTab('archival');
     },
     openShowcase(id) {
       setTab('archival');
       setCalendarRequest((n) => n + 1);
       const s = latest.current.showcase.find((x) => x.id === id);
-      if (s) showShowcase(s);
-      else if (id === 'california-2020-08') setDates((prev) => ({ ...prev, archival: '2020-08-20' as ISODate }));
+      if (s) {
+        showShowcase(s);
+        return s.label;
+      }
+      if (id !== 'california-2020-08') return null;
+      setDates((prev) => ({ ...prev, archival: '2020-08-20' as ISODate }));
+      return 'California, Aug–Sep 2020';
+    },
+    flyTo(lon, lat, zoom) {
+      const m = latest.current.map;
+      if (!m) return Promise.resolve();
+      return new Promise((resolve) => {
+        const t = setTimeout(resolve, 4000);
+        m.once('moveend', () => { clearTimeout(t); resolve(); });
+        m.flyTo({ center: [lon, lat], zoom, essential: true });
+      });
     },
   }), [showShowcase]);
   const onRequestDone = useCallback((id: number) => setRtRequest((r) => (r?.id === id ? null : r)), []);
@@ -171,6 +196,7 @@ export function App() {
       {tab === 'realtime' && map && <RealtimeView map={map} onContextChange={setRealtimeCtx} request={rtRequest} onRequestDone={onRequestDone} />}
       <ChatDrawer
         getContext={() => buildContext({ map, tab, date: dates[tab], realtime: realtimeCtx })}
+        actions={actions}
         suggestions={suggestionsFor(tab, realtimeCtx)}
       />
 
