@@ -20,7 +20,7 @@ export interface PeriodData extends ShowcasePeriod {
 }
 
 const memo = new Map<string, Promise<PeriodData>>();
-async function load(env: Env, id: string): Promise<PeriodData> {
+export async function loadShowcase(env: Env, id: string): Promise<PeriodData> {
   let p = memo.get(id);
   if (!p) {
     p = (async () => {
@@ -116,7 +116,7 @@ export async function archivalSpots(env: Env, ctx: Ctx, q: URLSearchParams) {
       const period = SHOWCASE_PERIODS.find((p) => overlapsPeriod(p, from, to, bbox));
       if (period) {
         const sensor = (q.get('sensor') ?? 'all').toUpperCase() as Sensor;
-        const P = await load(env, period.id);
+        const P = await loadShowcase(env, period.id);
         return buildShowcaseResponse(P, { level, heat: q.get('heat') ?? 'fire', sensor: ['ALL', 'VIIRS', 'MODIS'].includes(sensor) ? sensor : 'ALL', measure: q.get('measure') ?? 'harmonized', bbox, from, to });
       }
     }

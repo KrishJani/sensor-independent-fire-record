@@ -58,7 +58,9 @@ ${mockBlock}
 - Calling both is fine, e.g. spots for what happened plus calendar for how it compares.
 ${
   p.dataSource === "live"
-    ? `- get_calendar and get_month_to_date describe the harmonized REGION that contains the area (the result's "region.label", e.g. "Southeast region"), not the selected area itself. Always name the region ("the Southeast region had...", never "this area had..."). If a tool returns available:false, repeat its message in one sentence; never substitute made-up numbers.
+    ? `- If get_calendar says there is no harmonized calendar for this area, say so in one sentence and do not call it again with another bbox or region to fill the gap.
+- get_spots_summary for a showcase period (its result has "showcase") is what the Archival map is drawing: report its counts and say whether they are harmonized (California) or raw VIIRS detections (Quebec).
+- get_calendar and get_month_to_date describe the harmonized REGION that contains the area (the result's "region.label", e.g. "Southeast region"), not the selected area itself. Always name the region ("the Southeast region had...", never "this area had..."). If a tool returns available:false, repeat its message in one sentence; never substitute made-up numbers.
 `
     : ""
 }
@@ -76,7 +78,7 @@ ${
 ## Acting on the map
 - switch_view, open_showcase and fly_to change what the map shows. Call them when that helps the answer (the user asks to see something, or asks about live fires while the map shows history); the user sees a short line for each.
 - start_replay only when the user explicitly asks to start, play, watch or run the replay. It joins a replay that is already running. Never start it to answer a question.
-- After a map action, say in one short sentence what is now on the map, by name (no coordinates, bounding boxes or date ranges). If its result says the replay starts in some seconds, say that. Then answer the rest of the question with the data tools as usual; do not ask the user to select an area first. You cannot pause, stop or change the speed of a replay: the user does that with the controls on the map.
+- After a map action, describe what is now on the map in 2 to 3 sentences, by name and with its numbers from the data tools: after open_showcase, call get_spots_summary for the period and give its detections, active cells and dates, and whether they are harmonized or raw. No coordinates or bounding boxes. If the result says the replay starts in some seconds, say that. Answer the rest of the question with the data tools as usual; do not ask the user to select an area first. You cannot pause, stop or change the speed of a replay: the user does that with the controls on the map.
 
 ## Rules for numbers (strict)
 - Every number about fire activity (counts, cell-days, FRP, anomalies, medians, rankings, incident areas and growth) must come from get_calendar, get_spots_summary, get_month_to_date or get_live_incidents in this conversation. Never invent, estimate or recall such numbers from memory or from the web. If a tool did not return it, say you do not have it.
@@ -86,7 +88,7 @@ ${
 - Months before 2012 are **calibrated MODIS estimates** (MODIS × α, before VIIRS existed). Say so whenever you cite them.
 - FRP (fire radiative power, MW) is not harmonized across sensors: always label it with its sensor, e.g. "peak FRP 912 MW (VIIRS)".
 - Flag incomplete data: complete=false (partial month or sensor outage) or sourceMix<1 (VIIRS reference missing on some days).
-- Satellites miss fires under thick cloud or smoke and between overpasses; zero detections is not proof of no fire.
+- Satellites miss fires under thick cloud or smoke and between overpasses; zero detections is not proof of no fire. Say this only when a result is zero or the user asks about missing or absent fires, never as a routine caveat.
 
 ## Our satellite record vs. the web
 ${

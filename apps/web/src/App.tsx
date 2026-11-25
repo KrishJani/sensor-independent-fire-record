@@ -227,6 +227,22 @@ export function App() {
             ))}
           </div>
         )}
+        {tab === 'archival' && archivalDetail === false && showcase.length > 0 && (
+          // Narrow screens: the same choice as a compact select, so the top row does not wrap over the panels.
+          <label className="showcase-select material">
+            <span className="visually-hidden">Showcase period</span>
+            <select
+              value={inShowcase?.id ?? ''}
+              onChange={(e) => {
+                const s = showcase.find((x) => x.id === e.target.value);
+                if (s) showShowcase(s);
+              }}
+            >
+              <option value="" disabled>Showcase periods</option>
+              {showcase.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </label>
+        )}
         <DatePicker
           key={tab}
           value={selected}

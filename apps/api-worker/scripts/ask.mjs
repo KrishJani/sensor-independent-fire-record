@@ -4,7 +4,7 @@
 //   HOST=nasa-fire-api.<subdomain>.workers.dev node scripts/ask.mjs "What is this site?" "How do I export CSV?"
 //
 // Env: HOST (default localhost:8787), TAB (realtime | archival, default realtime),
-//      STREAM (default live; e.g. replay:<id>).
+//      STREAM (default live; e.g. replay:<id>), AOI (bbox JSON for the map view, e.g. "[-80,45,-60,53]").
 // UI tools (switch_view, open_showcase, fly_to, start_replay) run in the browser; here they are answered with
 // a simulated result in the web app's shape ({ ok, summary, context }) and nothing on the map changes.
 // START_REPLAY_RESULT=started|joined|cooldown picks what start_replay reports (default joined).
@@ -22,12 +22,13 @@ if (!questions.length) {
   process.exit(2);
 }
 
+const aoi = process.env.AOI ? { bbox: JSON.parse(process.env.AOI) } : null;
 const context =
   TAB === "archival"
-    ? { tab: "archival", aoi: null, from: "2020-08-01", to: "2020-08-31" }
+    ? { tab: "archival", aoi, from: "2020-08-01", to: "2020-08-31" }
     : {
         tab: "realtime",
-        aoi: null,
+        aoi,
         from: "2026-11-23",
         to: "2026-11-25",
         realtimeStream: STREAM
@@ -44,7 +45,15 @@ function simulateUi(name, input) {
       return { ok: true, summary: `Switched to ${label}`, context: ctx };
     }
     case "open_showcase":
-      return { ok: true, summary: `Opened ${SHOWCASE[input.period]}`, context: { tab: "archival", aoi: { bbox: [-124.5, 32.5, -114, 42] }, from: "2020-08-01", to: "2020-08-31" } };
+      return {
+        ok: true,
+        summary: `Opened ${SHOWCASE[input.period]}`,
+        // what the map reports after fitting the period at 1400 px (month preset around the period's middle day)
+        context:
+          input.period === "quebec-2023-06"
+            ? { tab: "archival", aoi: { bbox: [-84.2, 43.6, -55.8, 54.2] }, from: "2023-06-01", to: "2023-06-30" }
+            : { tab: "archival", aoi: { bbox: [-128.7, 31.1, -109.8, 43.4] }, from: "2020-08-01", to: "2020-08-31" }
+      };
     case "fly_to":
       return { ok: true, summary: `Moved the map to ${input.label}`, context: { ...context, aoi: { bbox: [input.lon - 3, input.lat - 2, input.lon + 3, input.lat + 2], label: input.label } } };
     case "start_replay": {

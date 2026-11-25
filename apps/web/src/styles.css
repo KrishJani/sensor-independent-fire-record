@@ -876,7 +876,7 @@ button:focus-visible {
 /* Calendar drawer sits bottom-left; on narrow screens the toolbar rides above it. */
 @media (max-width: 900px) {
   .toolbar { bottom: auto; top: calc(max(var(--inset), env(safe-area-inset-top)) + 44px); left: max(var(--inset), env(safe-area-inset-left)); transform: none; }
-  .toolbar button { min-width: 52px; }
+  .toolbar button { min-width: 46px; padding: 6px 4px; }
   .explorer { top: auto; bottom: 12px; max-height: 50vh; }
   .calendar-drawer { width: calc(100vw - 2 * var(--inset)); }
   .measure { top: calc(max(var(--inset), env(safe-area-inset-top)) + 110px); }
@@ -901,12 +901,12 @@ button:focus-visible {
 /* Archival showcase: period picker (in the top row, left of the date) and the label on the map */
 .showcase-picker {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   margin-left: auto;
   margin-right: 8px;
-  max-width: min(440px, 100%);
   padding: 6px 8px;
   border-radius: 12px;
   font-size: 12px;
@@ -1036,3 +1036,18 @@ button:focus-visible {
   .welcome { width: 100%; border-radius: var(--radius-popover) var(--radius-popover) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 .help__footer .text-button { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* Narrow layouts (~800–1100 px): showcase periods as a select, the note below the toolbar */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.showcase-select { display: none; align-items: center; height: var(--control-h); margin-left: auto; padding: 0 4px; border-radius: var(--radius); }
+.showcase-select select { height: 26px; max-width: 200px; border: 0; border-radius: 6px; background: transparent; color: var(--label); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.showcase-select select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 1250px) {
+  .showcase-picker { display: none; }
+  .showcase-select { display: inline-flex; }
+}
+@media (max-width: 900px) {
+  .overlay-top .brand { display: none; }
+  /* the toolbar takes the row under the top bar here; the showcase note goes under it and wraps */
+  .map-chip { top: calc(max(var(--inset), env(safe-area-inset-top)) + 100px); font-weight: 500; line-height: 1.35; max-width: min(420px, calc(100vw - 2 * var(--inset) - 400px)); }
+}

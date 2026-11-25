@@ -633,6 +633,98 @@ describe("client-side UI tools", async () => {
   });
 });
 
+describe("showcase periods in the copilot's spots tool", async () => {
+  const { summarizeShowcase } = await import("../src/data/showcaseSummary");
+  const { LiveFireData } = await import("../src/data/liveFireData");
+  const cell = (lat: number, lon: number) => Math.floor((lat + 90) * 20) * 7200 + Math.floor((lon + 180) * 20);
+  const period = (harmonized: boolean) =>
+    ({
+      id: harmonized ? "california-2020-08" : "quebec-2023-06",
+      label: harmonized ? "California, Aug–Sep 2020" : "Quebec, 1–10 June 2023",
+      from: harmonized ? "2020-08-01" : "2023-06-01",
+      to: harmonized ? "2020-09-30" : "2023-06-10",
+      bbox: harmonized ? [-124.5, 32.5, -114, 42.1] : [-80, 45, -60, 53],
+      harmonized,
+      note: "",
+      dates: harmonized ? ["2020-08-16", "2020-08-17"] : ["2023-06-01", "2023-06-02"],
+      // two cell-days on day 0 (one cell seen by two satellites), one on day 1, one outside the bbox
+      cells: harmonized
+        ? { d: [0, 0, 1, 1], c: [cell(38, -122), cell(38, -122), cell(38.2, -122), cell(10, 10)], s: [2, 0, 2, 2], p: [50, 20, 80, 5], n: [4, 1, 3, 9], w: [1, 0, 1, 1] }
+        : { d: [0, 0, 1, 1], c: [cell(50, -70), cell(50, -70), cell(50.2, -70), cell(10, 10)], s: [2, 3, 3, 2], p: [50, 20, 80, 5], n: [4, 1, 3, 9], w: [0, 0, 0, 0] },
+      points: harmonized
+        ? { lat: [38, 38.2], lon: [-122, -122], d: [0, 1], t: [930, 2105], f: [50, 80], s: [2, 2], q: [80, 90], n: [1, 0] }
+        : { lat: [50, 50.2], lon: [-70, -70], d: [0, 1], t: [930, 2105], f: [50, 80], s: [2, 3], q: [80, 90], n: [1, 0] }
+    }) as never;
+
+  it("summarizes the harmonized California period and says it is harmonized", () => {
+    const r = summarizeShowcase(period(true), { bbox: [-125, 32, -114, 42], from: "2020-08-01", to: "2020-08-31" });
+    expect(r.counts).toMatchObject({ detections: 8, activeCellDays: 2, distinctCells: 2 });
+    expect(r.harmonizedCellDays).toBe(2);
+    expect(r.showcase).toMatchObject({ id: "california-2020-08", harmonized: true });
+    expect(r.note).toMatch(/HARMONIZED/);
+    expect(r.daily).toEqual([{ date: "2020-08-16", activeCells: 1, peakFrpMw: 50 }, { date: "2020-08-17", activeCells: 1, peakFrpMw: 80 }]);
+    expect(r.topDetections[0]).toMatchObject({ frpMw: 80, sensor: "VIIRS", date: "2020-08-17", timeUtc: "21:05" });
+    expect(r.lastSeen).toBe("2020-08-17T21:05:00Z");
+  });
+
+  it("summarizes the Quebec period as raw VIIRS detections, clipped to the period", () => {
+    const r = summarizeShowcase(period(false), { bbox: [-84, 43, -56, 54], from: "2023-06-01", to: "2023-06-30" });
+    expect(r.counts.detections).toBe(8);
+    expect(r.counts.bySatellite).toEqual({ SNPP: { detections: 4, cellDays: 1 }, NOAA20: { detections: 4, cellDays: 2 } });
+    expect(r.harmonizedCellDays).toBeUndefined();
+    expect(r.note).toMatch(/RAW VIIRS detections, NOT harmonized/);
+    expect(r.to).toBe("2023-06-10");
+    expect(r.note).toMatch(/clipped/);
+  });
+
+  it("LiveFireData reads the R2 showcase file for a past range that overlaps a period", async () => {
+    const gz = await new Response(new Blob([JSON.stringify(period(false))]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+    const keys: string[] = [];
+    const env = { D1_RETENTION_DAYS: "92", SHOWCASE: { get: async (k: string) => (keys.push(k), { body: new Response(gz).body }) } } as never;
+    const r = (await new LiveFireData(env).getSpotsSummary({ mode: "archival", bbox: [-84, 43, -56, 54], from: "2023-06-01", to: "2023-06-10" })) as { showcase?: { id: string }; counts: { detections: number } };
+    expect(keys).toEqual(["quebec-2023-06.json.gz"]);
+    expect(r.showcase?.id).toBe("quebec-2023-06");
+    expect(r.counts.detections).toBe(8);
+    // a past range with no showcase period still says detail is not loaded
+    const none = await new LiveFireData(env).getSpotsSummary({ mode: "archival", bbox: [-84, 43, -56, 54], from: "2019-06-01", to: "2019-06-10" });
+    expect(none).toMatchObject({ available: false });
+  });
+});
+
+describe("calendar outside the US harmonized archive", async () => {
+  const { LiveFireData, OUTSIDE_CALENDAR } = await import("../src/data/liveFireData");
+  const { createFireTools } = await import("../src/copilot/tools");
+  const QUEBEC: [number, number, number, number] = [-84.2, 43.6, -55.8, 54.2];
+
+  it("returns 'no harmonized calendar for this area' for a Quebec view, without querying", async () => {
+    const r = await new LiveFireData({} as never).getCalendar({ bbox: QUEBEC, from: "2023-06-01", to: "2023-06-30" });
+    expect(r).toMatchObject({ available: false, reason: "outside_coverage" });
+    expect((r as { message: string }).message).toMatch(/^No harmonized calendar for this area/);
+    expect(OUTSIDE_CALENDAR).toMatch(/Do not fetch another region's calendar/);
+  });
+
+  it("does not hand the model another region's calendar later in the same turn", async () => {
+    const calls: number[][] = [];
+    const data = {
+      source: "live",
+      getCalendar: async (q: { bbox: number[] }) => {
+        calls.push(q.bbox);
+        return q.bbox === QUEBEC ? { dataSource: "live", available: false, reason: "outside_coverage", message: OUTSIDE_CALENDAR } : { dataSource: "live", region: { label: "Interior West region" } };
+      }
+    } as never;
+    const db = new DatabaseSync(":memory:");
+    const sqlTag: SqlTag = (strings, ...values) => db.prepare(strings.join("?")).all(...(values as never[])) as never;
+    const memory = new MemoryStore(sqlTag);
+    memory.init();
+    const ctx = { tab: "archival" as const, aoi: { bbox: QUEBEC }, from: "2023-06-01", to: "2023-06-30" };
+    const cal = createFireTools({ data, memory, getContext: () => ctx }).get_calendar;
+    const run = (a: object) => (cal.execute as unknown as (a: object) => Promise<unknown>)(a);
+    expect(await run({})).toMatchObject({ reason: "outside_coverage" });
+    expect(await run({ bbox: [-117, 37, -104, 45] })).toMatchObject({ reason: "outside_coverage" });
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("chat reasoning settings", async () => {
   const m = await import("../src/copilot/models");
   it("parses CHAT_REASONING_EFFORT and CHAT_CACHE_TTL", () => {
@@ -692,13 +784,14 @@ describe("regions and live data selection", async () => {
     const live = new LiveFireData({} as Env);
     const r = await live.getCalendar({ bbox: [-110, 20, -105, 25], from: "2020-01-01", to: "2020-12-31" });
     expect(r).toMatchObject({ dataSource: "live", available: false });
-    expect((r as { message: string }).message).toMatch(/outside the harmonized archive/);
+    expect((r as { message: string }).message).toMatch(/outside the US harmonized archive/);
     expect(await live.getMonthToDate({ bbox: [-110, 20, -105, 25] })).toMatchObject({ available: false });
   });
 
   it("archival hotspots outside the near-real-time window are one honest sentence", async () => {
     const live = new LiveFireData({ D1_RETENTION_DAYS: "92" } as Env);
-    const r = await live.getSpotsSummary({ mode: "archival", bbox: [-124.5, 32.5, -114, 42.1], from: "2020-08-01", to: "2020-08-31" });
+    // August 2019: no showcase period (August 2020 is one, and is served from its R2 file)
+    const r = await live.getSpotsSummary({ mode: "archival", bbox: [-124.5, 32.5, -114, 42.1], from: "2019-08-01", to: "2019-08-31" });
     expect(r).toMatchObject({ dataSource: "live", available: false });
     const msg = (r as { message: string }).message;
     expect(msg).toMatch(/get_calendar/);

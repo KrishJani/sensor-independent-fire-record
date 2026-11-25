@@ -46,6 +46,8 @@ export interface Unavailable {
   available: false;
   /** One short, honest sentence the model can repeat. */
   message: string;
+  /** "outside_coverage": the area is outside the US harmonized archive (no calendar exists for it). */
+  reason?: "outside_coverage";
 }
 
 /** The harmonized region a result is computed for (calendars are region-level, never the AOI itself). */
@@ -101,6 +103,10 @@ export interface SpotsSummary {
     bySatellite: Record<string, { detections: number; cellDays: number }>;
   };
   daily: { date: string; activeCells: number; peakFrpMw: number }[];
+  /** Set when the result comes from an Archival showcase period file (routes/showcase.ts). */
+  showcase?: { id: string; label: string; from: string; to: string; harmonized: boolean };
+  /** Showcase periods that are harmonized: VIIRS-equivalent cell-days, comparable with the calendar. */
+  harmonizedCellDays?: number;
   lastSeen: string | null; // ISO datetime
   topDetections: {
     lat: number;

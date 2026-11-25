@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { closeWhenOtherOpens, panelOpened } from '../lib/panels';
 import { ChatIcon } from '../realtime/icons';
 import type { AppActions } from '../help/actions';
 import type { MapContext } from './context';
@@ -31,6 +32,10 @@ interface Props {
 export function ChatDrawer({ getContext, suggestions, actions }: Props) {
   const [open, setOpen] = useState(loadOpen);
   const [used, setUsed] = useState(open);
+
+  useEffect(() => { if (open) panelOpened('chat'); }, [open]);
+  // Narrow screens: the calendar opening collapses the copilot (its conversation stays mounted).
+  useEffect(() => closeWhenOtherOpens('chat', () => setOpen(false)), []);
 
   const toggle = (next: boolean) => {
     setOpen(next);

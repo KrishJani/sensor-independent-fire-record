@@ -14,14 +14,19 @@ import type {
   SpotsSummary,
   Unavailable
 } from "./fireData";
+import { loadShowcase } from "../routes/showcase.ts";
 import { classifyAgainst, regionMonthToDate, regionOfBbox, regionRef } from "./regionContext";
+import { overlapsPeriod, SHOWCASE_PERIODS } from "./showcase";
+import { summarizeShowcase } from "./showcaseSummary";
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
 const addDays = (d: string, n: number) => new Date(Date.parse(d + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const unavailable = (message: string): Unavailable => ({ dataSource: "live", available: false, message });
 
-const OUTSIDE = "This area is outside the harmonized archive (US regions only), so there is no calendar for it. Use get_spots_summary for current detections.";
+export const OUTSIDE_CALENDAR =
+  "No harmonized calendar for this area: it is outside the US harmonized archive (US regions only). Do not fetch another region's calendar in its place; tell the user there is no harmonized calendar here. For detections use get_spots_summary.";
+const outside = (): Unavailable => ({ dataSource: "live", available: false, reason: "outside_coverage", message: OUTSIDE_CALENDAR });
 
 /**
  * Real data for the copilot tools (SPEC §4.5), calling the same code as the HTTP routes in-process.
@@ -35,7 +40,7 @@ export class LiveFireData implements FireData {
 
   async getCalendar(q: CalendarQuery): Promise<CalendarResult | Unavailable> {
     const region = regionOfBbox(q.bbox);
-    if (!region) return unavailable(OUTSIDE);
+    if (!region) return outside();
     let body: Awaited<ReturnType<typeof calendar>>;
     try {
       body = await withDb((ctx) => calendar(this.env, ctx, { scope: region.id, from: q.from, to: q.to, months: q.months ?? null }));
@@ -96,12 +101,17 @@ export class LiveFireData implements FireData {
   async getSpotsSummary(q: SpotsQuery): Promise<SpotsSummary | Unavailable> {
     const today = new Date().toISOString().slice(0, 10);
     const min = addDays(today, -Number(this.env.D1_RETENTION_DAYS ?? 92));
+    // Past periods: the Archival map's showcase files when the range and area overlap one (as /api/archival/spots).
+    if (q.from < min) {
+      const period = SHOWCASE_PERIODS.find((p) => overlapsPeriod(p, q.from, q.to, q.bbox));
+      if (period) return summarizeShowcase(await loadShowcase(this.env, period.id), { bbox: q.bbox, from: q.from, to: q.to });
+    }
     const from = q.from < min ? min : q.from;
     const to = q.to > today ? today : q.to;
     if (from > to) {
       return unavailable(
         q.mode === "archival"
-          ? "Hotspot detail for past periods is not loaded here, so use get_calendar for monthly activity in the region."
+          ? `Hotspot detail for this period is not loaded here (only the showcase periods are: ${SHOWCASE_PERIODS.map((p) => `${p.label} (${p.from} to ${p.to})`).join(" and ")}), so use get_calendar for monthly activity in the region.`
           : `Near-real-time hotspots only cover the last ${this.env.D1_RETENTION_DAYS ?? 92} days (since ${min}).`
       );
     }
@@ -157,7 +167,7 @@ export class LiveFireData implements FireData {
 
   async getMonthToDate(q: { bbox: Bbox; today?: string }): Promise<MonthToDateResult | Unavailable> {
     const region = regionOfBbox(q.bbox);
-    if (!region) return unavailable(OUTSIDE);
+    if (!region) return outside();
     const now = q.today ? new Date(`${q.today}T12:00:00Z`) : new Date();
     const mtd = await regionMonthToDate(this.env, region, now);
     if (!mtd) return unavailable("No near-real-time data is ingested for this month, so a month-to-date comparison is not possible; get_calendar has the archive.");

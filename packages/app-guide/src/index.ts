@@ -24,7 +24,7 @@ export const GUIDE_TOPICS = ["about", "views", "howto", "terms", "limits", "cred
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
 
 /** The README's team credit, word for word (a test checks it against README.md). */
-export const TEAM_CREDIT = `Team project built at NASA Space Apps Challenge 2026 by Krish Jani, [Riddhi Raina Prasad](https://github.com/riddhixraina), and [Hemanth](https://github.com/itsmrhem). My contribution:
+export const TEAM_CREDIT = `Team project built at NASA Space Apps Challenge 2026 by Krish Jani, [Riddhi Raina Prasad](https://github.com/riddhixraina), and [Hemanth](https://github.com/itsmrhem). My contribution (Krish Jani):
 
 - Realtime worker pipeline: FIRMS polling through a Queue, incident clustering in Durable Objects, WebSocket streams, and the enrichment Workflow with AI briefs.
 - Realtime and replay UI: the live incident list and cards, the Quebec 2023 replay, and its clock and controls.

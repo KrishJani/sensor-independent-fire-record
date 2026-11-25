@@ -19,6 +19,7 @@ import { FireExplorer } from './FireExplorer';
 import { Toolbar } from './Toolbar';
 import { DETAIL_MISSING_TEXT, getMeta } from '../lib/api';
 import { showcaseFor, useArchiveInfo } from '../lib/useArchiveDetail';
+import { closeWhenOtherOpens, panelOpened } from '../lib/panels';
 import type { Tab } from '../lib/dataWindows';
 
 // Shifted west so the incident panel covers the open Pacific, not North America.
@@ -87,6 +88,10 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
     if (calendarRequest > 0) setTimelineOpen(true);
   }, [calendarRequest]);
   const closeTimeline = () => { rememberCalendarClosed(); setTimelineOpen(false); };
+  // Narrow screens: the calendar and the copilot take turns (the copilot opening closes the calendar for now,
+  // without counting as the user closing it).
+  useEffect(() => { if (timelineOpen) panelOpened('calendar'); }, [timelineOpen]);
+  useEffect(() => closeWhenOtherOpens('calendar', () => setTimelineOpen(false)), []);
   const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
   const { detail, showcase } = useArchiveInfo();
   const scheme = useColorScheme();

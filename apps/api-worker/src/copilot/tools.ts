@@ -42,11 +42,16 @@ const withErrors =
     }
   };
 
+const isOutside = (r: unknown) => !!r && typeof r === "object" && (r as { reason?: string }).reason === "outside_coverage";
+
 export function createFireTools({ data, memory, getContext }: ToolDeps) {
+  // Once the calendar says the area is outside the archive, later calls in the same request get the same answer:
+  // models otherwise fetch some other region's calendar (the Interior West for a Quebec view) and report it.
+  let outsideResult: unknown = null;
   return {
     get_calendar: tool({
       description:
-        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for the region containing an area (region-level; the result names the region): peak month/year, critical fire-season months, climatology (median, P10–P90 per calendar month), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality, trends and 'is this normal / how unusual' questions. For 'what happened here in <month>' call get_spots_summary first (calling both is fine).",
+        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for the US region containing an area (US only: outside it there is no calendar, and never substitute another region) (region-level; the result names the region): peak month/year, critical fire-season months, climatology (median, P10–P90 per calendar month), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality, trends and 'is this normal / how unusual' questions. For 'what happened here in <month>' call get_spots_summary first (calling both is fine).",
       inputSchema: z.object({
         bbox: bboxArg,
         from: date.optional().describe("Start date. Omit to use the map's range."),
@@ -60,18 +65,21 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
         const ctx = getContext();
         const bbox = resolveBbox(args.bbox, ctx);
         if (!bbox) return NO_AREA;
-        return data.getCalendar({
+        if (outsideResult) return outsideResult;
+        const r = await data.getCalendar({
           bbox,
           from: args.from ?? ctx?.from ?? "2000-11-01",
           to: args.to ?? ctx?.to ?? new Date().toISOString().slice(0, 10),
           months: args.months ?? null
         });
+        if (isOutside(r)) outsideResult = r;
+        return r;
       })
     }),
 
     get_spots_summary: tool({
       description:
-        "Call this FIRST for 'what is burning now / this week' (mode realtime, last ~90 days). Hotspot detail for past periods may not be loaded: if it says so, use get_calendar. Returns hotspot detections in an area and date range: detection counts, active cell-days per satellite, daily activity, last-seen time and the top detections by fire radiative power (FRP, MW, labelled by sensor). mode 'archival' = finalized FIRMS SP data (past), 'realtime' = near-real-time NRT data (now / last days).",
+        "Call this FIRST for 'what is burning now / this week' (mode realtime, last ~90 days). For the past it covers the Archival showcase periods (California Aug–Sep 2020, harmonized; Quebec 1–10 June 2023, raw VIIRS), the same data the map draws; other past hotspot detail is not loaded: if it says so, use get_calendar. Returns hotspot detections in an area and date range: detection counts, active cell-days per satellite, daily activity, last-seen time and the top detections by fire radiative power (FRP, MW, labelled by sensor). mode 'archival' = finalized FIRMS SP data (past), 'realtime' = near-real-time NRT data (now / last days).",
       inputSchema: z.object({
         mode: z.enum(["archival", "realtime"]).optional().describe("Omit to use the map's active tab."),
         bbox: bboxArg,
