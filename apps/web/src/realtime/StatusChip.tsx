@@ -1,4 +1,6 @@
 import type { ConnectionStatus } from './useRealtimeStream';
+import { ACTIVITY_HELP, ACTIVITY_LABEL } from './types';
+import type { Activity } from '../../../realtime-worker/src/status';
 
 const LABELS: Record<ConnectionStatus, string> = {
   connecting: 'Connecting',
@@ -21,6 +23,15 @@ export function SourceBadge({ replay }: { replay: boolean }) {
   return (
     <span className={`rt-badge ${replay ? 'rt-badge--replay' : 'rt-badge--live'}`}>
       {replay ? 'Replay' : 'Live'}
+    </span>
+  );
+}
+
+/** Incident activity: text plus a dot shape (filled, half, hollow), never color alone. */
+export function ActivityPill({ activity }: { activity: Activity }) {
+  return (
+    <span className={`rt-badge rt-badge--${activity}`} title={ACTIVITY_HELP[activity]}>
+      {ACTIVITY_LABEL[activity]}
     </span>
   );
 }

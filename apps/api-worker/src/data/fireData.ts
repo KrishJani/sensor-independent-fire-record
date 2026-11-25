@@ -1,4 +1,5 @@
 import type { Bbox } from "../copilot/context";
+import { LiveFireData } from "./liveFireData";
 import { MockFireData } from "./mockFireData";
 
 /**
@@ -9,7 +10,7 @@ import { MockFireData } from "./mockFireData";
 
 export type Mode = "archival" | "realtime";
 export type DataSourceKind = "mock" | "live";
-export type AnomalyClass = "record_low" | "below" | "normal" | "above" | "record_high";
+export type AnomalyClass = "record_low" | "much_below" | "below" | "normal" | "above" | "much_above" | "record_high";
 
 export interface CalendarQuery {
   bbox: Bbox;
@@ -39,9 +40,27 @@ export interface CalendarMonth {
   };
 }
 
+/** What a live tool returns when the data it needs is not loaded or the area is outside coverage. */
+export interface Unavailable {
+  dataSource: DataSourceKind;
+  available: false;
+  /** One short, honest sentence the model can repeat. */
+  message: string;
+}
+
+/** The harmonized region a result is computed for (calendars are region-level, never the AOI itself). */
+export interface RegionRef {
+  id: string;
+  name: string;
+  /** Short name to use in answers, e.g. "Southeast region". */
+  label: string;
+}
+
 export interface CalendarResult {
   dataSource: DataSourceKind;
   note: string;
+  /** Live data: the whole region the numbers describe. */
+  region?: RegionRef;
   mode: "archival";
   bbox: Bbox;
   from: string;
@@ -98,6 +117,7 @@ export interface SpotsSummary {
 export interface MonthToDateResult {
   dataSource: DataSourceKind;
   note: string;
+  region?: RegionRef;
   bbox: Bbox;
   month: string; // YYYY-MM
   throughDay: number;
@@ -113,27 +133,15 @@ export interface MonthToDateResult {
 
 export interface FireData {
   readonly source: DataSourceKind;
-  getCalendar(q: CalendarQuery): Promise<CalendarResult>;
-  getSpotsSummary(q: SpotsQuery): Promise<SpotsSummary>;
-  getMonthToDate(q: { bbox: Bbox; today?: string }): Promise<MonthToDateResult>;
+  getCalendar(q: CalendarQuery): Promise<CalendarResult | Unavailable>;
+  getSpotsSummary(q: SpotsQuery): Promise<SpotsSummary | Unavailable>;
+  getMonthToDate(q: { bbox: Bbox; today?: string }): Promise<MonthToDateResult | Unavailable>;
 }
 
+/**
+ * "live" = the real archive (Postgres via Hyperdrive) and the NRT tier (D1); anything else = the demo
+ * fixtures (local dev and tests). Live results that are not available say so, never fall back to mock.
+ */
 export function createFireData(env: Env): FireData {
-  if (env.FIRE_DATA_SOURCE && env.FIRE_DATA_SOURCE !== "mock") {
-    // TODO(data team): implement LiveFireData and return it here when
-    // FIRE_DATA_SOURCE === "live":
-    //   - getCalendar: same code path as POST /api/calendar (archival) —
-    //     Postgres via env.HYPERDRIVE (fresh postgres() client per call, closed
-    //     with ctx.waitUntil(sql.end())) + @repo/harmonizer computeAlpha →
-    //     harmonizeDaily → buildCalendar → computeAnomalies; then trim to
-    //     CalendarResult (summary, climatology, annual, top ~8 notableMonths).
-    //   - getSpotsSummary: cell_days/detections (archival, Postgres) or
-    //     nrt_cell_days/nrt_detections (realtime, D1 env.NRT_DB).
-    //   - getMonthToDate: POST /api/calendar mode=realtime (D1 + Postgres baseline).
-    // Call the shared internal functions directly, no HTTP hop (SPEC §4.5).
-    console.warn(
-      `[copilot] FIRE_DATA_SOURCE=${env.FIRE_DATA_SOURCE} is not implemented yet; using mock data`
-    );
-  }
-  return new MockFireData();
+  return env.FIRE_DATA_SOURCE === "live" ? new LiveFireData(env) : new MockFireData();
 }

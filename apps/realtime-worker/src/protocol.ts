@@ -13,6 +13,8 @@ export interface Brief {
   streamT: number; // stream time the brief describes, epoch ms
   /** Same moment as streamT, ISO 8601 UTC, for the UI's "as of <time>" label. */
   asOf: string;
+  /** Affected area (km²) of the incident when this brief was written; older briefs lack it (recovered from the timeline). */
+  affectedAreaKm2?: number;
   /** Wall-clock time the model call took, ms (of the original call, for a cached brief). */
   latencyMs?: number;
   /** Replays only: reused from the brief cache of an earlier replay of the same scenario (no model call). */

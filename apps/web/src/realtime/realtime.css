@@ -184,6 +184,65 @@
   border-bottom: 4px solid transparent;
 }
 
+.rt-badge--active {
+  color: var(--rt-live);
+}
+.rt-badge--active::before,
+.rt-badge--cooling::before,
+.rt-badge--inactive::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.rt-badge--active::before {
+  background: currentColor;
+}
+.rt-badge--cooling {
+  color: var(--rt-warn);
+}
+.rt-badge--cooling::before {
+  border: 1.5px solid currentColor;
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+.rt-badge--inactive {
+  color: var(--label-secondary);
+}
+.rt-badge--inactive::before {
+  border: 1.5px solid currentColor;
+}
+.rt-badge--volcano {
+  color: var(--rt-danger);
+}
+
+.rt-list__act {
+  font-weight: 600;
+}
+.rt-list__act--active {
+  color: var(--rt-live);
+}
+.rt-list__act--cooling {
+  color: var(--rt-warn);
+}
+.rt-list__item.is-volcanic .rt-list__area {
+  font-style: italic;
+}
+
+.rt-brief__stale {
+  margin: 6px 0 0 !important;
+  padding: 4px 8px;
+  border-left: 3px solid var(--rt-warn);
+  font-size: 12px;
+  color: var(--rt-warn);
+}
+.rt-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--label-secondary);
+}
+
 /* Incident list */
 
 .rt-list {

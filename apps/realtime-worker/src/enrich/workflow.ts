@@ -6,12 +6,12 @@ export type { Place } from "./places";
 import { createAI, type CloudflareLanguageModelId } from "agents/models/ai-sdk";
 import { generateText } from "ai";
 import { briefModels, buildBriefPrompt, cleanBrief, DEFAULT_BRIEF_MAX_TOKENS } from "./brief";
-import { historyBbox, OUTSIDE_COVERAGE, summarizeCalendar, type CalendarResponse } from "./history";
+import { OUTSIDE_COVERAGE } from "./history";
 
 export interface EnrichParams {
   incidentId: string;
   stream: string;
-  reason: "significant" | "area_doubled";
+  reason: "significant" | "area_grown";
   streamT: number;
   summary: IncidentSummary;
   /** Replays: a brief from the cache (no model call, no budget). */
@@ -43,7 +43,7 @@ export interface Weather {
 
 export interface HistoryContext {
   dataSource: string;
-  /** One readable line built from the archival calendar (see summarizeCalendar). */
+  /** One readable sentence from api-worker GET /api/context (names the region). */
   summary: string;
 }
 
@@ -120,36 +120,25 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
       }
     })) as PlacesResult;
 
-    const history = await safe<HistoryContext>("historical-context", { retries: { limit: 1, delay: "2 seconds" }, timeout: "20 seconds" }, async () => {
+    // Region-level context (api-worker GET /api/context): this region's activity this month against its
+    // 2001-2025 median. Never the incident's own area: the per-cell archive is not loaded.
+    const history = await safe<HistoryContext>("regional-context", { retries: { limit: 1, delay: "2 seconds" }, timeout: "20 seconds" }, async () => {
       if (!this.env.API) return { status: "skipped", reason: "no API service binding" };
-      const year = new Date(p.streamT).getUTCFullYear();
-      const month = new Date(p.streamT).getUTCMonth() + 1;
+      const date = new Date(p.streamT).toISOString().slice(0, 10);
       let res: Response;
       try {
-        // api-worker routes/calendar.ts: POST { bbox: [w,s,e,n], from, to } (YYYY-MM-DD). Response has no
-        // dataSource: it is always the harmonized archive (mode "archival").
-        res = await this.env.API.fetch("https://api-worker/api/calendar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bbox: historyBbox(p.summary.bbox), from: `${Math.max(2001, year - 15)}-01-01`, to: `${year - 1}-12-31` })
-        });
+        res = await this.env.API.fetch(`https://api-worker/api/context?lon=${lon}&lat=${lat}&date=${date}`);
       } catch (err) {
         return { status: "skipped", reason: `api-worker unavailable: ${err instanceof Error ? err.message : String(err)}` };
       }
-      if (res.status === 422) {
-        // outside_regions: under half of the area is in harmonized coverage (US regions only; error.coverage).
-        const e = (await res.json().catch(() => null)) as { error?: { code?: string; coverage?: number } } | null;
-        if (e?.error?.code === "outside_regions") return { status: "skipped", reason: OUTSIDE_COVERAGE, coverage: e.error.coverage ?? 0 };
-        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? "HTTP 422"}` };
-      }
-      if (res.status === 404 || res.status === 503 || res.status === 413) {
+      if (!res.ok) {
         const e = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
-        return { status: "skipped", reason: `archival calendar: ${e?.error?.code ?? `HTTP ${res.status}`}` };
+        if (res.status >= 500 && res.status !== 503) throw new Error(`api-worker /api/context HTTP ${res.status}`);
+        return { status: "skipped", reason: `regional context: ${e?.error?.code ?? `HTTP ${res.status}`}` };
       }
-      if (!res.ok) throw new Error(`api-worker /api/calendar HTTP ${res.status}`);
-      const summary = summarizeCalendar((await res.json()) as CalendarResponse, month);
-      if (!summary) return { status: "skipped", reason: OUTSIDE_COVERAGE }; // all zeros: grazing US cells only
-      return { status: "ok", data: { dataSource: "live", summary } };
+      const j = (await res.json()) as { available: boolean; reason?: string; text?: string };
+      if (!j.available || !j.text) return { status: "skipped", reason: j.reason ?? OUTSIDE_COVERAGE };
+      return { status: "ok", data: { dataSource: "live", summary: j.text } };
     });
 
     const brief = await safe<Brief>("brief", { retries: { limit: 1, delay: "5 seconds" }, timeout: "3 minutes" }, async () => {
@@ -178,7 +167,7 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
         const text = cleanBrief(res.text);
         console.log(JSON.stringify({ msg: "brief_model_done", incident: p.incidentId, model, primary, latencyMs, ok: !!text, finishReason: res.finishReason, usage: res.usage ?? null }));
         if (!text) throw new Error(`${model}: empty response (${res.finishReason})`);
-        const data: Brief = { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), latencyMs };
+        const data: Brief = { text, model, generatedAt: Date.now(), streamT: p.streamT, asOf: new Date(p.streamT).toISOString(), affectedAreaKm2: p.summary.affectedAreaKm2, latencyMs };
         if (p.briefCacheKey) {
           try {
             await this.env.REPLAY_KV.put(p.briefCacheKey, JSON.stringify(data));
@@ -197,7 +186,7 @@ export class IncidentEnrichWorkflow extends WorkflowEntrypoint<Env, EnrichParams
 
     await step.do("store", { retries: { limit: 3, delay: "1 second" }, timeout: "30 seconds" }, async () => {
       const inc = this.env.INCIDENT.get(this.env.INCIDENT.idFromName(p.incidentId));
-      await inc.setEnrichment(enrichment, brief.status === "ok" ? brief.data : null);
+      await inc.setEnrichment(enrichment, brief.status === "ok" ? brief.data : null, { streamT: p.streamT, affectedAreaKm2: p.summary.affectedAreaKm2, failed: brief.status === "failed" });
       if (brief.status === "ok") {
         const hub = this.env.LIVE_HUB.get(this.env.LIVE_HUB.idFromName(p.stream));
         await hub.publish({ briefs: [{ id: p.incidentId, brief: brief.data }] });

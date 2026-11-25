@@ -25,7 +25,7 @@ Vars:
 - `AI_GATEWAY_ID`
 - `CHAT_MODEL`, default `anthropic/claude-haiku-5.5` (AI Gateway catalog id, billed with a key stored on the gateway; a Workers AI id also works), and `CHAT_FALLBACK_MODEL`, default `@cf/zai-org/glm-4.7-flash`. The model comparison is in `CHAT.md`.
 - `WEB_SEARCH_PROVIDER` (`tavily` | `cloudflare`), secret `TAVILY_API_KEY`
-- `FIRE_DATA_SOURCE` (`mock` until LiveFireData lands)
+- `FIRE_DATA_SOURCE` (`live` in the deployment; `mock` = demo fixtures)
 - `CALIBRATION_START_YEAR`, `CALIBRATION_END_YEAR`, `BASELINE_START_YEAR`, `BASELINE_END_YEAR`
 - `ALLOWED_ORIGINS`
 
@@ -215,7 +215,7 @@ The LLM must never invent numbers. It answers from tool results. Every argument 
 | `web_search` | `query, limit?` | Tavily (`TAVILY_API_KEY`) or the Cloudflare Web Search API (`WEB_SEARCH_PROVIDER=cloudflare`). Used for news, containment, evacuations, causes, weather, smoke and agency updates, never for hotspot counts. Disabled when no key is set. |
 | `web_fetch` | `url, offset?, format?` | Reads one page as Markdown (`env.AI.toMarkdown`), wrapped as untrusted content |
 
-The data tools call the `FireData` interface (`src/data/fireData.ts`). **Today it is `MockFireData`**: `get_spots_summary` serves real FIRMS detections from `sample_api/`, while the calendar and month-to-date tools serve synthetic, deterministic data. Every result is tagged `dataSource: "mock"`. `LiveFireData` (Hyperdrive + D1) is the TODO, and it must call the same internal functions as the REST endpoints, without an HTTP hop.
+The data tools call the `FireData` interface (`src/data/fireData.ts`). Deployed: `LiveFireData` (region calendars from Postgres, hotspots and month-to-date from D1; unavailable data is reported as such, see CHAT.md "Data sources"). Local dev and tests: `MockFireData`, tagged `dataSource: "mock"`.
 
 The system prompt, rebuilt every turn, includes today's date, the map context and the saved memories. It instructs the model as follows:
 

@@ -14,6 +14,7 @@ import { ApiError, toHttp } from "./lib/http.ts";
 import { calendar, calendarCsv, type CalendarRequest } from "./routes/calendar.ts";
 import { health, meta } from "./routes/meta.ts";
 import { prone, proneSummary } from "./routes/prone.ts";
+import { regionContext } from "./data/regionContext.ts";
 import { realtimeSpots } from "./routes/realtime.ts";
 import { spots } from "./routes/spots.ts";
 
@@ -70,6 +71,16 @@ app.get("/api/realtime/spots", async (c) => {
   const q = new URL(c.req.url).searchParams;
   const key = `rt-spots|${[...q.entries()].sort().map(([k, v]) => `${k}=${v}`).join("&")}`;
   return cachedJson(c.executionCtx, key, await dataVersion(c.env, "realtime"), 900, () => realtimeSpots(c.env, q));
+});
+
+// How the region around a point compares with its own 2001-2025 median this month (briefs). Region-level.
+app.get("/api/context", async (c) => {
+  const q = new URL(c.req.url).searchParams;
+  const lon = Number(q.get("lon")), lat = Number(q.get("lat"));
+  const date = q.get("date") ?? new Date().toISOString().slice(0, 10);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new ApiError(400, "params_invalid", "lon, lat and date=YYYY-MM-DD are required");
+  const key = `context|${lon.toFixed(2)}|${lat.toFixed(2)}|${date}`;
+  return cachedJson(c.executionCtx, key, await dataVersion(c.env, "realtime"), 900, () => regionContext(c.env, c.executionCtx, lon, lat, date));
 });
 
 app.get("/api/archival/spots", async (c) => {

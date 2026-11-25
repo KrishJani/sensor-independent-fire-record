@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { fmtAgo, fmtKm2, fmtMw } from './format';
+import { fmtAgo, fmtInt, fmtKm2, fmtMw } from './format';
 import { INCIDENT_FRP_STOPS, RAMP } from './layers';
-import type { IncidentSummary } from './types';
+import { ACTIVITY_LABEL, activityOf, type IncidentSummary } from './types';
 
 interface Props {
   incidents: IncidentSummary[];
@@ -24,32 +24,30 @@ export function fmtLatLon([lon, lat]: [number, number]): string {
 export const IncidentList = memo(function IncidentList({ incidents, selectedId, clock, onSelect, emptyText }: Props) {
   if (!incidents.length) return <p className="rt-empty">{emptyText}</p>;
   return (
-    <ol className="rt-list" aria-label="Fire incidents, largest area with detections first">
-      {incidents.map((i, n) => (
+    <ol className="rt-list" aria-label="Fire incidents, largest first, wildfires before volcanic heat">
+      {incidents.map((i, n) => {
+        const activity = activityOf(i, clock);
+        return (
         <li key={i.id}>
           <button
             type="button"
             className={`rt-list__item ${i.id === selectedId ? 'is-selected' : ''} ${
-              i.status === 'inactive' ? 'is-inactive' : ''
-            }`}
+              activity === 'inactive' ? 'is-inactive' : ''
+            } ${i.volcano ? 'is-volcanic' : ''}`}
             aria-current={i.id === selectedId}
             onClick={() => onSelect(i.id)}
           >
             <span className="rt-list__rank">{n + 1}</span>
             <span className="rt-list__main">
               <span className="rt-list__area">
-                {fmtKm2(i.affectedAreaKm2)}
-                {i.growthKm2PerDay > 0 && (
-                  <span className="rt-list__growth">+{fmtKm2(i.growthKm2PerDay)}/day</span>
-                )}
+                {fmtInt(i.detections)} detections · {fmtInt(i.cells)} cells
+                {i.growthKm2PerDay > 0 && <span className="rt-list__growth">growing</span>}
               </span>
               <span className="rt-list__meta">
-                {fmtLatLon(i.centroid)}
-                {i.status === 'inactive'
-                  ? ' · inactive'
-                  : clock !== null
-                    ? ` · ${fmtAgo(i.lastSeen, clock)}`
-                    : ''}
+                <span className={`rt-list__act rt-list__act--${activity}`}>{ACTIVITY_LABEL[activity]}</span>
+                {clock !== null ? ` · ${fmtAgo(i.lastSeen, clock)}` : ''}
+                {i.volcano ? ` · Volcanic heat (${i.volcano.name})` : ` · ${fmtLatLon(i.centroid)}`}
+                {` · ${fmtKm2(i.affectedAreaKm2)} grid`}
               </span>
             </span>
             <span className="rt-list__frp" title={`Peak fire radiative power (${i.frpMaxSensor ?? 'sensor unknown'})`}>
@@ -58,7 +56,8 @@ export const IncidentList = memo(function IncidentList({ incidents, selectedId, 
             </span>
           </button>
         </li>
-      ))}
+        );
+      })}
     </ol>
   );
 });

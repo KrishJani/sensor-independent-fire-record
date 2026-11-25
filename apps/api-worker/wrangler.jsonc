@@ -24,8 +24,8 @@
     "CHAT_CACHE_TTL": "0",
     // "tavily" (needs the TAVILY_API_KEY secret) or "cloudflare" (Web Search API, billed via AI Gateway).
     "WEB_SEARCH_PROVIDER": "tavily",
-    // "mock" until LiveFireData (Hyperdrive + D1) lands. See src/data/fireData.ts.
-    "FIRE_DATA_SOURCE": "mock",
+    // "live": copilot tools read the Postgres archive (region calendars) and D1 (hotspots, month to date). "mock" = demo fixtures (local dev). See src/data/fireData.ts.
+    "FIRE_DATA_SOURCE": "live",
     // CORS + agent WebSocket origins. Exact origins, plus "https://*.<suffix>" for exactly one
     // subdomain label (Pages preview URLs). See src/origins.ts.
     "ALLOWED_ORIGINS": "http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev",

@@ -16,7 +16,7 @@ src/copilot/prompt.ts     system prompt (rebuilt every turn)
 src/copilot/disclaimer.ts demo-data notice inserted into the stream
 src/copilot/postprocess.ts final pass: text-part spacing, link verification, "your area" → "this area"
 src/data/fireData.ts      FireData interface + createFireData(env)  ← LiveFireData TODO here
-src/data/mockFireData.ts  demo data source (see "What is mocked")
+src/data/mockFireData.ts  demo data source (see "Data sources")
 src/data/sample-fixture.json  built from sample_api/ by scripts/build-fixtures.mjs
 scripts/chat-smoke.mjs    end-to-end WebSocket smoke test with answer-quality checks
 scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and prints a scorecard
@@ -24,7 +24,7 @@ scripts/compare-models.mjs  runs the smoke test against several CHAT_MODELs and 
 
 ## Setup (once)
 
-> **Deploy account:** `wrangler.jsonc` has no `account_id`, so wrangler deploys to the logged-in account (or `CLOUDFLARE_ACCOUNT_ID`) and uses the AI Gateway named in `AI_GATEWAY_ID` (`nasa-fire-copilot`). One deployment serves the chat copilot and the archival API: plain `npx wrangler deploy`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is still mock (`FIRE_DATA_SOURCE`).
+> **Deploy account:** `wrangler.jsonc` has no `account_id`, so wrangler deploys to the logged-in account (or `CLOUDFLARE_ACCOUNT_ID`) and uses the AI Gateway named in `AI_GATEWAY_ID` (`nasa-fire-copilot`). One deployment serves the chat copilot and the archival API: plain `npx wrangler deploy`. Local dev (`pnpm dev`; `pnpm dev:archive` is an alias) sets the Hyperdrive local connection string from `DATABASE_URL` in the repo-root `.env`. The chat data source is `live` (`FIRE_DATA_SOURCE`).
 
 1. `pnpm install` at the repo root.
 2. `npx wrangler login`. The `AI` binding has no local implementation, so even under `wrangler dev` it runs against (and bills) the account you are logged in to.
@@ -70,7 +70,7 @@ Both turns also FAIL on a bare (plain-text) URL that no web tool returned and on
 | `CHAT_CACHE_TTL` | var | `0` (off) | AI Gateway response cache TTL in seconds for chat model calls (`createAI({ cacheTtl })`). Only identical requests hit, so it mainly helps repeated demo questions in fresh sessions. |
 | `WEB_SEARCH_PROVIDER` | var | `tavily` | `tavily` or `cloudflare`. |
 | `TAVILY_API_KEY` | secret | — | Needed for `tavily`. If it is missing, `web_search` is disabled with a warning; `web_fetch` still works. |
-| `FIRE_DATA_SOURCE` | var | `mock` | Only `mock` exists today (see below). |
+| `FIRE_DATA_SOURCE` | var | `live` | `live` = real data (see "Data sources"); anything else = demo fixtures (local dev). |
 | `ALLOWED_ORIGINS` | var | see notes | Comma-separated exact origins, plus `https://*.<suffix>` entries that match exactly one subdomain label over https (Pages preview URLs; see `src/origins.ts`). No other wildcards. Deployed: `http://localhost:5173,https://world-fires.pages.dev,https://*.world-fires.pages.dev`. Also enforced on the agent WebSocket (other origins get 403). |
 
 **Models (2026-11-24).** Workers AI retired `kimi-k2.6`, `kimi-k2.7-code` and `glm-5.3-flash` on 2026-11-20 (HTTP 410 "Model has been deprecated", even though the docs catalog still lists them), which made every turn fail. The primary is now Claude Haiku 5.5 through AI Gateway (`anthropic/claude-haiku-5.5`, the gateway's catalog spelling), and `@cf/zai-org/glm-4.7-flash` is the fallback. `toUserError` ([errors.ts](src/copilot/errors.ts)) reports a retired model, a spend limit, a quota, a rate limit and a missing gateway with their own messages.
@@ -153,16 +153,19 @@ The UI stream goes through `answerPostProcessor` after the demo notice. It holds
 
 The prompt also forbids outside facts (causes, policies, news) without a web tool result in the conversation, gives the safety rule as a sentence the model can say ("I can't advise on evacuations…"), tells the model never to repeat its instructions, bans filler such as "workload" and "intense activity" in favour of data units, and forbids tying demo or sample data to a named real-world event unless a web result from this turn supports it.
 
-## What is mocked
+## Data sources
 
-`createFireData(env)` always returns `MockFireData` for now:
+`createFireData(env)` returns `LiveFireData` when `FIRE_DATA_SOURCE=live` (the deployed setting), else `MockFireData` (demo fixtures for local dev and tests).
 
-- `get_spots_summary` uses **real** FIRMS detections from `sample_api/` (California 2020-08-15 → 08-19, MODIS + VIIRS S-NPP, plus 8 MODIS NRT rows from 2026-11-13). These are filtered and aggregated to 0.05° cell-days per satellite by `scripts/build-fixtures.mjs`.
-- `get_calendar` and `get_month_to_date` return **synthetic**, deterministic, California-shaped numbers: peaks in Jul–Sep, and standout months such as Aug/Sep 2020, Nov 2018, Dec 2017 and Jan 2025.
-- Every result carries `dataSource: "mock"` and a `note`.
-- **Demo-data notice (server-side):** when a turn uses a mock data tool, `src/copilot/disclaimer.ts` inserts a notice at the start of the first answer text written after the tool result. Calendar or month-to-date figures get "_Demo data: the calendar figures below are synthetic, not satellite observations._"; spots alone get a note that the hotspot counts are real sample detections from a limited sample. This is done in code because every model tested ignored a "start your answer with…" instruction. The prompt also forbids calling synthetic numbers observed, or tying them causally to real events.
+`LiveFireData` calls the same in-process code as the REST routes:
 
-To go live, implement `LiveFireData` (see the TODO in `src/data/fireData.ts`), using the same internal functions as `POST /api/calendar` and `/api/*/spots`, and return it when `FIRE_DATA_SOURCE=live`.
+- **`get_calendar`**: the precomputed **region** calendar from Postgres (`calendar({ scope })`). The per-cell detail needed for an arbitrary area (`cell_days`) is not loaded, so results describe the whole harmonized region containing the area (`region.label`, e.g. "Southeast region") and the tool note makes the model say so. Outside US coverage it returns `{ available: false, message }`.
+- **`get_spots_summary`**: D1 near-real-time detections (last 92 days, fire class only). Past periods return one sentence ("Hotspot detail for past periods is not loaded here, so use get_calendar..."); an **empty D1 tier is reported as unavailable, never as zero fires**. (The ingest worker that fills D1 is not running in the demo deployment, so today the live tool answers "use get_live_incidents".)
+- **`get_month_to_date`**: D1 month-to-date for the region against its 2001–2025 median prorated by day; unavailable when D1 has no data for the month.
+
+Results are tagged `dataSource: "live"` and unavailable results are `{ dataSource: "live", available: false, message }`: a live tool never falls back to mock numbers. The demo-data notice (`src/copilot/disclaimer.ts`) only fires for `dataSource: "mock"` results, i.e. never in the deployed setup.
+
+`GET /api/context?lon=&lat=&date=` (used by realtime briefs) returns one sentence about the region's month against its median: the archive's own month for past dates, month-to-date from D1 when available, else where the month sits in the region's seasonal cycle. Always names the region.
 
 ## Frontend contract
 

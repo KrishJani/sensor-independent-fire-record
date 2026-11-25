@@ -20,7 +20,9 @@ Base URL in dev: `http://localhost:8789`. Every route is under `/realtime/*`.
 - When a detection touches two incidents, the older one wins and the other gets `status: "merged"` and `mergedInto`. The cells are not combined.
 - Low-confidence detections (VIIRS `l`, MODIS below 30) are counted and drawn on the heat layer, but they never create or grow an incident.
 - An incident is **significant** at 5 or more detections across 2 or more cells. Only significant incidents are pushed to clients, listed by REST and enriched.
-- `status` is `active`, `inactive` (no detections for 48 h of stream time) or `merged`.
+- `status` is `active`, `inactive` (no detections for 48 h of stream time: the clustering/retention rule) or `merged`.
+- `activity` is what the UI shows, on the stream clock: **active** (last detection < 12 h ago), **cooling** (12–36 h), **inactive** (> 36 h). One shared pure function (`src/status.ts`) is used by the worker and the web app.
+- `volcano` is set (`{ name, distanceKm }`) when the centroid is within `radiusKm` of an active volcano in `config/volcanoes.json` (Smithsonian GVP; see `config/volcanoes.md`). Such incidents are labelled "Volcanic heat", ranked below wildfires and never briefed.
 - `affectedAreaKm2` is the summed area of the 0.05° grid cells that contain at least one detection (each cell is about 30 km² at the equator and shrinks with cos(lat)). A single hotspot marks a whole cell, so this **overstates the burned area**, often by a lot. It is not a perimeter. Label it "area with detections" in the UI, never "burned area".
 
 ### `IncidentSummary`
@@ -70,7 +72,7 @@ Always unwrap batches first. The server coalesces updates and sends at most one 
 |---|---|---|
 | `hello` | `{ stream, streamT: number \| null, incidents: number }` | First message after connecting (inside the snapshot batch) |
 | `incident.upsert` | `{ incident: IncidentSummary }` | A significant incident changed. Replace by `incident.id`. |
-| `incident.brief` | `{ id, brief: Brief }` (below) | An AI brief is ready, or was refreshed after the area doubled |
+| `incident.brief` | `{ id, brief: Brief }` (below) | An AI brief is ready, or was re-written after the area grew ≥ 50 % |
 | `detections` | `{ points: [lon, lat, frpMw, tMs, conf][], replace?: true }` | New detections inside your viewport. `conf` is 0 (low), 1 (nominal) or 2 (high). With `replace: true`, the points replace your heat layer (on connect and after a viewport change); otherwise append them. |
 | `clock` | `{ t: number }` | Replay only: stream time advanced (each tick, about 2/s) |
 | `replay.status` | `{ status: "running" \| "paused" \| "stopped" \| "done", progress: 0..1, speed }` | Replay only |
@@ -203,7 +205,8 @@ map.fitBounds([[-80, 45], [-60, 53]]);
 
 ### Enrichment (`GET /realtime/incidents/:id` → `enrichment`)
 
-The `INCIDENT_ENRICH` Workflow (weather, places, history, AI brief) runs for an incident once, and again when its affected area has doubled (at most once per 6 h of stream time). Due incidents go into a per-stream queue, and each ingest batch starts at most 2 of them, **largest affected area first** (first briefs before re-briefs), so a busy stream briefs its biggest fires first rather than the first ones to cross a threshold.
+The `INCIDENT_ENRICH` Workflow (weather, places, history, AI brief) runs for an incident once, and again when its affected area is ≥ 50 % above the area its latest *successful* brief described (attempts at least 6 h of stream time apart).
+A failed brief is never counted as done: the attempt is retried with backoff (6 h, 12 h, then 24 h of stream time after consecutive failures). The live stream also sweeps (at most every 30 min) the largest incidents seen in the last 48 h for a missing or out-of-date brief, so quiet incidents get re-briefed too. All caps (`ENRICH_MAX_PER_STREAM`, `BRIEF_DAILY_MAX`, 2 per batch) apply unchanged. The card labels a brief "Out of date" once the grid coverage is ≥ 25 % above the area the brief describes (`affectedAreaKm2` on the brief; older briefs recover it from the incident timeline). Due incidents go into a per-stream queue, and each ingest batch starts at most 2 of them, **largest affected area first** (first briefs before re-briefs), so a busy stream briefs its biggest fires first rather than the first ones to cross a threshold.
 
 When an incident is due for its first brief:
 - `live`: as soon as it is significant.
@@ -213,7 +216,7 @@ Budgets (every run makes one AI call; re-briefs count):
 - `ENRICH_MAX_PER_STREAM` (10 in the demo deployment; 30 when unset): per replay stream, and per rolling 24 h (wall clock) for `live`.
 - `BRIEF_DAILY_MAX` (50 in the demo deployment, about 1,750 neurons; 60 when unset): across **all** streams per rolling 24 h, tracked in the `Control` Durable Object.
 
-**Replay brief cache.** A brief written during one replay is reused by later replays of the same scenario. The key in `REPLAY_KV` is `brief-cache/<BRIEF_CACHE_VERSION>/<scenario>/<first detection id of the incident>/<level>` (level 0 = first brief, n = n-th area doubling). A hit skips the model call and does **not** count against `BRIEF_DAILY_MAX` (it still counts toward the per-stream cap, because the Workflow still fetches weather and places). Cached briefs carry `cached: true` and keep the `asOf` of the replay that wrote them.
+**Replay brief cache.** A brief written during one replay is reused by later replays of the same scenario. The key in `REPLAY_KV` is `brief-cache/<BRIEF_CACHE_VERSION>/<scenario>/<first detection id of the incident>/<level>` (level = enrichment attempt number). A hit skips the model call and does **not** count against `BRIEF_DAILY_MAX` (it still counts toward the per-stream cap, because the Workflow still fetches weather and places). Cached briefs carry `cached: true` and keep the `asOf` of the replay that wrote them.
 
 Tick timing and speed change which incidents win the 2-per-batch dispatch slots and which doubling levels they reach, so a later run can ask for a key the first run never wrote. The Clusterer then (1) reuses another cached level of the same incident, and (2) once the scenario holds `ENRICH_MAX_PER_STREAM` cached briefs, enriches the incident without a brief (`brief.status: "skipped"`) instead of calling the model. So a scenario costs at most `ENRICH_MAX_PER_STREAM` model calls in total (10 in the demo), however often it is replayed. Bump `BRIEF_CACHE_VERSION` in `src/enrich/brief.ts` when the prompt changes. Clusterer counters `brief_cache_hits`, `brief_cache_misses` (model calls) and `brief_cache_full_skips` (in `GET /realtime/replay/:id`) show what happened.
 
@@ -230,14 +233,14 @@ A failed step is recorded and does not fail the run.
 
 ```ts
 {
-  incidentId, reason: "significant" | "area_doubled", streamT, completedAt,
+  incidentId, reason: "significant" | "area_grown", streamT, completedAt,
   weather: { status: "ok", data: { source: "open-meteo-forecast" | "open-meteo-archive", time, windSpeedKmh,
              windDirectionDeg, windFrom: "NW", relativeHumidityPct, temperatureC } } | { status: "failed", error },
   places:  { status: "ok", data: [{ name, place: "city" | "town" | "village" | "hamlet" | "locality", distanceKm, direction, population }],
              source: "overpass" | "photon", radiusKm: 75 }
            | { status: "failed", error, unavailable: true },
-  history: { status: "ok", data: { dataSource: "mock" | "live", summary } } | { status: "skipped", reason } | { status: "failed", error },
-  brief:   { status: "ok", data: { text, model, generatedAt, streamT } } | { status: "failed", error }
+  history: { status: "ok", data: { dataSource: "live", summary } }  // summary: one sentence from api-worker GET /api/context, e.g. "Southeast region so far in November (through the 23rd): 412 active cell-days against a 2001-2025 median of 233 ... (1.77x, above normal)"; region-level, never the incident's own area | { status: "skipped", reason } | { status: "failed", error },
+  brief:   { status: "ok", data: { text, model, generatedAt, streamT, affectedAreaKm2 } } | { status: "failed", error }
 }
 ```
 

@@ -13,9 +13,12 @@ import {
   type Detection,
   type RawDetection
 } from "../src/detection";
+import { activityAt, briefStaleness, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
+import { volcanoNear } from "../src/volcano";
 import { cellAreaKm2, cellKey, cellOf, neighborCells, parseBbox } from "../src/grid";
 import {
   applyDetections,
+  areaAt,
   emptyState,
   enrichmentDue,
   growthKm2PerDay,
@@ -27,6 +30,8 @@ import { incidentId, isStream, streamOfIncident } from "../src/streams";
 
 const H = 3600_000;
 const T0 = Date.UTC(2023, 5, 1, 0, 0);
+
+const cellsIn = (n: number, t: number) => Array.from({ length: n }, (_, i) => det(48 + i * 0.05, -75, t + i * 60_000));
 
 function det(lat: number, lon: number, t: number, extra: Partial<RawDetection> = {}): Detection {
   return withStream(
@@ -217,7 +222,6 @@ describe("clustering", () => {
 });
 
 describe("incident aggregate", () => {
-  const cellsIn = (n: number, t: number) => Array.from({ length: n }, (_, i) => det(48 + i * 0.05, -75, t + i * 60_000));
 
   it("becomes significant at >= 5 detections across >= 2 cells", () => {
     const s = emptyState("replay-test01.1", "replay:test01");
@@ -246,16 +250,62 @@ describe("incident aggregate", () => {
     expect(statusAt(s, T0 + 30 * H + 49 * H)).toBe("inactive");
   });
 
-  it("enrichment is due on first significance, then on area doubling at most every 6 h of stream time", () => {
+  it("enrichment is due on first significance, then when the area is 50 % above the last brief, at most every 6 h of stream time", () => {
     const s = emptyState("x.1", "live");
     applyDetections(s, cellsIn(5, T0), T0);
     const first = enrichmentDue(s, T0);
     expect(first?.reason).toBe("significant");
     s.enrichments.push(first!);
+    s.briefOk = { t: T0, affectedAreaKm2: first!.affectedAreaKm2 }; // the brief succeeded
     expect(enrichmentDue(s, T0 + H)).toBeNull();
-    applyDetections(s, cellsIn(11, T0 + 2 * H).slice(5), T0 + 2 * H); // area doubled, but < 6 h
+    applyDetections(s, cellsIn(8, T0 + 2 * H).slice(5), T0 + 2 * H); // +60 % area, but < 6 h after the attempt
     expect(enrichmentDue(s, T0 + 2 * H)).toBeNull();
-    expect(enrichmentDue(s, T0 + 6 * H)?.reason).toBe("area_doubled");
+    expect(enrichmentDue(s, T0 + 6 * H)?.reason).toBe("area_grown");
+  });
+
+  it("does not re-brief below +50 % area", () => {
+    const s = emptyState("x.1", "live");
+    applyDetections(s, cellsIn(8, T0), T0);
+    const first = enrichmentDue(s, T0)!;
+    s.enrichments.push(first);
+    s.briefOk = { t: T0, affectedAreaKm2: first.affectedAreaKm2 };
+    applyDetections(s, cellsIn(11, T0 + H).slice(8), T0 + H); // 11/8 = +37 %
+    expect(enrichmentDue(s, T0 + 12 * H)).toBeNull();
+    applyDetections(s, cellsIn(13, T0 + 2 * H).slice(11), T0 + 2 * H); // 13/8 = +62 %
+    expect(enrichmentDue(s, T0 + 12 * H)?.reason).toBe("area_grown");
+  });
+
+  it("a failed brief is retried with backoff (6 h, then 12 h, then 24 h) and never counts as done", () => {
+    const s = emptyState("x.1", "live");
+    applyDetections(s, cellsIn(5, T0), T0);
+    s.enrichments.push(enrichmentDue(s, T0)!); // attempt 1 at T0, no briefOk: it failed
+    s.briefFails = 1;
+    expect(enrichmentDue(s, T0 + 5 * H)).toBeNull();
+    expect(enrichmentDue(s, T0 + 6 * H)?.reason).toBe("significant");
+    s.enrichments.push(enrichmentDue(s, T0 + 6 * H)!);
+    s.briefFails = 2;
+    expect(enrichmentDue(s, T0 + 6 * H + 11 * H)).toBeNull();
+    expect(enrichmentDue(s, T0 + 6 * H + 12 * H)?.reason).toBe("significant");
+    s.briefFails = 3;
+    expect(enrichmentDue(s, T0 + 6 * H + 23 * H)).toBeNull();
+    expect(enrichmentDue(s, T0 + 6 * H + 24 * H)?.reason).toBe("significant");
+  });
+
+  it("an incident whose area-doubling re-brief failed still has the old brief as reference and is retried", () => {
+    // Napoleonville: brief at 161 km², re-brief at 402 km² failed (mark recorded, no success), now 537 km².
+    const s = emptyState("x.1", "live");
+    applyDetections(s, cellsIn(10, T0), T0);
+    const area = enrichmentDue(s, T0)!.affectedAreaKm2;
+    s.enrichments.push({ t: T0, affectedAreaKm2: area, reason: "significant" }, { t: T0 + 10 * H, affectedAreaKm2: area * 2.5, reason: "area_doubled" });
+    s.briefOk = { t: T0, affectedAreaKm2: area / 3 };
+    expect(enrichmentDue(s, T0 + 30 * H)?.reason).toBe("area_grown");
+  });
+
+  it("never enriches an incident at an active volcano", () => {
+    const s = emptyState("x.1", "live");
+    applyDetections(s, [0, 1, 2, 3, 4, 5].map((i) => det(19.42 + i * 0.05, -155.29, T0 + i * H)), T0 + 5 * H);
+    expect(enrichmentDue(s, T0 + 5 * H)).toBeNull();
+    expect(summarize(s).volcano?.name).toBe("Kilauea");
   });
 
   it("remembers the first detection id as a stable key across replays", () => {
@@ -290,7 +340,7 @@ describe("enrichment config", async () => {
 
   it("brief cache key: scenario + stable incident key + doubling level", async () => {
     const { briefCacheKey } = await import("../src/enrich/brief");
-    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v8/quebec-2023-06/abc123/0");
+    expect(briefCacheKey("quebec-2023-06", "abc123", 0)).toBe("brief-cache/v9/quebec-2023-06/abc123/0");
   });
 
   it("CHAT_FALLBACK_MODEL='' disables the fallback", () => {
@@ -330,25 +380,35 @@ describe("brief", async () => {
     expect(cleanBrief("The burned area is 120 km2.")).toBe("The area with detections is 120 km2.");
   });
 
-  it("prompt contains only the given numbers and skips mock history", () => {
+  it("prompt adds context instead of restating the card, and names the region", () => {
     const s = emptyState("live.1", "live");
     applyDetections(s, [0, 1, 2, 3, 4, 5].map((i) => det(48 + i * 0.05, -75, T0 + i * H)), T0 + 5 * H);
+    const sum = summarize(s);
     const msgs = buildBriefPrompt({
-      summary: summarize(s),
+      summary: sum,
       stream: "live",
       weather: { status: "ok", data: { windSpeedKmh: 22, windFrom: "SW", relativeHumidityPct: 31, temperatureC: 24 } },
       places: { status: "ok", data: [{ name: "Chibougamau", distanceKm: 12.3, direction: "NE" }] },
-      history: { status: "ok", data: { dataSource: "mock", summary: { peak: 999 } } }
+      history: { status: "ok", data: { dataSource: "live", summary: "Southeast region so far in November (through the 23rd): 412 active cell-days against a 2001-2025 median of 233 for the same days (1.77x, above normal)" } }
     });
     const user = msgs[1].content;
-    expect(user).toContain("22 km/h from the SW");
     expect(user).toContain("Chibougamau (12.3 km NE)");
-    expect(user).toContain("Nearest populated places");
-    expect(user).not.toContain("999");
+    expect(user).toContain("Southeast region so far in November");
+    expect(user).toContain("NOT this incident");
+    // the card's own numbers are not handed to the model to repeat
+    expect(user).not.toContain(String(sum.detections) + " detections");
+    expect(user).not.toMatch(/km2|km²|MW|grid cells/);
     expect(msgs[0].content).toMatch(/Never give evacuation/);
-    expect(user).toContain("Area with detections:");
+    expect(msgs[0].content).toMatch(/whole region/);
     expect(user).not.toMatch(/burned area/i);
-    expect(msgs[0].content).toContain('"area with detections"');
+  });
+
+  it("without regional context the brief is 2 sentences and nothing is said about it", () => {
+    const s = emptyState("live.1", "live");
+    applyDetections(s, [0, 1, 2, 3, 4, 5].map((i) => det(48 + i * 0.05, -75, T0 + i * H)), T0 + 5 * H);
+    const msgs = buildBriefPrompt({ summary: summarize(s), stream: "live", weather: { status: "failed" }, places: { status: "failed" }, history: { status: "skipped" } });
+    expect(msgs[0].content).toContain("Write 2 sentences");
+    expect(msgs[1].content).not.toContain("Regional context");
   });
   void extractText;
 });
@@ -485,5 +545,61 @@ describe("demo limits", () => {
       { id: "e", last_t: 20, merged_into: "d" } // old, but merged into an active incident
     ];
     expect([...incidentsToPrune(rows, cutoff)].sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
+
+describe("incident activity (stream clock)", () => {
+  const last = T0;
+  it("is active under 12 h, cooling from 12 h to 36 h, inactive after", () => {
+    expect(activityAt(last, last)).toBe("active");
+    expect(activityAt(last, last + 11 * H + 59 * 60_000)).toBe("active");
+    expect(activityAt(last, last + 12 * H)).toBe("cooling");
+    expect(activityAt(last, last + 35 * H)).toBe("cooling"); // seen 35 h ago: not "active"
+    expect(activityAt(last, last + 36 * H)).toBe("cooling");
+    expect(activityAt(last, last + 36 * H + 1)).toBe("inactive");
+    expect(activityAt(last, last + 47 * H)).toBe("inactive"); // still status "active" for clustering until 48 h
+  });
+  it("summaries carry the activity and keep the 48 h clustering status", () => {
+    const s = emptyState("x.1", "live");
+    applyDetections(s, cellsIn(5, T0), T0);
+    const a = summarize(s, T0 + 35 * H);
+    expect(a.activity).toBe("cooling");
+    expect(a.status).toBe("active");
+    const b = summarize(s, T0 + 40 * H);
+    expect(b.activity).toBe("inactive");
+    expect(b.status).toBe("active");
+    expect(summarize(s, T0 + 49 * H).status).toBe("inactive");
+  });
+});
+
+describe("brief staleness", () => {
+  it("is stale from +25 % grid coverage; unknown or equal areas never are", () => {
+    expect(briefStaleness(161.1, 537).stale).toBe(true); // Napoleonville
+    expect(briefStaleness(100, 124.9).stale).toBe(false);
+    expect(briefStaleness(100, 100 * STALE_AREA_RATIO).stale).toBe(true);
+    expect(briefStaleness(100, 100).stale).toBe(false);
+    expect(briefStaleness(100, 80).stale).toBe(false); // area never shrinks, but never "stale" if it did
+    expect(briefStaleness(undefined, 537)).toEqual({ stale: false, growth: null });
+    expect(briefStaleness(0, 537).stale).toBe(false);
+    expect(REBRIEF_AREA_RATIO).toBeGreaterThan(STALE_AREA_RATIO);
+  });
+  it("recovers the area a legacy brief described from the timeline at the brief's stream time", () => {
+    const s = emptyState("x.1", "live");
+    applyDetections(s, cellsIn(3, T0), T0);
+    applyDetections(s, cellsIn(6, T0 + 30 * H).slice(3), T0 + 30 * H);
+    const tl = timeline(s);
+    expect(areaAt(tl, T0 + 2 * H)).toBe(tl[0].affectedAreaKm2);
+    expect(areaAt(tl, T0 + 40 * H)).toBe(tl[1].affectedAreaKm2);
+    expect(areaAt(tl, T0 - H)).toBeNull();
+  });
+});
+
+describe("volcano mask", () => {
+  it("matches Kilauea summit and rift, not a wildfire elsewhere", () => {
+    expect(volcanoNear(-155.29, 19.42)?.name).toBe("Kilauea");
+    expect(volcanoNear(-154.9, 19.47)?.name).toBe("Kilauea"); // East Rift Zone, ~41 km
+    expect(volcanoNear(-91.1, 30.0)).toBeNull(); // Louisiana
+    expect(volcanoNear(-155.7, 19.9)).toBeNull(); // Waikoloa-side Hawaii Island wildfires
   });
 });

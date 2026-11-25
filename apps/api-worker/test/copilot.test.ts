@@ -577,3 +577,127 @@ describe("toUserError", async () => {
     expect(toUserError(new Error("boom"))).toMatch(/could not answer/);
   });
 });
+
+describe("regions and live data selection", async () => {
+  const { classifyAgainst, regionLabel, regionOfBbox, regionOfPoint } = await import("../src/data/regionContext");
+  const { createFireData } = await import("../src/data/fireData");
+  const { LiveFireData } = await import("../src/data/liveFireData");
+
+  it("FIRE_DATA_SOURCE=live selects LiveFireData; anything else the demo fixtures", () => {
+    expect(createFireData({ FIRE_DATA_SOURCE: "live" } as Env)).toBeInstanceOf(LiveFireData);
+    expect(createFireData({ FIRE_DATA_SOURCE: "mock" } as Env).source).toBe("mock");
+    expect(createFireData({} as Env).source).toBe("mock");
+  });
+
+  it("maps points and boxes to the harmonized region, US territory only", () => {
+    expect(regionOfPoint(-91.1, 30.0)?.id).toBe("southeast"); // Louisiana
+    expect(regionOfPoint(-119.5, 37.0)?.id).toBe("california");
+    expect(regionOfPoint(-155.3, 19.4)?.id).toBe("hawaii");
+    expect(regionOfPoint(-107.0, 25.0)).toBeNull(); // Sinaloa, inside the southwest rectangle but not the US
+    expect(regionOfPoint(-72.5, 47.0)).toBeNull(); // Quebec
+    expect(regionOfBbox([-92, 29, -90, 31])?.id).toBe("southeast");
+    expect(regionOfBbox([-110, 20, -105, 25])).toBeNull();
+    expect(regionLabel(regionOfPoint(-91.1, 30.0)!)).toBe("Southeast region");
+    expect(regionLabel(regionOfPoint(-119.5, 37.0)!)).toBe("California region");
+  });
+
+  it("outside coverage the live calendar says so and never returns demo numbers", async () => {
+    const live = new LiveFireData({} as Env);
+    const r = await live.getCalendar({ bbox: [-110, 20, -105, 25], from: "2020-01-01", to: "2020-12-31" });
+    expect(r).toMatchObject({ dataSource: "live", available: false });
+    expect((r as { message: string }).message).toMatch(/outside the harmonized archive/);
+    expect(await live.getMonthToDate({ bbox: [-110, 20, -105, 25] })).toMatchObject({ available: false });
+  });
+
+  it("archival hotspots outside the near-real-time window are one honest sentence", async () => {
+    const live = new LiveFireData({ D1_RETENTION_DAYS: "92" } as Env);
+    const r = await live.getSpotsSummary({ mode: "archival", bbox: [-124.5, 32.5, -114, 42.1], from: "2020-08-01", to: "2020-08-31" });
+    expect(r).toMatchObject({ dataSource: "live", available: false });
+    const msg = (r as { message: string }).message;
+    expect(msg).toMatch(/get_calendar/);
+    expect(msg.split(/[.;]/).filter(Boolean)).toHaveLength(1);
+  });
+
+  it("classifies month-to-date against prorated percentiles", () => {
+    const c = { median: 100, p10: 40, p25: 70, p75: 130, p90: 180 };
+    expect(classifyAgainst(10, c, 0.5)).toBe("much_below"); // p10 × 0.5 = 20
+    expect(classifyAgainst(50, c, 0.5)).toBe("normal");
+    expect(classifyAgainst(100, c, 0.5)).toBe("much_above"); // p90 × 0.5 = 90
+    expect(classifyAgainst(80, c, 0.5)).toBe("above");
+  });
+});
+
+describe("D1 month-to-date and hotspot queries (sqlite stand-in for D1)", async () => {
+  const { regionMonthToDate, regionOfPoint } = await import("../src/data/regionContext");
+  const { LiveFireData } = await import("../src/data/liveFireData");
+
+  const cellId = (lat: number, lon: number) => Math.floor((lat + 90) * 20) * 7200 + Math.floor((lon + 180) * 20);
+  function fakeD1(db: DatabaseSync) {
+    const prep = (sql: string) => {
+      let params: unknown[] = [];
+      const st = {
+        bind(...p: unknown[]) { params = p; return st; },
+        async all() { return { results: db.prepare(sql).all(...(params as never[])) }; }
+      };
+      return st;
+    };
+    return { prepare: prep, batch: async (sts: { all(): Promise<unknown> }[]) => Promise.all(sts.map((s) => s.all())) } as unknown as D1Database;
+  }
+  function seed() {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`CREATE TABLE nrt_availability (satellite TEXT, acq_date TEXT);
+      CREATE TABLE nrt_cell_days (acq_date TEXT, cell_id INTEGER, satellite TEXT, sensor TEXT, grid_lat REAL, grid_lon REAL, peak_frp_mw REAL);
+      CREATE TABLE nrt_detections (satellite TEXT, acq_date TEXT, acq_time INTEGER, lat REAL, lon REAL, sensor TEXT, confidence INTEGER, frp_mw REAL, cell_id INTEGER, heat_class TEXT);`);
+    for (let d = 1; d <= 23; d++) {
+      const date = `2026-11-${String(d).padStart(2, "0")}`;
+      db.prepare("INSERT INTO nrt_availability VALUES ('SNPP', ?)").run(date);
+      // Louisiana (southeast): 2 cells a day on SNPP, 1 on NOAA20 (not the reference, must not count)
+      for (const [lat, lon] of [[30.01, -91.01], [30.06, -91.01]] as const)
+        db.prepare("INSERT INTO nrt_cell_days VALUES (?, ?, 'SNPP', 'VIIRS', ?, ?, 20)").run(date, cellId(lat, lon), lat, lon);
+      db.prepare("INSERT INTO nrt_cell_days VALUES (?, ?, 'NOAA20', 'VIIRS', 30.01, -91.01, 20)").run(date, cellId(30.01, -91.01));
+      // Bahamas: inside the southeast rectangle, not US territory
+      db.prepare("INSERT INTO nrt_cell_days VALUES (?, ?, 'SNPP', 'VIIRS', 25.26, -77.26, 20)").run(date, cellId(25.26, -77.26));
+      // Texas Panhandle: great_plains, excluded from southeast and from its bbox
+      db.prepare("INSERT INTO nrt_cell_days VALUES (?, ?, 'SNPP', 'VIIRS', 35.01, -101.01, 20)").run(date, cellId(35.01, -101.01));
+    }
+    return db;
+  }
+
+  it("counts the VIIRS reference satellite's cells of the region on US territory, through yesterday", async () => {
+    const env = { NRT_DB: fakeD1(seed()) } as Env;
+    const region = regionOfPoint(-91.1, 30.0)!;
+    const r = await regionMonthToDate(env, region, new Date("2026-11-24T12:00:00Z"));
+    expect(r).toMatchObject({ month: "2026-11", throughDay: 23, value: 46, daysWithoutViirs: [] });
+    expect(r!.daily).toHaveLength(23);
+    expect(r!.daily[0]).toEqual({ date: "2026-11-01", harmonizedCellDays: 2 });
+  });
+
+  it("an empty D1 tier is unavailable, not zero", async () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`CREATE TABLE nrt_availability (satellite TEXT, acq_date TEXT);
+      CREATE TABLE nrt_cell_days (acq_date TEXT, cell_id INTEGER, satellite TEXT, sensor TEXT, grid_lat REAL, grid_lon REAL, peak_frp_mw REAL);`);
+    const env = { NRT_DB: fakeD1(db), D1_RETENTION_DAYS: "92" } as Env;
+    expect(await regionMonthToDate(env, regionOfPoint(-91.1, 30.0)!, new Date("2026-11-24T12:00:00Z"))).toBeNull();
+  });
+
+  it("realtime hotspot summary counts only fire-class detections in the box and says when the tier is empty", async () => {
+    const db = seed();
+    const today = new Date().toISOString().slice(0, 10);
+    db.prepare("INSERT INTO nrt_availability VALUES ('SNPP', ?)").run(today);
+    const ins = db.prepare("INSERT INTO nrt_detections VALUES ('SNPP', ?, ?, ?, ?, 'VIIRS', 80, ?, ?, ?)");
+    ins.run(today, 130, 30.01, -91.01, 55.5, cellId(30.01, -91.01), "fire");
+    ins.run(today, 1310, 30.06, -91.01, 12, cellId(30.06, -91.01), "fire");
+    ins.run(today, 130, 30.01, -91.01, 999, cellId(30.01, -91.01), "industrial"); // excluded
+    ins.run(today, 130, 40, -100, 5, cellId(40, -100), "fire"); // outside the box
+    const live = new LiveFireData({ NRT_DB: fakeD1(db), D1_RETENTION_DAYS: "92" } as Env);
+    const r = await live.getSpotsSummary({ mode: "realtime", bbox: [-92, 29, -90, 31], from: today, to: today });
+    expect(r).toMatchObject({ dataSource: "live", counts: { detections: 2, distinctCells: 2, bySatellite: { SNPP: { detections: 2 } } }, lastSeen: `${today}T13:10:00Z` });
+    expect((r as { topDetections: { frpMw: number }[] }).topDetections[0]!.frpMw).toBe(55.5);
+
+    const empty = new DatabaseSync(":memory:");
+    empty.exec(`CREATE TABLE nrt_availability (satellite TEXT, acq_date TEXT);`);
+    const none = await new LiveFireData({ NRT_DB: fakeD1(empty), D1_RETENTION_DAYS: "92" } as Env).getSpotsSummary({ mode: "realtime", bbox: [-92, 29, -90, 31], from: today, to: today });
+    expect(none).toMatchObject({ available: false });
+    expect((none as { message: string }).message).toMatch(/get_live_incidents/);
+  });
+});

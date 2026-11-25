@@ -8,6 +8,10 @@ export interface IncidentSummary {
   id: string;
   stream: string;
   status: 'active' | 'inactive' | 'merged';
+  /** Active < 12 h since the last detection, cooling 12-36 h, inactive after (stream clock). Older servers omit it. */
+  activity?: 'active' | 'cooling' | 'inactive';
+  /** At an active volcano (config/volcanoes.json): heat that is not a wildfire. Older servers omit it. */
+  volcano?: { name: string; distanceKm: number } | null;
   significant: boolean;
   mergedInto: string | null;
   detections: number;
@@ -34,6 +38,8 @@ export interface Brief {
   streamT: number;
   /** Same moment as ISO 8601. Older servers omit it. */
   asOf?: string;
+  /** Grid coverage (km²) when the brief was written. Older briefs lack it; the detail endpoint recovers it. */
+  affectedAreaKm2?: number;
 }
 
 /** [lon, lat, frpMw, tMs, conf] where conf is 0 low, 1 nominal, 2 high. */
@@ -142,3 +148,18 @@ export function titlePlace(places: Place[] | null | undefined): Place | null {
     rank(p) < rank(best) || (rank(p) === rank(best) && p.distanceKm < best.distanceKm) ? p : best,
   );
 }
+
+import { activityAt, briefStaleness, type Activity } from '../../../realtime-worker/src/status';
+export { briefStaleness };
+
+/** Activity at the stream clock (falls back to the server's value, then to active). Merged incidents keep their last activity. */
+export function activityOf(i: Pick<IncidentSummary, 'lastSeen' | 'activity' | 'asOf'>, clock: number | null): Activity {
+  return activityAt(i.lastSeen, Math.max(clock ?? 0, i.asOf ?? 0)) ;
+}
+
+export const ACTIVITY_LABEL: Record<Activity, string> = { active: 'Active', cooling: 'Cooling', inactive: 'Inactive' };
+export const ACTIVITY_HELP: Record<Activity, string> = {
+  active: 'Detected within the last 12 hours',
+  cooling: 'Last detected 12 to 36 hours ago',
+  inactive: 'Not detected for over 36 hours',
+};

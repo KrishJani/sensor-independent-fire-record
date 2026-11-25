@@ -5,8 +5,10 @@
 
 import type { Detection, Sensor } from "./detection";
 import { cellAreaKm2, cellKey, cellOf, parseCellKey, type Bbox } from "./grid";
+import { volcanoNear, type VolcanoMatch } from "./volcano";
+import { activityAt, INACTIVE_AFTER_MS, REBRIEF_AREA_RATIO, type Activity } from "./status";
 
-export const INACTIVE_AFTER_MS = 48 * 3600_000;
+export { ACTIVE_UNTIL_MS, activityAt, briefStaleness, COOLING_UNTIL_MS, INACTIVE_AFTER_MS, REBRIEF_AREA_RATIO, STALE_AREA_RATIO, type Activity } from "./status";
 export const GROWTH_WINDOW_MS = 24 * 3600_000;
 export const SIGNIFICANT_MIN_DETECTIONS = 5;
 export const SIGNIFICANT_MIN_CELLS = 2;
@@ -33,9 +35,10 @@ export interface TimelinePoint {
 }
 
 export interface EnrichmentMark {
-  t: number; // stream time when enrichment was requested
+  t: number; // stream time when enrichment was requested (an attempt, not a success)
   affectedAreaKm2: number;
-  reason: "significant" | "area_doubled";
+  /** "area_doubled" only appears in marks stored before briefs were re-triggered at +50 %. */
+  reason: "significant" | "area_grown" | "area_doubled";
 }
 
 export interface IncidentState {
@@ -59,6 +62,10 @@ export interface IncidentState {
   firstDetectionId?: string | null;
   significantAt: number | null;
   enrichments: EnrichmentMark[];
+  /** The latest brief that was actually generated: stream time and affected area it describes. */
+  briefOk?: { t: number; affectedAreaKm2: number } | null;
+  /** Consecutive failed brief attempts since the last success (drives the retry backoff). */
+  briefFails?: number;
   /** Latest stream time this incident has been told about. */
   streamT: number;
 }
@@ -67,6 +74,10 @@ export interface IncidentSummary {
   id: string;
   stream: string;
   status: IncidentStatus;
+  /** Active < 12 h since the last detection, cooling 12–36 h, inactive after (stream clock). */
+  activity: Activity;
+  /** Set when the centroid is at an active volcano (config/volcanoes.json): heat that is not a wildfire. */
+  volcano: VolcanoMatch | null;
   significant: boolean;
   mergedInto: string | null;
   detections: number;
@@ -180,6 +191,8 @@ export function summarize(s: IncidentState, streamT = s.streamT): IncidentSummar
     id: s.id,
     stream: s.stream,
     status: statusAt(s, streamT),
+    activity: activityAt(s.lastT, streamT),
+    volcano: volcanoNear(round4(s.sumLon / n), round4(s.sumLat / n)),
     significant: s.significantAt !== null,
     mergedInto: s.mergedInto,
     detections: s.detections,
@@ -209,19 +222,37 @@ export function timeline(s: IncidentState): TimelinePoint[] {
     });
 }
 
+/** Wait after 1, 2, 3+ consecutive failed attempts. */
+const RETRY_BACKOFF_MS = [6, 12, 24].map((h) => h * 3600_000);
+
+/** Cumulative affected area at stream time `t` (the area of the last timeline hour starting at or before t). */
+export function areaAt(tl: TimelinePoint[], t: number): number | null {
+  let area: number | null = null;
+  for (const p of tl) if (p.hour <= t) area = p.affectedAreaKm2;
+  return area;
+}
+
 /**
- * Enrichment is due when the incident is significant and its affected area has reached
- * `minAreaKm2` (0 = on significance), and again when that area has doubled since the last
- * enrichment, but at most once per 6 h of stream time.
+ * Enrichment is due when the incident is significant and its affected area has reached `minAreaKm2`
+ * (0 = on significance) and either:
+ *  - it has no brief yet (first attempt on significance; later attempts after a backoff), or
+ *  - its latest brief describes an area that has since grown by ≥ 50 % (REBRIEF_AREA_RATIO).
+ * Attempts are at least 6 h of stream time apart, and back off to 12 h and 24 h after consecutive failures.
+ * Incidents at an active volcano are never enriched.
  */
 export function enrichmentDue(s: IncidentState, streamT: number, minAreaKm2 = 0): EnrichmentMark | null {
   if (s.significantAt === null || s.mergedInto) return null;
+  if (volcanoNear(s.sumLon / Math.max(1, s.detections), s.sumLat / Math.max(1, s.detections))) return null;
   const area = affectedAreaKm2(s);
+  if (area < minAreaKm2) return null;
   const last = s.enrichments.at(-1);
-  if (!last) return area >= minAreaKm2 ? { t: streamT, affectedAreaKm2: area, reason: "significant" } : null;
-  if (area >= 2 * last.affectedAreaKm2 && streamT - last.t >= ENRICH_MIN_INTERVAL_MS) {
-    return { t: streamT, affectedAreaKm2: area, reason: "area_doubled" };
-  }
+  const ok = s.briefOk ?? null;
+  if (!last && !ok) return { t: streamT, affectedAreaKm2: area, reason: "significant" };
+  const fails = s.briefFails ?? 0;
+  const wait = fails > 0 ? RETRY_BACKOFF_MS[Math.min(fails, RETRY_BACKOFF_MS.length) - 1] : ENRICH_MIN_INTERVAL_MS;
+  if (last && streamT - last.t < wait) return null;
+  if (!ok) return { t: streamT, affectedAreaKm2: area, reason: "significant" };
+  if (area >= REBRIEF_AREA_RATIO * ok.affectedAreaKm2) return { t: streamT, affectedAreaKm2: area, reason: "area_grown" };
   return null;
 }
 

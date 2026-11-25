@@ -1,0 +1,89 @@
+{
+  "_comment": "Active volcanoes inside the realtime watch bbox (WATCH_BBOXES default -170,15,-50,72). Incidents whose centroid lies within radiusKm of one are labelled 'Volcanic heat', ranked below wildfires and not briefed: lava lakes and eruptions are not wildfires. Selection: Holocene volcanoes with Last_Eruption_Year >= 2015 and not undersea.",
+  "source": "Smithsonian Institution Global Volcanism Program, Volcanoes of the World (Holocene volcano list, WFS layer GVP-VOTW:Smithsonian_VOTW_Holocene_Volcanoes), https://volcano.si.edu/ , retrieved 2026-11-24. Coordinates and Last_Eruption_Year as published there.",
+  "radiusKmDefault": 10,
+  "radiusNote": "Default 10 km (summit and flanks). Larger radii cover rift zones and extended flows: Kilauea 45 km (East Rift Zone vents sit ~40 km from the summit), Mauna Loa 30 km, Popocatepetl 15 km. Judgement, not a GVP value.",
+  "volcanoes": [
+    {
+      "number": 311240,
+      "name": "Cleveland",
+      "country": "United States",
+      "lat": 52.825,
+      "lon": -169.944,
+      "lastEruptionYear": 2020,
+      "radiusKm": 10
+    },
+    {
+      "number": 311300,
+      "name": "Bogoslof",
+      "country": "United States",
+      "lat": 53.93,
+      "lon": -168.03,
+      "lastEruptionYear": 2017,
+      "radiusKm": 10
+    },
+    {
+      "number": 311360,
+      "name": "Shishaldin",
+      "country": "United States",
+      "lat": 54.756,
+      "lon": -163.97,
+      "lastEruptionYear": 2023,
+      "radiusKm": 10
+    },
+    {
+      "number": 312030,
+      "name": "Pavlof",
+      "country": "United States",
+      "lat": 55.417,
+      "lon": -161.894,
+      "lastEruptionYear": 2022,
+      "radiusKm": 10
+    },
+    {
+      "number": 312070,
+      "name": "Veniaminof",
+      "country": "United States",
+      "lat": 56.17,
+      "lon": -159.38,
+      "lastEruptionYear": 2021,
+      "radiusKm": 10
+    },
+    {
+      "number": 332010,
+      "name": "Kilauea",
+      "country": "United States",
+      "lat": 19.421,
+      "lon": -155.287,
+      "lastEruptionYear": 2026,
+      "radiusKm": 45
+    },
+    {
+      "number": 332020,
+      "name": "Mauna Loa",
+      "country": "United States",
+      "lat": 19.475,
+      "lon": -155.608,
+      "lastEruptionYear": 2022,
+      "radiusKm": 30
+    },
+    {
+      "number": 341040,
+      "name": "Colima",
+      "country": "Mexico",
+      "lat": 19.514,
+      "lon": -103.62,
+      "lastEruptionYear": 2019,
+      "radiusKm": 10
+    },
+    {
+      "number": 341090,
+      "name": "Popocatepetl",
+      "country": "Mexico",
+      "lat": 19.023,
+      "lon": -98.622,
+      "lastEruptionYear": 2026,
+      "radiusKm": 15
+    }
+  ]
+}

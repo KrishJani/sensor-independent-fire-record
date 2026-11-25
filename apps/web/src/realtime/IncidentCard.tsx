@@ -2,8 +2,8 @@ import { useId, type ReactNode } from 'react';
 import { fmtAgo, fmtClock, fmtInt, fmtKm2, fmtMw, fmtShort } from './format';
 import { ArrowIcon, BackIcon, InfoIcon } from './icons';
 import { fmtLatLon, frpColor } from './IncidentList';
-import { SourceBadge } from './StatusChip';
-import { briefTime, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
+import { ActivityPill, SourceBadge } from './StatusChip';
+import { activityOf, briefStaleness, briefTime, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
 
 interface Props {
   incident: IncidentSummary;
@@ -50,6 +50,12 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
   const shownBrief = candidates.length
     ? candidates.reduce((a, b) => (briefTime(b) > briefTime(a) ? b : a))
     : null;
+  // Same brief seen twice (live push without the area, detail with it recovered from the timeline): take the area from either.
+  const areaAtBrief = shownBrief
+    ? (candidates.find((b) => briefTime(b) === briefTime(shownBrief) && b.affectedAreaKm2 !== undefined)?.affectedAreaKm2 ?? null)
+    : null;
+  const staleness = briefStaleness(areaAtBrief, i.affectedAreaKm2);
+  const activity = activityOf(i, clock);
   const briefFailed = !shownBrief && enrichment?.brief?.status === 'failed';
   const briefSkipped = !shownBrief && enrichment?.brief?.status === 'skipped';
   const nearest = titlePlace(places);
@@ -65,25 +71,26 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
           <h2>{title}</h2>
           <span className="rt-card__sub">
             {nearest ? `${fmtLatLon(i.centroid)} · ` : ''}
-            {i.status === 'active' ? 'Active' : i.status === 'inactive' ? 'Inactive (48 h quiet)' : 'Merged'}
+            {i.volcano ? `Volcanic heat · ${i.volcano.name}` : i.status === 'merged' ? 'Merged into another incident' : 'Satellite fire detections'}
           </span>
         </div>
-        <SourceBadge replay={replay} />
+        {i.status !== 'merged' && <ActivityPill activity={activity} />}
+        {replay && <SourceBadge replay />}
       </header>
 
       <dl className="rt-card__grid">
-        <Row label="Area with detections" help={AREA_HELP}>
-          <strong>{fmtKm2(i.affectedAreaKm2)}</strong>
-          <span className="rt-dim"> · {fmtInt(i.cells)} cells</span>
-        </Row>
-        <Row label="Growth (last 24 h)">
-          {i.growthKm2PerDay > 0 ? `+${fmtKm2(i.growthKm2PerDay)}/day` : 'No new cells'}
-        </Row>
         <Row label="Detections">
-          {fmtInt(i.detections)}
+          <strong>{fmtInt(i.detections)}</strong>
           <span className="rt-dim">
             {' '}
-            · VIIRS {fmtInt(i.sensors.VIIRS)}, MODIS {fmtInt(i.sensors.MODIS)}
+            · {fmtInt(i.cells)} cells · VIIRS {fmtInt(i.sensors.VIIRS)}, MODIS {fmtInt(i.sensors.MODIS)}
+          </span>
+        </Row>
+        <Row label="Grid coverage" help={AREA_HELP}>
+          {fmtKm2(i.affectedAreaKm2)}
+          <span className="rt-dim">
+            {' '}
+            · {i.growthKm2PerDay > 0 ? `+${fmtKm2(i.growthKm2PerDay)} in 24 h` : 'no new cells in 24 h'}
           </span>
         </Row>
         <Row label="Max FRP">
@@ -142,9 +149,18 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
           AI brief
           {shownBrief && <span className="rt-dim">as of {fmtClock(briefTime(shownBrief))}</span>}
         </h3>
-        {shownBrief ? (
+        {i.volcano ? (
+          <p className="rt-note">
+            This heat is at {i.volcano.name} volcano ({i.volcano.distanceKm} km away), not a wildfire, so no AI brief is written. Source: Smithsonian Global Volcanism Program.
+          </p>
+        ) : shownBrief ? (
           <>
             <p>{shownBrief.text}</p>
+            {staleness.stale && areaAtBrief !== null && (
+              <p className="rt-brief__stale" role="note">
+                Out of date: written when grid coverage was {fmtKm2(areaAtBrief)}; it is now {fmtKm2(i.affectedAreaKm2)}.
+              </p>
+            )}
             <p className="rt-brief__model">
               {shownBrief.model.replace(/^@cf\//, '')} · generated from the numbers above
               {replay ? ' (replay data)' : ''}

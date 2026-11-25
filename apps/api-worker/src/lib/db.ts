@@ -27,3 +27,18 @@ export function closeDbs(ctx: Ctx): void {
   open.delete(ctx);
   ctx.waitUntil(Promise.all(list.map((s) => s.end({ timeout: 5 }))));
 }
+
+/**
+ * For callers that have no request context (the copilot's Durable Object): runs `fn` with a context whose
+ * Postgres clients are closed, and awaited, once it finishes.
+ */
+export async function withDb<T>(fn: (ctx: Ctx) => Promise<T>): Promise<T> {
+  const pending: Promise<unknown>[] = [];
+  const ctx: Ctx = { waitUntil: (p) => void pending.push(p) };
+  try {
+    return await fn(ctx);
+  } finally {
+    closeDbs(ctx);
+    await Promise.allSettled(pending);
+  }
+}

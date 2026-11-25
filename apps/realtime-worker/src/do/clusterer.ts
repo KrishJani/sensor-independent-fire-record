@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { assignDetections, type ClusterStore, type IncidentRef } from "../cluster";
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
-import { INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
+import { volcanoNear } from "../volcano";
+import { activityAt, INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
 import { briefCacheKey, briefCachePrefix } from "../enrich/brief";
 import { briefCacheFull, incidentsToPrune, LIVE_RETENTION_MS, pickCachedLevel, type PruneRow } from "../limits";
 import type { Brief, MapPoint } from "../protocol";
@@ -16,6 +17,10 @@ const INCIDENT_FANOUT = 24;
 const ENRICH_DISPATCH_PER_BATCH = 2;
 /** The live stream's ENRICH_MAX_PER_STREAM applies per rolling 24 h of wall clock. */
 const LIVE_ENRICH_WINDOW_MS = 24 * 3600_000;
+/** Live: how often (wall clock) quiet incidents are checked for a missing or out-of-date brief. */
+const SWEEP_INTERVAL_MS = 30 * 60_000;
+/** Incidents checked per sweep, largest first. */
+const SWEEP_MAX = 40;
 /** Incident DOs deleted per purgeStream() call (keeps each call well under the subrequest limit). */
 const PURGE_CHUNK = 400;
 
@@ -152,6 +157,7 @@ export class Clusterer extends DurableObject<Env> {
     }
     const summaries = results.map((r) => r.summary);
     this.queueEnrichments(results);
+    await this.sweepEnrichments(stream, streamT);
     await Promise.all(res.merges.map((m) => this.incidentStub(m.from).markMerged(m.into, m.t)));
 
     const upserts: IncidentSummary[] = [];
@@ -226,6 +232,33 @@ export class Clusterer extends DurableObject<Env> {
     }
   }
 
+  /**
+   * Live only, at most every SWEEP_INTERVAL_MS: asks the largest significant incidents last seen within 48 h whether a brief is missing (a failed attempt waiting out its backoff) or out of date (area +50 %).
+   * Ingest only checks incidents that got new detections, so a quiet incident would otherwise keep a stale brief.
+   * The caps are untouched: due incidents join the queue and dispatchEnrichments() applies them.
+   */
+  private async sweepEnrichments(stream: string, streamT: number | null) {
+    if (stream !== "live" || streamT === null) return;
+    const last = Number(this.meta("sweptAt") ?? 0);
+    if (Date.now() - last < SWEEP_INTERVAL_MS) return;
+    this.setMeta("sweptAt", String(Date.now()));
+    const rows = this.sql
+      .exec<{ id: string; summary: string }>("SELECT id, summary FROM incidents WHERE significant = 1 AND merged_into IS NULL AND summary IS NOT NULL")
+      .toArray()
+      .map((r) => JSON.parse(r.summary) as IncidentSummary)
+      .filter((s) => !s.volcano && streamT - s.lastSeen <= INACTIVE_AFTER_MS)
+      .sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2)
+      .slice(0, SWEEP_MAX);
+    const minAreaKm2 = briefMinAreaKm2(this.env, stream);
+    const due: IncidentIngestResult[] = [];
+    for (let i = 0; i < rows.length; i += INCIDENT_FANOUT) {
+      const out = await Promise.all(rows.slice(i, i + INCIDENT_FANOUT).map((s) => this.incidentStub(s.id).checkEnrichment({ streamT, minAreaKm2 })));
+      for (const r of out) if (r?.enrich) due.push(r as unknown as IncidentIngestResult);
+    }
+    this.queueEnrichments(due);
+    this.bump("enrich_sweeps", 1);
+  }
+
   /** Enrichments started for this stream within its cap window (live: rolling 24 h; replay: whole stream). */
   private enrichmentsUsed(stream: string): number {
     const since = stream === "live" ? Date.now() - LIVE_ENRICH_WINDOW_MS : 0;
@@ -253,7 +286,7 @@ export class Clusterer extends DurableObject<Env> {
         return true;
       })
       .map((q) => ({ ...q, s: JSON.parse(q.summary!) as IncidentSummary }))
-      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || b.s.affectedAreaKm2 - a.s.affectedAreaKm2);
+      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || Number(!!a.s.volcano) - Number(!!b.s.volcano) || b.s.affectedAreaKm2 - a.s.affectedAreaKm2);
 
     const perStreamMax = Number(this.env.ENRICH_MAX_PER_STREAM ?? 30);
     const dailyMax = Number(this.env.BRIEF_DAILY_MAX ?? 60);
@@ -307,7 +340,7 @@ export class Clusterer extends DurableObject<Env> {
           params: {
             incidentId: q.incident_id,
             stream,
-            reason: q.reason as "significant" | "area_doubled",
+            reason: q.reason === "significant" ? "significant" : "area_grown",
             streamT: at,
             summary: { ...q.s, asOf: at },
             ...(cachedBrief ? { cachedBrief } : skipBrief ? { skipBrief } : cacheKey ? { briefCacheKey: cacheKey } : {})
@@ -341,6 +374,8 @@ export class Clusterer extends DurableObject<Env> {
     this.setMeta("streamT", String(t));
     const upserts = this.expireInactive(t);
     if (upserts.length) await this.hub(stream).publish({ upserts });
+    await this.sweepEnrichments(stream, t);
+    await this.dispatchEnrichments(stream, t);
   }
 
   async list(q: ListQuery = {}): Promise<{ stream: string | null; streamT: number | null; incidents: IncidentSummary[] }> {
@@ -353,7 +388,7 @@ export class Clusterer extends DurableObject<Env> {
     let out = rows.map((r) => JSON.parse(r.summary) as IncidentSummary).map((s) => withStatus(s, streamT));
     if (q.bbox) out = out.filter((s) => bboxIntersects(s.bbox, q.bbox!));
     if (q.status && q.status !== "all") out = out.filter((s) => s.status === q.status);
-    out.sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2 || b.lastSeen - a.lastSeen);
+    out.sort((a, b) => Number(!!a.volcano) - Number(!!b.volcano) || b.affectedAreaKm2 - a.affectedAreaKm2 || b.lastSeen - a.lastSeen);
     return { stream: this.meta("stream"), streamT, incidents: out.slice(0, q.limit ?? 500) };
   }
 
@@ -439,6 +474,7 @@ export class Clusterer extends DurableObject<Env> {
 }
 
 function withStatus(s: IncidentSummary, streamT: number | null): IncidentSummary {
-  if (s.status === "merged" || streamT === null) return s;
-  return { ...s, status: streamT - s.lastSeen > INACTIVE_AFTER_MS ? "inactive" : "active" };
+  if (s.status === "merged" || streamT === null) return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]) };
+  // Summaries stored before these fields existed get them here.
+  return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]), activity: activityAt(s.lastSeen, streamT), status: streamT - s.lastSeen > INACTIVE_AFTER_MS ? "inactive" : "active" };
 }
