@@ -1,4 +1,4 @@
-# Archival map showcase data (proposal, nothing loaded)
+# Archival map showcase data (Option A, loaded 2026-11-25)
 
 **Problem:** the Archival map is empty because `cell_days` and `detections` are not loaded in the deployed Postgres (`detail_not_loaded`).
 Only calendars and prone tiles are. Loading the full detail is several GB, too much for a demo.
@@ -29,3 +29,12 @@ Only calendars and prone tiles are. Loading the full detail is several GB, too m
 Approve Option A, and say whether Quebec should be raw-only (recommended) or left out.
 
 Default date: the Archival tab now opens on 2020-08-20 (California, first showcase period).
+
+## Status: built and deployed (Option A)
+
+- **Files** in R2 bucket `nasa-fire-showcase` (binding `SHOWCASE` in api-worker): `california-2020-08.json.gz` (1.04 MB), `quebec-2023-06.json.gz` (0.20 MB), `index.json`. Built by `scripts/showcase/build.mjs`.
+- **California Aug–Sep 2020** was rebuilt with our own backfill (`scripts/backfill`, region `california`) from the public FIRMS country files (`modis_2020_United_States.csv`, `viirs-snpp_2020_United_States.csv`), dropping cells on the archive's static mask (`data/harmonized/california/static_mask.csv`). 18,148 cell-day rows and 124,779 points (top 3,000 detections per day by FRP).
+- **Matches the calendar within 1%, not exactly:** showcase Aug 2,983 vs calendar 3,009 (-0.9%), Sep 5,825 vs 5,851 (-0.4%). The calendar comes from the full 2000-2025 record, whose static mask classifies a few cell-days differently (26 per month); reproducing it exactly needs the all-years detections.
+- **Quebec** reuses the replay scenario `quebec-2023-06` (59,968 VIIRS S-NPP and NOAA-20 rows; nothing re-downloaded): 4,901 cell rows, 23,794 points. Labelled "Raw VIIRS detections (outside the US harmonized archive)".
+- **API:** `/api/archival/spots` answers from these files only when `cell_days` is not loaded and the range and box overlap a period (`meta.showcase`); otherwise it still answers `detail_not_loaded`. `/api/meta` lists `archival.showcase`.
+- **Web:** "Showcase periods" buttons in the Archival tab, a label on the map, and the "Daily hot spots aren't loaded outside the showcase periods" notice elsewhere.

@@ -727,3 +727,63 @@ describe("answer post-processing of ids and punctuation", async () => {
     expect(fixStrayCommas("winds 12 km/h, , humidity 40%,, calm")).toBe("winds 12 km/h, humidity 40%, calm");
   });
 });
+
+describe("archival showcase responses", async () => {
+  const { buildShowcaseResponse } = await import("../src/routes/showcase");
+  const { SHOWCASE_PERIODS, overlapsPeriod } = await import("../src/data/showcase");
+  const cellId = (lat: number, lon: number) => Math.floor((lat + 90) * 20) * 7200 + Math.floor((lon + 180) * 20);
+  const ca = SHOWCASE_PERIODS[0]!;
+  const A = cellId(38.51, -122.51), B = cellId(38.56, -122.51);
+  const P = {
+    ...ca,
+    dates: ["2020-08-01", "2020-08-02"],
+    // SNPP (2) weighs 1 on the VIIRS-reference rows; the Terra row (0) of the same cell-day weighs 0
+    cells: { d: [0, 0, 1, 1], c: [A, A, A, B], s: [2, 0, 2, 2], p: [10, 50, 12, 7], n: [3, 2, 4, 1], w: [1, 0, 1, 1] },
+    points: { lat: [38.51, 38.56, 38.51], lon: [-122.51, -122.51, -122.51], d: [0, 0, 1], t: [130, 1345, 200], f: [10, 99, 12], s: [2, 0, 2], q: [80, 100, 80], n: [1, 0, 1] }
+  };
+  const base = { level: "cells" as const, heat: "fire", sensor: "ALL" as const, measure: "harmonized", bbox: [-123, 38, -122, 39] as [number, number, number, number], from: "2020-08-01", to: "2020-08-02" };
+
+  it("harmonized cells sum the calendar's weights, so totals match the rule (A: 2 days, B: 1)", () => {
+    const r = buildShowcaseResponse(P, base) as any;
+    const byId = Object.fromEntries(r.features.map((f: any) => [f.properties.cell_id, f.properties]));
+    expect(byId[A]).toMatchObject({ harmonized_cell_days: 2, active_days: 2, last_seen: "2020-08-02" });
+    expect(byId[B]).toMatchObject({ harmonized_cell_days: 1, active_days: 1 });
+    expect(r.meta).toMatchObject({ harmonized: true, measure: "harmonized", showcase: { id: "california-2020-08" } });
+    // the sum over cells equals the sum of weights in range
+    expect(r.features.reduce((s: number, f: any) => s + f.properties.harmonized_cell_days, 0)).toBe(3);
+  });
+
+  it("clips the range to the period and respects the date window and bbox", () => {
+    const r1 = buildShowcaseResponse(P, { ...base, from: "2020-08-02", to: "2020-08-02" }) as any;
+    expect(r1.features).toHaveLength(2);
+    const r2 = buildShowcaseResponse(P, { ...base, from: "2019-01-01", to: "2021-01-01" }) as any;
+    expect(r2.meta).toMatchObject({ from: "2020-08-01", to: "2020-09-30" });
+    expect(buildShowcaseResponse(P, { ...base, bbox: [-100, 30, -99, 31] }).features).toHaveLength(0);
+  });
+
+  it("raw cells and points filter by sensor; points are strongest first", () => {
+    const modis = buildShowcaseResponse(P, { ...base, measure: "raw", sensor: "MODIS" }) as any;
+    expect(modis.features).toHaveLength(1);
+    expect(modis.features[0].properties).toMatchObject({ cell_days: 1, peak_frp_mw: 50 });
+    const pts = buildShowcaseResponse(P, { ...base, level: "points", measure: "raw" }) as any;
+    expect(pts.features.map((f: any) => f.properties.frp_mw)).toEqual([99, 12, 10]);
+    expect(buildShowcaseResponse(P, { ...base, level: "points", measure: "raw", sensor: "VIIRS" }).features).toHaveLength(2);
+  });
+
+  it("Quebec is raw only, labelled as outside the harmonized archive; industrial heat is empty", () => {
+    const q = SHOWCASE_PERIODS[1]!;
+    expect(q.harmonized).toBe(false);
+    expect(q.note).toBe("Raw VIIRS detections (outside the US harmonized archive)");
+    const r = buildShowcaseResponse({ ...q, dates: ["2023-06-01"], cells: { d: [0], c: [cellId(50.5, -66)], s: [2], p: [20], n: [3], w: [0] }, points: { lat: [], lon: [], d: [], t: [], f: [], s: [], q: [], n: [] } },
+      { ...base, bbox: [-67, 50, -65, 51], from: "2023-06-01", to: "2023-06-10" }) as any;
+    expect(r.meta).toMatchObject({ harmonized: false, measure: "raw", note: q.note });
+    expect(r.features[0].properties).toMatchObject({ cell_days: 1, peak_frp_mw: 20 });
+    expect(buildShowcaseResponse(P, { ...base, heat: "industrial", level: "points" }).features).toEqual([]);
+  });
+
+  it("only dates and areas inside a showcase period overlap it", () => {
+    expect(overlapsPeriod(ca, "2020-09-15", "2020-09-15", [-123, 38, -121, 40])).toBe(true);
+    expect(overlapsPeriod(ca, "2021-01-01", "2021-01-31", [-123, 38, -121, 40])).toBe(false);
+    expect(overlapsPeriod(ca, "2020-09-15", "2020-09-15", [-92, 29, -90, 31])).toBe(false); // Louisiana
+  });
+});

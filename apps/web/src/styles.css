@@ -897,3 +897,39 @@ button:focus-visible {
 .calendar-drawer__close:hover { background: var(--hover); color: var(--label); }
 .calendar-years { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--label-secondary); }
 .calendar-years select { height: 24px; border: 0; border-radius: 6px; background: var(--track); color: var(--label); font: inherit; font-size: 12px; padding: 0 4px; }
+
+/* Archival showcase: period picker (in the top row, left of the date) and the label on the map */
+.showcase-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 8px;
+  max-width: min(440px, 100%);
+  padding: 6px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.showcase-picker__title { font-weight: 600; color: var(--label-secondary); margin-right: 2px; }
+.showcase-picker__btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--separator, rgba(128, 128, 128, 0.35));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.showcase-picker__btn.is-active { background: #0a84ff; color: #fff; border-color: transparent; }
+.map-chip {
+  position: absolute;
+  left: max(var(--inset, 12px), env(safe-area-inset-left));
+  top: 64px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  max-width: min(420px, calc(100vw - 24px));
+  z-index: 2;
+}

@@ -18,7 +18,7 @@ import { captureMap } from '../lib/capture';
 import { FireExplorer } from './FireExplorer';
 import { Toolbar } from './Toolbar';
 import { DETAIL_MISSING_TEXT, getMeta } from '../lib/api';
-import { useArchiveDetail } from '../lib/useArchiveDetail';
+import { showcaseFor, useArchiveInfo } from '../lib/useArchiveDetail';
 import type { Tab } from '../lib/dataWindows';
 
 // Shifted west so the incident panel covers the open Pacific, not North America.
@@ -83,7 +83,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   }, [tab]);
   const closeTimeline = () => { rememberCalendarClosed(); setTimelineOpen(false); };
   const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
-  const detail = useArchiveDetail();
+  const { detail, showcase } = useArchiveInfo();
   const scheme = useColorScheme();
 
   const latest = useRef({ settings, scheme });
@@ -159,12 +159,14 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
     return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
   })();
 
+  // Without the detailed archive the map still draws a showcase period when the range overlaps one.
+  const rangeShowcase = tab === 'archival' && detail === false ? showcaseFor(showcase, from, to) : null;
   const layers = useArchivalLayers(map, {
     // The Realtime tab is drawn by RealtimeView (apps/web/src/realtime); these layers are the archive's.
     enabled: tab === 'archival',
     tier: 'archival',
     version: 0,
-    detail,
+    detail: detail === false && rangeShowcase ? true : detail,
     from,
     to,
     activity: settings.fireActivity,
@@ -259,6 +261,9 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             showCoordinates={settings.coordinates}
             showScale={settings.scale}
           />
+          {rangeShowcase && settings.fireActivity && (
+            <div className="map-chip material" role="note">{rangeShowcase.note}</div>
+          )}
           {tab === 'archival' && settings.fireActivity && layers.unavailable ? (
             <div className="map-status material" role="status">{DETAIL_MISSING_TEXT}</div>
           ) : tab === 'archival' && (layers.loading || layers.error || layers.truncated) && (
@@ -270,7 +275,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
             <>
               <FireExplorer
                 tier="archival"
-                detail={detail !== false}
+                detail={detail !== false || !!rangeShowcase}
                 map={map}
                 settings={settings}
                 onChange={update}

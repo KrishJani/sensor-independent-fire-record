@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
-import { getMeta } from './lib/api';
+import { getMeta, type ShowcasePeriod } from './lib/api';
+import { showcaseFor } from './lib/useArchiveDetail';
 import { DatePicker } from './components/DatePicker';
 import { MapView } from './components/MapView';
 import { TabSwitcher } from './components/TabSwitcher';
@@ -66,12 +67,14 @@ export function App() {
   const [archivalMax, setArchivalMax] = useState<ISODate | null>(null);
   // false: summary-only archive (no day-by-day hot spots); null while unknown.
   const [archivalDetail, setArchivalDetail] = useState<boolean | null>(null);
+  const [showcase, setShowcase] = useState<ShowcasePeriod[]>([]);
   // Archival bounds come from the API (what is actually loaded), not from a hardcoded window.
   useEffect(() => {
     getMeta()
       .then((m) => {
         if (m.archival.maxDate) setArchivalMax(m.archival.maxDate as ISODate);
         setArchivalDetail(m.archival.detail !== false);
+        setShowcase(m.archival.showcase ?? []);
       })
       .catch(() => {});
   }, []);
@@ -95,12 +98,14 @@ export function App() {
   const [realtimeCtx, setRealtimeCtx] = useState<RealtimeContext | null>(null);
   // Realtime: the date never drives the map (Live is a rolling window, a replay is its scenario).
   const replayMode = tab === 'realtime' && realtimeCtx?.mode === 'replay';
+  const inShowcase = tab === 'archival' && archivalDetail === false ? showcaseFor(showcase, from, to) : null;
   const datePicker =
     tab === 'archival'
       ? {
-          notice:
-            archivalDetail === false
-              ? "Daily hot spots aren't loaded in this demo. Use the monthly calendar for history."
+          notice: inShowcase
+            ? undefined
+            : archivalDetail === false
+              ? "Daily hot spots aren't loaded outside the showcase periods. Use the monthly calendar for history."
               : undefined,
         }
       : replayMode
@@ -136,6 +141,27 @@ export function App() {
             <span className="brand__sub">Built at NASA Space Apps 2026</span>
           </div>
         </div>
+        {tab === 'archival' && archivalDetail === false && showcase.length > 0 && (
+          <div className="showcase-picker material" role="group" aria-label="Showcase periods">
+            <span className="showcase-picker__title">Showcase periods</span>
+            {showcase.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`showcase-picker__btn ${inShowcase?.id === s.id ? 'is-active' : ''}`}
+                aria-pressed={inShowcase?.id === s.id}
+                onClick={() => {
+                  const mid = new Date((Date.parse(s.from) + Date.parse(s.to)) / 2).toISOString().slice(0, 10) as ISODate;
+                  update({ rangePreset: 'month' });
+                  setDates((prev) => ({ ...prev, archival: mid }));
+                  map?.fitBounds([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], { padding: 60, duration: 1200 });
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
         <DatePicker
           key={tab}
           value={selected}

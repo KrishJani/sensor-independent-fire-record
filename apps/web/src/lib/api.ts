@@ -29,11 +29,22 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export type Bbox = [number, number, number, number];
 export type Level = 'coarse' | 'cells' | 'points';
 
+/** A precomputed Archival map period served while the detailed archive is not loaded (api-worker /api/meta). */
+export interface ShowcasePeriod {
+  id: string;
+  label: string;
+  from: string;
+  to: string;
+  bbox: Bbox;
+  harmonized: boolean;
+  note: string;
+}
+
 export interface Meta {
   regions: { id: string; name: string; group: string | null; bbox: Bbox; archival: { minDate: string; maxDate: string } | null }[];
   groups: { id: string; regions: string[]; archival: { minDate: string; maxDate: string | null } }[];
   /** detail: false when only the summary archive is loaded (no map hot spots, drawn-area calendars or world layer). */
-  archival: { minDate: string; maxDate: string | null; dataVersion: number; detail?: boolean };
+  archival: { minDate: string; maxDate: string | null; dataVersion: number; detail?: boolean; showcase?: ShowcasePeriod[] };
   realtime: { minDate: string; maxDate: string; updatedAt: string | null; dataVersion: number };
   harmonizerVersion: string;
 }

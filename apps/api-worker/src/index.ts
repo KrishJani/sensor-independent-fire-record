@@ -16,7 +16,7 @@ import { health, meta } from "./routes/meta.ts";
 import { prone, proneSummary } from "./routes/prone.ts";
 import { regionContext } from "./data/regionContext.ts";
 import { realtimeSpots } from "./routes/realtime.ts";
-import { spots } from "./routes/spots.ts";
+import { archivalSpots } from "./routes/showcase.ts";
 
 export { FireCopilotAgent } from "./copilot/agent";
 
@@ -86,7 +86,7 @@ app.get("/api/context", async (c) => {
 app.get("/api/archival/spots", async (c) => {
   const q = new URL(c.req.url).searchParams;
   const key = `spots|${[...q.entries()].sort().map(([k, v]) => `${k}=${v}`).join("&")}`;
-  return cachedJson(c.executionCtx, key, await dataVersion(c.env, "archival"), DAY, () => spots(c.env, c.executionCtx, q));
+  return cachedJson(c.executionCtx, key, await dataVersion(c.env, "archival"), DAY, () => archivalSpots(c.env, c.executionCtx, q));
 });
 
 app.post("/api/calendar", async (c) => {

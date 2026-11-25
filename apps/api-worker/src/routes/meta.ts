@@ -3,6 +3,7 @@ import regionsConfig from '../../../../config/regions.json';
 import { db, type Ctx } from '../lib/db.ts';
 import { dataVersion } from '../lib/cache.ts';
 import { detailLoaded } from '../lib/detail.ts';
+import { SHOWCASE_PERIODS } from '../data/showcase.ts';
 
 export const REGIONS = regionsConfig.regions as { id: string; name: string; group?: string; bbox: [number, number, number, number]; exclude?: string[] }[];
 export const CONFIG = regionsConfig;
@@ -40,6 +41,8 @@ export async function meta(env: Env, ctx: Ctx) {
       latestBySatellite: Object.fromEntries(latest),
       // false after a summary-only load: no map hot spots, drawn-area calendars or world layer.
       detail,
+      // Precomputed map periods served while the detailed archive is not loaded (data/showcase.ts).
+      showcase: detail ? [] : SHOWCASE_PERIODS,
     },
     realtime: { minDate: addDays(today, -retention), maxDate: today, updatedAt: nrtAt, dataVersion: Number(vr) },
     harmonizerVersion: HARMONIZER_VERSION,

@@ -40,6 +40,10 @@
     // Shared with ingest-worker (read-only here).
     { "binding": "NRT_DB", "database_name": "firms-nrt-cells", "database_id": "c8180d94-c37d-44d1-bd36-350979b47633" }
   ],
+  "r2_buckets": [
+    // Archival map showcase files (scripts/showcase/build.mjs): california-2020-08.json.gz, quebec-2023-06.json.gz.
+    { "binding": "SHOWCASE", "bucket_name": "nasa-fire-showcase" }
+  ],
   "hyperdrive": [
     // "firms-pg" → archival Postgres; shared with ingest-worker. Origin limit 15 (packages/db/README.md).
     // Created with: npx wrangler hyperdrive create firms-pg --connection-string="<POSTGRES_URL>"
