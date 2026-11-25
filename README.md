@@ -106,10 +106,11 @@ apps/
 packages/
   harmonizer/        Gridding, filtering, alpha model, calendars (TypeScript, no dependencies)
   db/                Postgres and D1 migrations
+  app-guide/         The in-app guide: help panel, welcome card, copilot get_app_help, docs/APP_GUIDE.md
 scripts/backfill/    Historical FIRMS archive to harmonized CSVs, and the Postgres loader
 config/              Regions, sensors, gas flare cells
 data/harmonized/     Per-region summaries and manifests (bulk outputs are not in git)
-docs/                Harmonization method and before/after charts
+docs/                Harmonization method, before/after charts, APP_GUIDE.md (generated)
 ```
 
 ## Running locally

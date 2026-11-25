@@ -19,7 +19,10 @@ const ARCHIVAL = [
   'How does this month compare with past years?',
 ];
 
+/** First on every tab: a newcomer's question, answered from the site guide (get_app_help). */
+const ABOUT = 'What is this site?';
+
 export function suggestionsFor(tab: Tab, realtime: RealtimeContext | null): string[] {
-  if (tab === 'archival') return ARCHIVAL;
-  return realtime?.stream?.startsWith('replay:') ? REPLAY : LIVE;
+  if (tab === 'archival') return [ABOUT, ...ARCHIVAL];
+  return [ABOUT, ...(realtime?.stream?.startsWith('replay:') ? REPLAY : LIVE)];
 }

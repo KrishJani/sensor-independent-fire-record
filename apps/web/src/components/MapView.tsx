@@ -58,6 +58,8 @@ interface Props {
   shareUrl(view: { center: [number, number]; zoom: number }): string;
   /** Called with the map once it exists, and with null when it is removed. */
   onMapReady?(map: mapboxgl.Map | null): void;
+  /** Bumped to open the calendar on request (welcome card, copilot), even if it was closed earlier. */
+  calendarRequest?: number;
 }
 
 const CALENDAR_CLOSED_KEY = 'fires.calendarClosed';
@@ -69,7 +71,7 @@ const rememberCalendarClosed = () => {
   try { sessionStorage.setItem(CALENDAR_CLOSED_KEY, '1'); } catch { /* private mode: closes for this page view only */ }
 };
 
-export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl, onMapReady }: Props) {
+export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl, onMapReady, calendarRequest = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -81,6 +83,9 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   useEffect(() => {
     if (tab === 'archival' && !calendarClosedByUser()) setTimelineOpen(true);
   }, [tab]);
+  useEffect(() => {
+    if (calendarRequest > 0) setTimelineOpen(true);
+  }, [calendarRequest]);
   const closeTimeline = () => { rememberCalendarClosed(); setTimelineOpen(false); };
   const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
   const { detail, showcase } = useArchiveInfo();

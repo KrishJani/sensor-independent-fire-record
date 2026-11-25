@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
 import { Segmented } from '../components/Segmented';
 import { fmtClock } from './format';
@@ -51,12 +51,20 @@ function fit(map: mapboxgl.Map, [w, s, e, n]: Bbox, maxZoom: number, duration: n
   );
 }
 
+/**
+ * A one-shot request from outside the panel (welcome card, copilot): show Live, show Replay, or start/join a
+ * scenario. Handled once per id, then reported back with onRequestDone.
+ */
+export type RealtimeRequest = { id: number; mode: 'live' } | { id: number; mode: 'replay'; scenario?: string };
+
 interface Props {
   map: mapboxgl.Map;
   onContextChange?(ctx: RealtimeContext): void;
+  request?: RealtimeRequest | null;
+  onRequestDone?(id: number): void;
 }
 
-export function RealtimeView({ map, onContextChange }: Props) {
+export function RealtimeView({ map, onContextChange, request, onRequestDone }: Props) {
   const replay = useReplay();
   const [speed, setSpeed] = useState<SpeedId>('12000');
   const isReplay = replay.mode === 'replay';
@@ -97,6 +105,22 @@ export function RealtimeView({ map, onContextChange }: Props) {
     fit(map, s.bounds, 7, 2400);
     void replay.start(s.id, Number(speed));
   };
+  const startRef = useRef(startScenario);
+  startRef.current = startScenario;
+
+  const handled = useRef<number | null>(null);
+  useEffect(() => {
+    if (!request || handled.current === request.id) return;
+    handled.current = request.id;
+    if (request.mode === 'replay' && request.scenario) {
+      const s = scenarioById(request.scenario);
+      if (s) startRef.current(s); // start() joins a running replay and waits out the cooldown
+      else replay.setMode('replay');
+    } else {
+      replay.setMode(request.mode);
+    }
+    onRequestDone?.(request.id);
+  }, [request, onRequestDone, replay.setMode]);
 
   const nearestName =
     detail?.summary.id === selectedId && detail?.enrichment?.places?.status === 'ok'
@@ -195,7 +219,7 @@ export function RealtimeView({ map, onContextChange }: Props) {
                 key={s.id}
                 type="button"
                 className="rt-scenario"
-                disabled={replay.busy}
+                disabled={replay.busy || replay.startsIn !== null}
                 onClick={() => startScenario(s)}
               >
                 <span className="rt-scenario__title">{s.title}</span>
@@ -216,6 +240,9 @@ export function RealtimeView({ map, onContextChange }: Props) {
               disabled={replay.busy}
             />
           </div>
+        )}
+        {isReplay && replay.startsIn !== null && (
+          <p className="rt-panel__asof" role="status">A replay was started a moment ago. Starting in {replay.startsIn}s…</p>
         )}
         {replay.error && isReplay && <p className="rt-error">{replay.error}</p>}
 

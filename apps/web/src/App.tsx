@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
 import { getMeta, type ShowcasePeriod } from './lib/api';
 import { showcaseFor } from './lib/useArchiveDetail';
@@ -52,7 +52,11 @@ function readHash() {
 import { ChatDrawer } from './chat/ChatDrawer';
 import { buildContext } from './chat/context';
 import { suggestionsFor } from './chat/suggestions';
-import { RealtimeView, type RealtimeContext } from './realtime/RealtimeView';
+import { RealtimeView, type RealtimeContext, type RealtimeRequest } from './realtime/RealtimeView';
+import type { AppActions } from './help/actions';
+import { HelpPanel } from './help/HelpPanel';
+import { rememberWelcomeDismissed, welcomeDismissed } from './help/storage';
+import { Welcome } from './help/Welcome';
 
 export function App() {
   const initial = useMemo(readHash, []);
@@ -99,6 +103,42 @@ export function App() {
   // Realtime: the date never drives the map (Live is a rolling window, a replay is its scenario).
   const replayMode = tab === 'realtime' && realtimeCtx?.mode === 'replay';
   const inShowcase = tab === 'archival' && archivalDetail === false ? showcaseFor(showcase, from, to) : null;
+
+  // UI actions for the welcome card and the copilot. Realtime requests are handled by RealtimeView once it mounts.
+  const [rtRequest, setRtRequest] = useState<RealtimeRequest | null>(null);
+  const [calendarRequest, setCalendarRequest] = useState(0);
+  const requestId = useRef(0);
+  const latest = useRef({ showcase, map });
+  latest.current = { showcase, map };
+  const showShowcase = useCallback((s: ShowcasePeriod) => {
+    const mid = new Date((Date.parse(s.from) + Date.parse(s.to)) / 2).toISOString().slice(0, 10) as ISODate;
+    update({ rangePreset: 'month' });
+    setDates((prev) => ({ ...prev, archival: mid }));
+    latest.current.map?.fitBounds([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], { padding: 60, duration: 1200 });
+  }, [update]);
+  const actions = useMemo<AppActions>(() => ({
+    showLive() {
+      setTab('realtime');
+      setRtRequest({ id: ++requestId.current, mode: 'live' });
+    },
+    showReplay(scenario) {
+      setTab('realtime');
+      setRtRequest({ id: ++requestId.current, mode: 'replay', scenario });
+    },
+    openShowcase(id) {
+      setTab('archival');
+      setCalendarRequest((n) => n + 1);
+      const s = latest.current.showcase.find((x) => x.id === id);
+      if (s) showShowcase(s);
+      else if (id === 'california-2020-08') setDates((prev) => ({ ...prev, archival: '2020-08-20' as ISODate }));
+    },
+  }), [showShowcase]);
+  const onRequestDone = useCallback((id: number) => setRtRequest((r) => (r?.id === id ? null : r)), []);
+
+  // First visit: the welcome card, unless dismissed before or the page was opened from a share link.
+  const [welcome, setWelcome] = useState(() => !welcomeDismissed() && !initial.view && !initial.tab);
+  const closeWelcome = useCallback(() => { rememberWelcomeDismissed(); setWelcome(false); }, []);
+  const [help, setHelp] = useState(false);
   const datePicker =
     tab === 'archival'
       ? {
@@ -125,9 +165,10 @@ export function App() {
         reset={reset}
         initialView={initial.view}
         onMapReady={setMap}
+        calendarRequest={calendarRequest}
         shareUrl={(v) => `${location.origin}${location.pathname}#c=${v.center[0].toFixed(3)},${v.center[1].toFixed(3)},${v.zoom.toFixed(2)}&d=${selected}&p=${settings.rangePreset}&m=${settings.fireMode}&t=${tab}`}
       />
-      {tab === 'realtime' && map && <RealtimeView map={map} onContextChange={setRealtimeCtx} />}
+      {tab === 'realtime' && map && <RealtimeView map={map} onContextChange={setRealtimeCtx} request={rtRequest} onRequestDone={onRequestDone} />}
       <ChatDrawer
         getContext={() => buildContext({ map, tab, date: dates[tab], realtime: realtimeCtx })}
         suggestions={suggestionsFor(tab, realtimeCtx)}
@@ -140,6 +181,9 @@ export function App() {
             <span className="brand__name">World Fires</span>
             <span className="brand__sub">Built at NASA Space Apps 2026</span>
           </div>
+          <button type="button" className="help-button material" onClick={() => setHelp(true)} aria-label="Guide: what this site is and how to use it" aria-haspopup="dialog" title="Guide">
+            ?
+          </button>
         </div>
         {tab === 'archival' && archivalDetail === false && showcase.length > 0 && (
           <div className="showcase-picker material" role="group" aria-label="Showcase periods">
@@ -150,12 +194,7 @@ export function App() {
                 type="button"
                 className={`showcase-picker__btn ${inShowcase?.id === s.id ? 'is-active' : ''}`}
                 aria-pressed={inShowcase?.id === s.id}
-                onClick={() => {
-                  const mid = new Date((Date.parse(s.from) + Date.parse(s.to)) / 2).toISOString().slice(0, 10) as ISODate;
-                  update({ rangePreset: 'month' });
-                  setDates((prev) => ({ ...prev, archival: mid }));
-                  map?.fitBounds([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], { padding: 60, duration: 1200 });
-                }}
+                onClick={() => showShowcase(s)}
               >
                 {s.label}
               </button>
@@ -170,7 +209,9 @@ export function App() {
           onChange={(date) => setDates((prev) => ({ ...prev, [tab]: date }))}
           {...datePicker}
         />
-      </div>
+            </div>
+      {welcome && <Welcome actions={actions} onClose={closeWelcome} />}
+      {help && <HelpPanel onClose={() => setHelp(false)} onShowWelcome={() => { setHelp(false); setWelcome(true); }} />}
     </div>
   );
 }

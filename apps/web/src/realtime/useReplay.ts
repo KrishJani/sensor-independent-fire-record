@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, controlReplay, getReplay, setReplaySpeed, startOrJoinReplay } from './api';
 import type { ReplayInfo } from './types';
 
@@ -71,11 +71,25 @@ export function useReplay() {
     return () => clearInterval(t);
   }, [liveId]);
 
+  // A start that hit the shared 30 s cooldown waits and retries by itself; `startsIn` drives "Starting in Xs".
+  const [startsIn, setStartsIn] = useState<number | null>(null);
+  const pending = useRef<{ timer: ReturnType<typeof setInterval>; cancelled: boolean } | null>(null);
+  const cancelPending = useCallback(() => {
+    if (pending.current) {
+      pending.current.cancelled = true;
+      clearInterval(pending.current.timer);
+      pending.current = null;
+    }
+    setStartsIn(null);
+  }, []);
+  useEffect(() => cancelPending, [cancelPending]);
+
   const setMode = useCallback((m: 'live' | 'replay') => {
+    if (m === 'live') cancelPending();
     setModeState(m);
     setError(null);
     save({ mode: m, id: load().id });
-  }, []);
+  }, [cancelPending]);
 
   const run = useCallback(async (fn: () => Promise<ReplayInfo>) => {
     setBusy(true);
@@ -93,10 +107,46 @@ export function useReplay() {
     }
   }, []);
 
+  /** Join the scenario if it is running, otherwise start it; during the cooldown, count down and retry. */
   const start = useCallback(
-    (scenario: string, speed?: number) => run(() => startOrJoinReplay(scenario, speed)),
-    [run],
+    async (scenario: string, speed?: number): Promise<ReplayInfo | null> => {
+      cancelPending();
+      setModeState('replay');
+      save({ mode: 'replay', id: load().id });
+      setBusy(true);
+      setError(null);
+      try {
+        const r = await startOrJoinReplay(scenario, speed);
+        setInfo(r);
+        save({ mode: 'replay', id: r.id });
+        return r;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'replay_cooldown') {
+          const wait = Math.max(1, Number(/(\d+) s/.exec(e.message)?.[1] ?? 30));
+          const until = Date.now() + wait * 1000;
+          setStartsIn(wait);
+          const p = { cancelled: false, timer: setInterval(() => {
+            const left = Math.ceil((until - Date.now()) / 1000);
+            if (left > 0) return setStartsIn(left);
+            clearInterval(p.timer);
+            if (p.cancelled) return;
+            pending.current = null;
+            setStartsIn(null);
+            void startRef.current(scenario, speed);
+          }, 250) };
+          pending.current = p;
+          return null;
+        }
+        setError(message(e));
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cancelPending],
   );
+  const startRef = useRef(start);
+  startRef.current = start;
   const control = useCallback(
     (action: 'pause' | 'resume' | 'stop') => (info ? run(() => controlReplay(info.id, action)) : null),
     [info, run],
@@ -106,5 +156,5 @@ export function useReplay() {
     [info, run],
   );
 
-  return { mode, setMode, info, busy, error, start, control, setSpeed };
+  return { mode, setMode, info, busy, error, start, startsIn, control, setSpeed };
 }

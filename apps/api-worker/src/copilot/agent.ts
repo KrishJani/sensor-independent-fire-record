@@ -14,6 +14,7 @@ import { parseContext, type MapContext } from "./context";
 import { toUserError } from "./errors";
 import { demoDisclaimerTransform } from "./disclaimer";
 import { MemoryStore, type SqlTag } from "./memory";
+import { GUIDE_LINKS } from "@repo/app-guide";
 import { answerPostProcessor, collectWebUrls, userOwnsArea } from "./postprocess";
 import { chatCacheTtl, chatFallbacks, chatReasoningEffort, DEFAULT_MODEL, effortLabel } from "./models";
 import { TurnTimer, type TurnTiming } from "./timing";
@@ -127,7 +128,7 @@ export class FireCopilotAgent extends AIChatAgent<Env, CopilotState> {
     // Last: spacing between text parts, unlink URLs no web tool returned, "your area" → "this area".
     stream = stream.pipeThrough(
       answerPostProcessor({
-        knownUrls: collectWebUrls(this.messages),
+        knownUrls: [...collectWebUrls(this.messages), ...GUIDE_LINKS],
         rewriteArea: !userOwnsArea(this.messages)
       })
     );

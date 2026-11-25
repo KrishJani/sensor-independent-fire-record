@@ -564,6 +564,34 @@ describe("tool JSON schemas", async () => {
   });
 });
 
+describe("get_app_help (site guide)", async () => {
+  const { createFireTools } = await import("../src/copilot/tools");
+  const { buildSystemPrompt } = await import("../src/copilot/prompt");
+  const { GUIDE, GUIDE_TOPICS } = await import("@repo/app-guide");
+  const db = new DatabaseSync(":memory:");
+  const sqlTag: SqlTag = (strings, ...values) => db.prepare(strings.join("?")).all(...(values as never[])) as never;
+  const memory = new MemoryStore(sqlTag);
+  memory.init();
+  const help = createFireTools({ data: new MockFireData(), memory, getContext: () => null }).get_app_help;
+  const run = (topic: string) => (help.execute as unknown as (a: { topic: string }) => Promise<{ sections: { topic: string; text: string }[] }>)({ topic });
+
+  it.each([...GUIDE_TOPICS])("returns the %s section from the guide", async (topic) => {
+    const r = await run(topic);
+    expect(r.sections).toHaveLength(1);
+    expect(r.sections[0].text).toBe(GUIDE.find((s) => s.id === topic)!.body);
+  });
+
+  it("returns every section for 'all' and is not a data tool (no demo notice)", async () => {
+    expect((await run("all")).sections.map((s) => s.topic)).toEqual([...GUIDE_TOPICS]);
+    expect(JSON.stringify(await run("all"))).not.toMatch(/"dataSource"/);
+  });
+
+  it("the prompt routes questions about the site through it", () => {
+    const p = buildSystemPrompt({ today: "2026-11-25", context: null, memories: [], webSearchEnabled: true, dataSource: "live" });
+    expect(p).toMatch(/## Questions about this site[\s\S]*call get_app_help first/);
+  });
+});
+
 describe("chat reasoning settings", async () => {
   const m = await import("../src/copilot/models");
   it("parses CHAT_REASONING_EFFORT and CHAT_CACHE_TTL", () => {

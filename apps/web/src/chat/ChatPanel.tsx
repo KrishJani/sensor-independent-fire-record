@@ -31,6 +31,7 @@ const TOOL_LABELS: Record<string, [running: string, done: string]> = {
   web_fetch: ['Reading a page', 'Read a page'],
   remember: ['Saving a note', 'Saved a note'],
   recall: ['Recalling notes', 'Recalled notes'],
+  get_app_help: ['Reading the site guide', 'Read the site guide'],
 };
 
 interface ToolPart {

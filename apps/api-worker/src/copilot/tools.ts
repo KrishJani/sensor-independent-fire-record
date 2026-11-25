@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { GUIDE, GUIDE_TOPICS, guideSection } from "@repo/app-guide";
 import type { FireData } from "../data/fireData";
 import { BboxSchema, type Bbox, type MapContext } from "./context";
 import { MEMORY_KINDS, type MemoryStore } from "./memory";
@@ -101,6 +102,21 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
         const bbox = resolveBbox(args.bbox, getContext());
         if (!bbox) return NO_AREA;
         return data.getMonthToDate({ bbox });
+      })
+    }),
+
+    get_app_help: tool({
+      description:
+        "The site's own guide. Call it for any question about this site or app: what it is, what Realtime, Live, Replay, Archival, the showcase periods or the calendar show, how to do something here (open an incident, start the replay, read the calendar, Raw vs Harmonized, export CSV), what a term on the site means (FRP, cell-days, grid coverage, activity status, Persistent heat, Gas flare, Volcanic heat), its limits, or who built it. Topics: about, views, howto, terms, limits, credits; 'all' returns every section.",
+      inputSchema: z.object({
+        topic: z.enum([...GUIDE_TOPICS, "all"]).describe("The guide section to read; 'all' when unsure.")
+      }),
+      execute: withErrors(({ topic }: { topic: (typeof GUIDE_TOPICS)[number] | "all" }) => {
+        const sections = topic === "all" ? GUIDE : [guideSection(topic)!];
+        return {
+          sections: sections.map((s) => ({ topic: s.id, title: s.title, text: s.body })),
+          note: "This is the site's guide. Answer from it in your own short words; do not add features or numbers it does not state."
+        };
       })
     }),
 

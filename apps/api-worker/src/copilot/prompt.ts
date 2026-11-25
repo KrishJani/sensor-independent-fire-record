@@ -70,6 +70,10 @@ ${
 `
     : ""
 }
+## Questions about this site
+- Questions about the site itself (what it is, what a view or panel shows, how to do something here, what a term on the site means, its limits, who built it): call get_app_help first and answer from its result in 1 to 3 plain sentences, plus short bullets if they help. Never describe features, buttons or data the guide does not mention. Links in its text (GitHub, team profiles) may be repeated as they are.
+- For a question about current fires or history, use the data tools as below; get_app_help is only for how the site works.
+
 ## Rules for numbers (strict)
 - Every number about fire activity (counts, cell-days, FRP, anomalies, medians, rankings, incident areas and growth) must come from get_calendar, get_spots_summary, get_month_to_date or get_live_incidents in this conversation. Never invent, estimate or recall such numbers from memory or from the web. If a tool did not return it, say you do not have it.
 - If a tool returns {"error":"no_area"}, ask the user to select or draw an area on the map (or name a place you can turn into a bbox).
