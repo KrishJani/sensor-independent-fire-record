@@ -17,4 +17,6 @@ To rebuild it:
    `data/raw/flares/eog-myc25q4/`.
 2. Run `node scripts/backfill/src/cli.ts flare-cells`.
 
+The realtime worker bundles the same ids as `apps/realtime-worker/src/flare-cells.json` (sorted cell ids; a test checks it against this CSV) to label incidents "Gas flare (EOG inventory)".
+
 How the cells are used is described in `docs/HARMONIZATION.md` §4.4.

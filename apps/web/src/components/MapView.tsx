@@ -60,6 +60,15 @@ interface Props {
   onMapReady?(map: mapboxgl.Map | null): void;
 }
 
+const CALENDAR_CLOSED_KEY = 'fires.calendarClosed';
+/** The user closed the calendar drawer this session: it is not opened automatically again. */
+const calendarClosedByUser = () => {
+  try { return sessionStorage.getItem(CALENDAR_CLOSED_KEY) === '1'; } catch { return false; }
+};
+const rememberCalendarClosed = () => {
+  try { sessionStorage.setItem(CALENDAR_CLOSED_KEY, '1'); } catch { /* private mode: closes for this page view only */ }
+};
+
 export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, update, reset, initialView, shareUrl, onMapReady }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
@@ -67,6 +76,12 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 900);
   // Collapsed until asked for: the toolbar toggle, a region click or an analysed area opens it.
   const [timelineOpen, setTimelineOpen] = useState(false);
+  // The calendar is the archive's main view: open it when the Archival tab is shown (also on first load via #t=archival)
+  // unless the user closed it earlier in this session.
+  useEffect(() => {
+    if (tab === 'archival' && !calendarClosedByUser()) setTimelineOpen(true);
+  }, [tab]);
+  const closeTimeline = () => { rememberCalendarClosed(); setTimelineOpen(false); };
   const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
   const detail = useArchiveDetail();
   const scheme = useColorScheme();
@@ -264,7 +279,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 onClose={() => setExplorerOpen(false)}
                 onJump={(date, center, zoom) => { if (date) onPickDate(date); if (center) map.flyTo({ center, zoom: zoom ?? map.getZoom() }); }}
               />
-              {timelineOpen && <CalendarDrawer map={map} onPickMonth={onPickDate} onClose={() => setTimelineOpen(false)} drawn={analysed} region={regionArea} detail={detail !== false} />}
+              {timelineOpen && <CalendarDrawer map={map} onPickMonth={onPickDate} onClose={closeTimeline} drawn={analysed} region={regionArea} detail={detail !== false} />}
               {measure.mode !== 'off' && (
                 <div className="measure material" role="status" aria-label="Measurement">
                   <div className="measure__modes">
@@ -286,7 +301,7 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
                 explorerOpen={explorerOpen}
                 onExplorer={() => setExplorerOpen(!explorerOpen)}
                 timelineOpen={timelineOpen}
-                onTimeline={() => setTimelineOpen(!timelineOpen)}
+                onTimeline={() => (timelineOpen ? closeTimeline() : setTimelineOpen(true))}
                 shareUrl={() => shareUrl({ center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() })}
                 measuring={measure.mode !== 'off'}
                 onMeasure={() => (measure.mode === 'off' ? measure.start('distance') : (measure.stop(), setAnalysed(null)))}

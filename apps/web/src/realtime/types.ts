@@ -12,6 +12,8 @@ export interface IncidentSummary {
   activity?: 'active' | 'cooling' | 'inactive';
   /** At an active volcano (config/volcanoes.json): heat that is not a wildfire. Older servers omit it. */
   volcano?: { name: string; distanceKm: number } | null;
+  /** Most cells are EOG VIIRS Nightfire gas-flare cells. Older servers omit it. */
+  flare?: boolean;
   significant: boolean;
   mergedInto: string | null;
   detections: number;
@@ -159,6 +161,8 @@ import { isPersistentHeat } from '../../../realtime-worker/src/status';
 export { isPersistentHeat };
 import { isGrowing } from '../../../realtime-worker/src/status';
 export { isGrowing };
+export const FLARE_HELP =
+  'Most of this incident sits on known upstream gas-flare sites: EOG VIIRS Nightfire inventory (Zhizhin et al. 2026, doi:10.5281/zenodo.23091822).';
 export const PERSISTENT_HELP =
   'Many detections on few cells at low power (at least 30 per cell, under 20 MW on average), unlike a spreading fire front; the cause is not determined.';
 

@@ -45,6 +45,7 @@ function readHash() {
     date: /^\d{4}-\d{2}-\d{2}$/.test(h.get('d') ?? '') ? (h.get('d') as ISODate) : null,
     preset: (['day', 'week', 'month', 'season', 'year'] as const).find((p) => p === h.get('p')) ?? null,
     mode: (['activity', 'hotspots', 'raw'] as const).find((p) => p === h.get('m')) ?? null,
+    tab: h.get('t') === 'archival' ? ('archival' as const) : null,
   };
 }
 import { ChatDrawer } from './chat/ChatDrawer';
@@ -79,9 +80,9 @@ export function App() {
     return { archival: archivalMax ? { ...archival, max: archivalMax < archival.max ? archivalMax : archival.max } : archival, realtime: dateWindow('realtime') };
   }, [archivalMax]);
 
-  const [tab, setTab] = useState<Tab>('realtime');
+  const [tab, setTab] = useState<Tab>(initial.tab ?? 'realtime');
   const [dates, setDates] = useState<Record<Tab, ISODate>>(() => ({
-    archival: initial.date ?? ('2020-09-15' as ISODate), // a recent big fire year, so the map opens on something to see
+    archival: initial.date ?? ('2020-08-20' as ISODate), // California, Aug 2020: the first showcase period (see docs/issues/archival-showcase-data.md)
     realtime: windows.realtime.max,
   }));
 
@@ -119,7 +120,7 @@ export function App() {
         reset={reset}
         initialView={initial.view}
         onMapReady={setMap}
-        shareUrl={(v) => `${location.origin}${location.pathname}#c=${v.center[0].toFixed(3)},${v.center[1].toFixed(3)},${v.zoom.toFixed(2)}&d=${selected}&p=${settings.rangePreset}&m=${settings.fireMode}`}
+        shareUrl={(v) => `${location.origin}${location.pathname}#c=${v.center[0].toFixed(3)},${v.center[1].toFixed(3)},${v.zoom.toFixed(2)}&d=${selected}&p=${settings.rangePreset}&m=${settings.fireMode}&t=${tab}`}
       />
       {tab === 'realtime' && map && <RealtimeView map={map} onContextChange={setRealtimeCtx} />}
       <ChatDrawer

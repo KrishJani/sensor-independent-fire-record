@@ -5,6 +5,7 @@
 
 import type { Detection, Sensor } from "./detection";
 import { cellAreaKm2, cellKey, cellOf, parseCellKey, type Bbox } from "./grid";
+import { isFlareIncident } from "./flare";
 import { volcanoNear, type VolcanoMatch } from "./volcano";
 import { activityAt, INACTIVE_AFTER_MS, REBRIEF_AREA_RATIO, type Activity } from "./status";
 
@@ -78,6 +79,8 @@ export interface IncidentSummary {
   activity: Activity;
   /** Set when the centroid is at an active volcano (config/volcanoes.json): heat that is not a wildfire. */
   volcano: VolcanoMatch | null;
+  /** At least half of the cells are EOG VIIRS Nightfire gas-flare cells (labelled "Gas flare", not briefed). */
+  flare: boolean;
   significant: boolean;
   mergedInto: string | null;
   detections: number;
@@ -193,6 +196,7 @@ export function summarize(s: IncidentState, streamT = s.streamT): IncidentSummar
     status: statusAt(s, streamT),
     activity: activityAt(s.lastT, streamT),
     volcano: volcanoNear(round4(s.sumLon / n), round4(s.sumLat / n)),
+    flare: isFlareIncident(Object.keys(s.cells)),
     significant: s.significantAt !== null,
     mergedInto: s.mergedInto,
     detections: s.detections,
@@ -243,6 +247,7 @@ export function areaAt(tl: TimelinePoint[], t: number): number | null {
 export function enrichmentDue(s: IncidentState, streamT: number, minAreaKm2 = 0): EnrichmentMark | null {
   if (s.significantAt === null || s.mergedInto) return null;
   if (volcanoNear(s.sumLon / Math.max(1, s.detections), s.sumLat / Math.max(1, s.detections))) return null;
+  if (isFlareIncident(Object.keys(s.cells))) return null; // gas flares and volcanoes are not briefed: the slots go to likely wildfires
   const area = affectedAreaKm2(s);
   if (area < minAreaKm2) return null;
   const last = s.enrichments.at(-1);

@@ -41,9 +41,9 @@ export function isPersistentHeat(i: { detections: number; cells: number; frpTota
   return i.detections / i.cells >= PERSISTENT_MIN_DETECTIONS_PER_CELL && i.frpTotalMw / i.detections < PERSISTENT_MAX_MEAN_FRP_MW;
 }
 
-/** List order: wildfires first (0), then persistent heat (1), then volcanic heat (2). */
-export function heatRank(i: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown }): number {
-  return i.volcano ? 2 : isPersistentHeat(i) ? 1 : 0;
+/** List order: wildfires (0), persistent heat (1), gas flare (2), volcanic heat (3). */
+export function heatRank(i: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; flare?: boolean }): number {
+  return i.volcano ? 3 : i.flare ? 2 : isPersistentHeat(i) ? 1 : 0;
 }
 
 export const activityRank = (a: Activity): number => (a === "active" ? 0 : a === "cooling" ? 1 : 2);
@@ -58,8 +58,8 @@ export function isGrowing(i: { growthKm2PerDay: number; lastSeen: number }, stre
  * Active before Cooling before Inactive; then larger grid coverage first, then most recently seen.
  */
 export function compareIncidents(
-  a: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; lastSeen: number; affectedAreaKm2: number },
-  b: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; lastSeen: number; affectedAreaKm2: number },
+  a: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; flare?: boolean; lastSeen: number; affectedAreaKm2: number },
+  b: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown; flare?: boolean; lastSeen: number; affectedAreaKm2: number },
   streamT: number
 ): number {
   return (

@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { fmtAgo, fmtInt, fmtKm2, fmtMw } from './format';
 import { INCIDENT_FRP_STOPS, RAMP } from './layers';
-import { ACTIVITY_LABEL, activityOf, isGrowing, isPersistentHeat, PERSISTENT_HELP, type IncidentSummary } from './types';
+import { ACTIVITY_LABEL, activityOf, FLARE_HELP, isGrowing, isPersistentHeat, PERSISTENT_HELP, type IncidentSummary } from './types';
 
 interface Props {
   incidents: IncidentSummary[];
@@ -33,7 +33,7 @@ export const IncidentList = memo(function IncidentList({ incidents, selectedId, 
             type="button"
             className={`rt-list__item ${i.id === selectedId ? 'is-selected' : ''} ${
               activity === 'inactive' ? 'is-inactive' : ''
-            } ${i.volcano || isPersistentHeat(i) ? 'is-volcanic' : ''}`}
+            } ${i.volcano || i.flare || isPersistentHeat(i) ? 'is-volcanic' : ''}`}
             aria-current={i.id === selectedId}
             onClick={() => onSelect(i.id)}
           >
@@ -48,6 +48,12 @@ export const IncidentList = memo(function IncidentList({ incidents, selectedId, 
                 {clock !== null ? ` · ${fmtAgo(i.lastSeen, clock)}` : ''}
                 {i.volcano ? (
                   ` · Volcanic heat (${i.volcano.name})`
+                ) : i.flare ? (
+                  <>
+                    {' · '}
+                    <span title={FLARE_HELP}>Gas flare (EOG inventory)</span>
+                    {` · ${fmtLatLon(i.centroid)}`}
+                  </>
                 ) : isPersistentHeat(i) ? (
                   <>
                     {' · '}

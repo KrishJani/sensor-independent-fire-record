@@ -15,6 +15,8 @@ import {
 } from "../src/detection";
 import { activityAt, briefStaleness, compareIncidents, heatRank, isGrowing, isPersistentHeat, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
 import { volcanoNear } from "../src/volcano";
+import { isFlareIncident, isFlarePoint } from "../src/flare";
+import { readFileSync } from "node:fs";
 import { cellAreaKm2, cellKey, cellOf, neighborCells, parseBbox } from "../src/grid";
 import {
   applyDetections,
@@ -616,7 +618,8 @@ describe("persistent heat label and list rank", () => {
   });
   it("ranks wildfires, then persistent heat, then volcanic heat", () => {
     const list = [inc(1976, 11, 5000, { name: "Kilauea" }), inc(556, 7, 1400), inc(97, 20, 1000)];
-    expect(list.map(heatRank)).toEqual([2, 1, 0]);
+    expect(heatRank({ ...inc(60, 6, 600), flare: true })).toBe(2); // gas flare: below persistent heat, above volcanic
+    expect(list.map(heatRank)).toEqual([3, 1, 0]);
     expect([...list].sort((a, b) => heatRank(a) - heatRank(b)).map((i) => i.detections)).toEqual([97, 556, 1976]);
   });
 });
@@ -634,5 +637,44 @@ describe("growing tag and list order by activity", () => {
   it("orders wildfires Active, then Cooling, then Inactive, then by size", () => {
     const list = [mk("big-inactive", 40, 900), mk("big-cooling", 20, 800), mk("small-active", 1, 50), mk("mid-active", 3, 300), mk("volcano", 1, 2000, 0, { volcano: { name: "Kilauea" } }), mk("persistent", 1, 1500, 0, { detections: 600, cells: 10, frpTotalMw: 600 * 3 })];
     expect(list.sort((a, b) => compareIncidents(a, b, now)).map((i) => i.id)).toEqual(["mid-active", "small-active", "big-cooling", "big-inactive", "persistent", "volcano"]);
+  });
+});
+
+describe("gas flare mask (EOG VIIRS Nightfire) on the live path", () => {
+  it("uses the same cell ids as the archive's config/flares CSV", () => {
+    const csv = readFileSync(new URL("../../../config/flares/eog_myc25q4_cells.csv", import.meta.url), "utf8")
+      .split("\n").filter((l) => l && !l.startsWith("#") && !l.startsWith("cell_id")).map((l) => Number(l.split(",")[0])).sort((a, b) => a - b);
+    const json = JSON.parse(readFileSync(new URL("../src/flare-cells.json", import.meta.url), "utf8")) as number[];
+    expect(json).toEqual(csv);
+  });
+  it("labels Permian Basin incidents and not Louisiana ones, from their cells", () => {
+    const key = (lat: number, lon: number) => `${Math.floor((lat + 90) * 20 + 1e-9)}:${Math.floor((lon + 180) * 20 + 1e-9)}`;
+    expect(isFlarePoint(-101.93, 32.18)).toBe(true); // Stanton, TX
+    expect(isFlarePoint(-91.03, 29.99)).toBe(false); // Napoleonville, LA
+    expect(isFlareIncident([key(32.18, -101.93), key(32.13, -101.93)].filter((k) => isFlareIncident([k])))).toBe(true);
+    expect(isFlareIncident([])).toBe(false);
+    const flareKey = [key(32.18, -101.93)][0]; // a flare cell
+    const plain = key(29.99, -91.03);
+    expect(isFlareIncident([flareKey, plain])).toBe(true); // 50 %
+    expect(isFlareIncident([flareKey, plain, key(30.04, -91.03)])).toBe(false); // 33 %
+  });
+  it("gas-flare incidents are labelled and never briefed; the same incident elsewhere is", () => {
+    const ids = JSON.parse(readFileSync(new URL("../src/flare-cells.json", import.meta.url), "utf8")) as number[];
+    const set = new Set(ids);
+    const id = ids.find((x) => set.has(x + 1) && (x % 7200) < 7000)!; // two flare cells side by side
+    const at = (cell: number) => ({ lat: Math.floor(cell / 7200) / 20 - 90 + 0.025, lon: (cell % 7200) / 20 - 180 + 0.025 });
+    const [a, b] = [at(id), at(id + 1)];
+    const fire = (dLat: number) => {
+      const s = emptyState("x.1", "live");
+      const pts = [0, 1, 2, 3, 4, 5].map((i) => det(i % 2 ? a.lat + dLat : b.lat + dLat, i % 2 ? a.lon : b.lon, T0 + i * H));
+      applyDetections(s, pts, T0 + 5 * H);
+      return s;
+    };
+    const flared = fire(0);
+    expect(summarize(flared).flare).toBe(true);
+    expect(enrichmentDue(flared, T0 + 5 * H)).toBeNull();
+    const moved = fire(15); // same pattern 15° north: not an inventory cell
+    expect(summarize(moved).flare).toBe(false);
+    expect(enrichmentDue(moved, T0 + 5 * H)?.reason).toBe("significant");
   });
 });

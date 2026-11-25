@@ -18,7 +18,7 @@ export interface RealtimeFetcher {
 const ORIGIN = "https://realtime-worker";
 
 const INCIDENT_RULES =
-  'gridCoverageKm2 is the area of the 0.05° grid cells that contain detections. It overstates the burned area: call it "grid coverage", never "burned area" or "the fire covers"; lead with detections and cells, and give grid coverage as secondary. Refer to an incident by its place ("near Napoleonville") or coordinates, NEVER by an internal id. activity is active (detected < 12 h ago), cooling (12 to 36 h) or inactive (older): say "last detected N hours ago" rather than "burning" for cooling or inactive incidents. heat "persistent_heat" or "volcanic" means the heat is not a wildfire front: say so and do not call it a fire. Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents.'; // host is ignored by service bindings
+  'gridCoverageKm2 is the area of the 0.05° grid cells that contain detections. It overstates the burned area: call it "grid coverage", never "burned area" or "the fire covers"; lead with detections and cells, and give grid coverage as secondary. Refer to an incident by its place ("near Napoleonville") or coordinates, NEVER by an internal id. activity is active (detected < 12 h ago), cooling (12 to 36 h) or inactive (older): say "last detected N hours ago" rather than "burning" for cooling or inactive incidents. heat "persistent_heat", "gas_flare" (EOG VIIRS Nightfire flare-site inventory) or "volcanic" means the heat is not a wildfire front: say so and do not call it a fire. Report the numbers as given: do not compute derived or normalized values (e.g. no FRP ratios), and quote peakFrp with its sensor label. Calendar caveats (cell-days, sourceMix, complete) do not apply to incidents.'; // host is ignored by service bindings
 
 interface IncidentSummary {
   id: string;
@@ -39,6 +39,7 @@ interface IncidentSummary {
   activity?: string;
   frpTotalMw?: number;
   volcano?: { name: string } | null;
+  flare?: boolean;
 }
 
 const coords = ([lon, lat]: [number, number]) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? "N" : "S"} ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? "E" : "W"}`;
@@ -108,7 +109,7 @@ export async function getLiveIncidents(rt: RealtimeFetcher, args: LiveIncidentsA
   if (!r.ok) return { error: "realtime_unavailable", message: `Realtime service error (HTTP ${r.status}).` };
 
   const heatOf = (s: IncidentSummary) =>
-    s.volcano ? "volcanic" : s.frpTotalMw !== undefined && s.cells > 0 && s.detections / s.cells >= 30 && s.frpTotalMw / s.detections < 20 ? "persistent_heat" : "wildfire";
+    s.volcano ? "volcanic" : s.flare ? "gas_flare" : s.frpTotalMw !== undefined && s.cells > 0 && s.detections / s.cells >= 30 && s.frpTotalMw / s.detections < 20 ? "persistent_heat" : "wildfire";
   const ids: string[] = r.data.incidents.map((s) => s.id); // internal: used for detail calls only, never returned
   const incidents = r.data.incidents.map((s) => ({
     location: coords(s.centroid),

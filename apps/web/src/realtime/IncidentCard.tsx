@@ -3,7 +3,7 @@ import { fmtAgo, fmtClock, fmtInt, fmtKm2, fmtMw, fmtShort } from './format';
 import { ArrowIcon, BackIcon, InfoIcon } from './icons';
 import { fmtLatLon, frpColor } from './IncidentList';
 import { ActivityPill, SourceBadge } from './StatusChip';
-import { activityOf, briefStaleness, briefTime, isPersistentHeat, PERSISTENT_HELP, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
+import { activityOf, briefStaleness, briefTime, FLARE_HELP, isPersistentHeat, PERSISTENT_HELP, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
 
 interface Props {
   incident: IncidentSummary;
@@ -76,6 +76,8 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
               `Volcanic heat · ${i.volcano.name}`
             ) : i.status === 'merged' ? (
               'Merged into another incident'
+            ) : i.flare ? (
+              <span title={FLARE_HELP}>Gas flare (EOG inventory)</span>
             ) : isPersistentHeat(i) ? (
               <span title={PERSISTENT_HELP}>Persistent heat</span>
             ) : (
@@ -162,6 +164,10 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
         {i.volcano ? (
           <p className="rt-note">
             This heat is at {i.volcano.name} volcano ({i.volcano.distanceKm} km away), not a wildfire, so no AI brief is written. Source: Smithsonian Global Volcanism Program.
+          </p>
+        ) : i.flare ? (
+          <p className="rt-note">
+            Most of this heat sits on known gas-flare sites (EOG VIIRS Nightfire inventory), so no AI brief is written.
           </p>
         ) : shownBrief ? (
           <>

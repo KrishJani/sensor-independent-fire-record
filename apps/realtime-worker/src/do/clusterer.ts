@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { assignDetections, type ClusterStore, type IncidentRef } from "../cluster";
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
+import { isFlarePoint } from "../flare";
 import { volcanoNear } from "../volcano";
 import { compareIncidents } from "../status";
 import { activityAt, INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
@@ -249,7 +250,7 @@ export class Clusterer extends DurableObject<Env> {
       .exec<{ id: string; summary: string }>("SELECT id, summary FROM incidents WHERE significant = 1 AND merged_into IS NULL AND summary IS NOT NULL")
       .toArray()
       .map((r) => JSON.parse(r.summary) as IncidentSummary)
-      .filter((s) => !s.volcano && streamT - s.lastSeen <= INACTIVE_AFTER_MS)
+      .filter((s) => !s.volcano && !s.flare && streamT - s.lastSeen <= INACTIVE_AFTER_MS)
       .sort((a, b) => compareIncidents(a, b, streamT))
       .slice(0, SWEEP_MAX);
     const minAreaKm2 = briefMinAreaKm2(this.env, stream);
@@ -288,7 +289,8 @@ export class Clusterer extends DurableObject<Env> {
     const rankT = streamT ?? Math.max(...queued.map((q) => (q.summary ? (JSON.parse(q.summary) as IncidentSummary).asOf : 0)));
     const ranked = queued
       .filter((q) => {
-        if (q.merged_into || !q.summary) {
+        const sm = q.summary ? (JSON.parse(q.summary) as IncidentSummary) : null;
+        if (q.merged_into || !sm || sm.volcano || (sm.flare ?? isFlarePoint(sm.centroid[0], sm.centroid[1]))) {
           this.sql.exec("DELETE FROM enrich_queue2 WHERE incident_id = ?", q.incident_id);
           return false;
         }
@@ -497,7 +499,7 @@ export class Clusterer extends DurableObject<Env> {
 }
 
 function withStatus(s: IncidentSummary, streamT: number | null): IncidentSummary {
-  if (s.status === "merged" || streamT === null) return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]) };
+  if (s.status === "merged" || streamT === null) return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]), flare: s.flare ?? isFlarePoint(s.centroid[0], s.centroid[1]) };
   // Summaries stored before these fields existed get them here.
-  return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]), activity: activityAt(s.lastSeen, streamT), status: streamT - s.lastSeen > INACTIVE_AFTER_MS ? "inactive" : "active" };
+  return { ...s, volcano: s.volcano ?? volcanoNear(s.centroid[0], s.centroid[1]), flare: s.flare ?? isFlarePoint(s.centroid[0], s.centroid[1]), activity: activityAt(s.lastSeen, streamT), status: streamT - s.lastSeen > INACTIVE_AFTER_MS ? "inactive" : "active" };
 }
