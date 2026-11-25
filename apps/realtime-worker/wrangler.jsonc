@@ -20,6 +20,8 @@
     "CHAT_FALLBACK_MODEL": "@cf/zai-org/glm-4.7-flash",
     // Max enrichment workflows (and so AI briefs) per stream: per rolling 24 h for "live", per replay otherwise.
     "ENRICH_MAX_PER_STREAM": "10",
+    // Live stream only: briefs per rolling 24 h. Raised from 10 because a Haiku brief costs ~$0.0003; BRIEF_DAILY_MAX still bounds the total.
+    "ENRICH_MAX_LIVE": "25",
     // Global cap on AI briefs across all streams, per rolling 24 h (re-briefs count; cached replay briefs don't).
     "BRIEF_DAILY_MAX": "50",
     // Replays only brief incidents whose affected area reaches this (Quebec: 21 incidents end above 200 km²).

@@ -28,3 +28,20 @@ export function briefStaleness(areaAtBrief: number | null | undefined, areaNow: 
   const growth = areaNow / areaAtBrief;
   return { stale: growth >= STALE_AREA_RATIO, growth };
 }
+
+/**
+ * "Persistent heat": many detections on few cells at low power: >= 30 detections per cell and mean FRP < 20 MW.
+ * A neutral label with no claim about the cause (a wildfire front moves across cells; this does not). Chosen on the
+ * live list (23 of 190 incidents match, e.g. NW Indiana and St. Louis); not validated against wildfire scenarios.
+ */
+export const PERSISTENT_MIN_DETECTIONS_PER_CELL = 30;
+export const PERSISTENT_MAX_MEAN_FRP_MW = 20;
+export function isPersistentHeat(i: { detections: number; cells: number; frpTotalMw: number }): boolean {
+  if (i.cells <= 0 || i.detections <= 0) return false;
+  return i.detections / i.cells >= PERSISTENT_MIN_DETECTIONS_PER_CELL && i.frpTotalMw / i.detections < PERSISTENT_MAX_MEAN_FRP_MW;
+}
+
+/** List order: wildfires first (0), then persistent heat (1), then volcanic heat (2). */
+export function heatRank(i: { detections: number; cells: number; frpTotalMw: number; volcano?: unknown }): number {
+  return i.volcano ? 2 : isPersistentHeat(i) ? 1 : 0;
+}

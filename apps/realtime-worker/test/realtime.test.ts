@@ -13,7 +13,7 @@ import {
   type Detection,
   type RawDetection
 } from "../src/detection";
-import { activityAt, briefStaleness, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
+import { activityAt, briefStaleness, heatRank, isPersistentHeat, REBRIEF_AREA_RATIO, STALE_AREA_RATIO } from "../src/status";
 import { volcanoNear } from "../src/volcano";
 import { cellAreaKm2, cellKey, cellOf, neighborCells, parseBbox } from "../src/grid";
 import {
@@ -601,5 +601,22 @@ describe("volcano mask", () => {
     expect(volcanoNear(-154.9, 19.47)?.name).toBe("Kilauea"); // East Rift Zone, ~41 km
     expect(volcanoNear(-91.1, 30.0)).toBeNull(); // Louisiana
     expect(volcanoNear(-155.7, 19.9)).toBeNull(); // Waikoloa-side Hawaii Island wildfires
+  });
+});
+
+describe("persistent heat label and list rank", () => {
+  const inc = (detections: number, cells: number, frpTotalMw: number, volcano?: unknown) => ({ detections, cells, frpTotalMw, volcano });
+  it("flags >= 30 detections per cell at < 20 MW mean, nothing else", () => {
+    expect(isPersistentHeat(inc(556, 7, 556 * 2.5))).toBe(true); // NW Indiana
+    expect(isPersistentHeat(inc(60, 2, 60 * 19.9))).toBe(true);
+    expect(isPersistentHeat(inc(60, 2, 60 * 20))).toBe(false); // mean exactly 20
+    expect(isPersistentHeat(inc(59, 2, 59 * 5))).toBe(false); // 29.5 per cell
+    expect(isPersistentHeat(inc(97, 20, 97 * 10.7))).toBe(false); // Napoleonville: spread over cells
+    expect(isPersistentHeat(inc(0, 0, 0))).toBe(false);
+  });
+  it("ranks wildfires, then persistent heat, then volcanic heat", () => {
+    const list = [inc(1976, 11, 5000, { name: "Kilauea" }), inc(556, 7, 1400), inc(97, 20, 1000)];
+    expect(list.map(heatRank)).toEqual([2, 1, 0]);
+    expect([...list].sort((a, b) => heatRank(a) - heatRank(b)).map((i) => i.detections)).toEqual([97, 556, 1976]);
   });
 });

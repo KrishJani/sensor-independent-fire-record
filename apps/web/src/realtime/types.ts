@@ -151,6 +151,10 @@ export function titlePlace(places: Place[] | null | undefined): Place | null {
 
 import { activityAt, briefStaleness, type Activity } from '../../../realtime-worker/src/status';
 export { briefStaleness };
+import { isPersistentHeat } from '../../../realtime-worker/src/status';
+export { isPersistentHeat };
+export const PERSISTENT_HELP =
+  'Many detections on few cells at low power (at least 30 per cell, under 20 MW on average), unlike a spreading fire front; the cause is not determined.';
 
 /** Activity at the stream clock (falls back to the server's value, then to active). Merged incidents keep their last activity. */
 export function activityOf(i: Pick<IncidentSummary, 'lastSeen' | 'activity' | 'asOf'>, clock: number | null): Activity {

@@ -3,6 +3,7 @@ import { YLORRD5 } from '../lib/colors';
 import type mapboxgl from 'mapbox-gl';
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import type { DetectionPoint, IncidentSummary } from './types';
+import { heatRank } from '../../../realtime-worker/src/status';
 
 /**
  * Ids start with `overlay-` so lib/basemaps.ts `applyClassicDetails` does not hide our labels
@@ -229,7 +230,7 @@ export function detectionsGeoJson(
 export function visibleIncidents(incidents: Iterable<IncidentSummary>): IncidentSummary[] {
   return [...incidents]
     .filter((i) => i.status !== 'merged' && i.significant !== false)
-    .sort((a, b) => b.affectedAreaKm2 - a.affectedAreaKm2);
+    .sort((a, b) => heatRank(a) - heatRank(b) || b.affectedAreaKm2 - a.affectedAreaKm2);
 }
 
 const areaLabel = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });

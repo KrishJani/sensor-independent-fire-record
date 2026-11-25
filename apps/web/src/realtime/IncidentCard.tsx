@@ -3,7 +3,7 @@ import { fmtAgo, fmtClock, fmtInt, fmtKm2, fmtMw, fmtShort } from './format';
 import { ArrowIcon, BackIcon, InfoIcon } from './icons';
 import { fmtLatLon, frpColor } from './IncidentList';
 import { ActivityPill, SourceBadge } from './StatusChip';
-import { activityOf, briefStaleness, briefTime, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
+import { activityOf, briefStaleness, briefTime, isPersistentHeat, PERSISTENT_HELP, titlePlace, type Brief, type IncidentDetail, type IncidentSummary } from './types';
 
 interface Props {
   incident: IncidentSummary;
@@ -71,7 +71,15 @@ export function IncidentCard({ incident: i, detail, detailError, brief, clock, r
           <h2>{title}</h2>
           <span className="rt-card__sub">
             {nearest ? `${fmtLatLon(i.centroid)} · ` : ''}
-            {i.volcano ? `Volcanic heat · ${i.volcano.name}` : i.status === 'merged' ? 'Merged into another incident' : 'Satellite fire detections'}
+            {i.volcano ? (
+              `Volcanic heat · ${i.volcano.name}`
+            ) : i.status === 'merged' ? (
+              'Merged into another incident'
+            ) : isPersistentHeat(i) ? (
+              <span title={PERSISTENT_HELP}>Persistent heat</span>
+            ) : (
+              'Satellite fire detections'
+            )}
           </span>
         </div>
         {i.status !== 'merged' && <ActivityPill activity={activity} />}

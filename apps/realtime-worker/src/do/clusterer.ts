@@ -3,6 +3,7 @@ import { assignDetections, type ClusterStore, type IncidentRef } from "../cluste
 import { confidenceCode, type Detection } from "../detection";
 import { bboxIntersects, type Bbox } from "../grid";
 import { volcanoNear } from "../volcano";
+import { heatRank } from "../status";
 import { activityAt, INACTIVE_AFTER_MS, type IncidentStatus, type IncidentSummary } from "../incidentModel";
 import { briefCacheKey, briefCachePrefix } from "../enrich/brief";
 import { briefCacheFull, incidentsToPrune, LIVE_RETENTION_MS, pickCachedLevel, type PruneRow } from "../limits";
@@ -259,6 +260,11 @@ export class Clusterer extends DurableObject<Env> {
     this.bump("enrich_sweeps", 1);
   }
 
+  /** Briefs per cap window: ENRICH_MAX_LIVE for the live stream (rolling 24 h), ENRICH_MAX_PER_STREAM for a replay. */
+  private streamCap(stream: string): number {
+    return Number(stream === "live" ? (this.env.ENRICH_MAX_LIVE ?? this.env.ENRICH_MAX_PER_STREAM ?? 30) : (this.env.ENRICH_MAX_PER_STREAM ?? 30));
+  }
+
   /** Enrichments started for this stream within its cap window (live: rolling 24 h; replay: whole stream). */
   private enrichmentsUsed(stream: string): number {
     const since = stream === "live" ? Date.now() - LIVE_ENRICH_WINDOW_MS : 0;
@@ -286,9 +292,9 @@ export class Clusterer extends DurableObject<Env> {
         return true;
       })
       .map((q) => ({ ...q, s: JSON.parse(q.summary!) as IncidentSummary }))
-      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || Number(!!a.s.volcano) - Number(!!b.s.volcano) || b.s.affectedAreaKm2 - a.s.affectedAreaKm2);
+      .sort((a, b) => Number(a.reason !== "significant") - Number(b.reason !== "significant") || heatRank(a.s) - heatRank(b.s) || b.s.affectedAreaKm2 - a.s.affectedAreaKm2);
 
-    const perStreamMax = Number(this.env.ENRICH_MAX_PER_STREAM ?? 30);
+    const perStreamMax = this.streamCap(stream);
     const dailyMax = Number(this.env.BRIEF_DAILY_MAX ?? 60);
     for (const q of ranked.slice(0, ENRICH_DISPATCH_PER_BATCH)) {
       if (this.enrichmentsUsed(stream) >= perStreamMax) {
@@ -346,7 +352,7 @@ export class Clusterer extends DurableObject<Env> {
             ...(cachedBrief ? { cachedBrief } : skipBrief ? { skipBrief } : cacheKey ? { briefCacheKey: cacheKey } : {})
           }
         });
-        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, skipBrief, briefsUsed24h: grant.used, queued: ranked.length }));
+        console.log(JSON.stringify({ msg: "enrich_started", incident: q.incident_id, reason: q.reason, slotsUsed: this.enrichmentsUsed(stream), slotsMax: perStreamMax, affectedAreaKm2: q.s.affectedAreaKm2, cached: !!cachedBrief, skipBrief, briefsUsed24h: grant.used, queued: ranked.length }));
       } catch (err) {
         console.error(JSON.stringify({ msg: "enrich_start_failed", incident: q.incident_id, error: String(err) }));
       }
@@ -388,7 +394,7 @@ export class Clusterer extends DurableObject<Env> {
     let out = rows.map((r) => JSON.parse(r.summary) as IncidentSummary).map((s) => withStatus(s, streamT));
     if (q.bbox) out = out.filter((s) => bboxIntersects(s.bbox, q.bbox!));
     if (q.status && q.status !== "all") out = out.filter((s) => s.status === q.status);
-    out.sort((a, b) => Number(!!a.volcano) - Number(!!b.volcano) || b.affectedAreaKm2 - a.affectedAreaKm2 || b.lastSeen - a.lastSeen);
+    out.sort((a, b) => heatRank(a) - heatRank(b) || b.affectedAreaKm2 - a.affectedAreaKm2 || b.lastSeen - a.lastSeen);
     return { stream: this.meta("stream"), streamT, incidents: out.slice(0, q.limit ?? 500) };
   }
 
@@ -404,8 +410,13 @@ export class Clusterer extends DurableObject<Env> {
     const enrich = {
       queued: this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM enrich_queue2").one().n,
       used: stream ? this.enrichmentsUsed(stream) : 0,
-      max: Number(this.env.ENRICH_MAX_PER_STREAM ?? 30),
-      window: stream === "live" ? "24h" : "stream"
+      max: stream ? this.streamCap(stream) : Number(this.env.ENRICH_MAX_PER_STREAM ?? 30),
+      window: stream === "live" ? "24h" : "stream",
+      // Which incidents used the slots (newest first), so a spent cap is explainable.
+      usedBy: this.sql
+        .exec<{ incident_id: string; t: number }>("SELECT incident_id, t FROM enrich_log WHERE t > ? ORDER BY t DESC LIMIT 60", stream === "live" ? Date.now() - LIVE_ENRICH_WINDOW_MS : 0)
+        .toArray()
+        .map((r) => ({ incident: r.incident_id, at: new Date(r.t).toISOString() }))
     };
     return { stream, streamT: this.streamT(), counters, incidents: inc, merges, enrich };
   }
