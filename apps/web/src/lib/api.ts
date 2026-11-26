@@ -69,6 +69,8 @@ export interface CalendarMonth {
   peakFrpMw: number | null;
   peakFrpSensor: 'MODIS' | 'VIIRS' | null;
   complete: boolean;
+  /** median: the calendar month's normal, the 2001-2025 harmonized median (one value per month, = climatology median);
+   *  ratioToMedian = harmonizedCellDays / median. percentile/class rank the month against the other baseline years. */
   anomaly: { median: number; ratioToMedian: number | null; robustZ: number | null; percentile: number; class: string } | null;
 }
 export interface CalendarResponse {

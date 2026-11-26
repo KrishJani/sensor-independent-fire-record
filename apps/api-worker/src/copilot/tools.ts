@@ -55,7 +55,7 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
   return {
     get_calendar: tool({
       description:
-        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for the US region containing an area (US only: outside it there is no calendar, and never substitute another region) (region-level; the result names the region): peak month/year, critical fire-season months, climatology (median, P10–P90 per calendar month), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality, trends and 'is this normal / how unusual' questions. For 'what happened here in <month>' call get_spots_summary first (calling both is fine).",
+        "Harmonized MODIS+VIIRS burning-activity calendar (archival) for the US region containing an area (US only: outside it there is no calendar, and never substitute another region) (region-level; the result names the region): peak month/year, critical fire-season months, normalByMonth (each calendar month's normal = its 2001–2025 harmonized median, with P10–P90), annual totals and the most anomalous months. Unit: active cell-days. Use for history, seasonality, trends and 'is this normal / how unusual' questions. For 'what happened here in <month>' call get_spots_summary first (calling both is fine).",
       inputSchema: z.object({
         bbox: bboxArg,
         from: date.optional().describe("Start date. Omit to use the map's range."),

@@ -193,7 +193,7 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detai
                     <dd><b>{fmt(hover.harmonizedCellDays)}</b> harmonized cell-days{hover.hi - hover.lo > 1 ? ` (90%: ${fmt(hover.lo)}–${fmt(hover.hi)})` : ''}</dd>
                     <dd>{fmt(hover.unscaledCellDays)} gridded · {fmt(hover.rawDetections)} raw detections</dd>
                     <dd>{hover.sourceMix >= 0.999 ? 'VIIRS (observed)' : hover.sourceMix <= 0.001 ? 'MODIS × α (harmonized)' : `${Math.round(hover.sourceMix * 100)}% VIIRS days`}</dd>
-                    {hover.anomaly && <dd>{hover.anomaly.class.replace('_', ' ')} · {hover.anomaly.ratioToMedian ?? '—'}× median</dd>}
+                    {hover.anomaly && <dd>{hover.anomaly.class.replace('_', ' ')} · {hover.anomaly.ratioToMedian ?? '—'}× the 2001–2025 median ({fmt(hover.anomaly.median)})</dd>}
                     {hover.peakFrpMw && <dd>peak FRP {fmt(hover.peakFrpMw)} MW ({hover.peakFrpSensor})</dd>}
                   </dl>
                 ) : (

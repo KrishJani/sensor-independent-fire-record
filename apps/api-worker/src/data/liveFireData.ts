@@ -1,7 +1,7 @@
 import type { Bbox } from "../copilot/context";
 import { withDb } from "../lib/db.ts";
 import { ApiError } from "../lib/http.ts";
-import { calendar } from "../routes/calendar.ts";
+import { calendar, type calendarBody } from "../routes/calendar.ts";
 import { CONFIG } from "../routes/meta.ts";
 import type {
   AnomalyClass,
@@ -29,6 +29,67 @@ export const OUTSIDE_CALENDAR =
 const outside = (): Unavailable => ({ dataSource: "live", available: false, reason: "outside_coverage", message: OUTSIDE_CALENDAR });
 
 /**
+ * The calendar response (routes/calendar.ts calendarBody) as the copilot's get_calendar result. Pure, so a test can
+ * check it against the body the calendar drawer renders: one normal per calendar month, equal to the body's
+ * climatology median and to every month's anomaly.median (the value behind the drawer's "× median").
+ */
+export function toCalendarResult(body: ReturnType<typeof calendarBody>, ref: ReturnType<typeof regionRef>, bbox: Bbox): CalendarResult {
+  const normal = new Map(body.climatology.map((c) => [c.month, c.median]));
+  const scored = body.calendar.map((c) => {
+    const n = normal.get(c.month) ?? c.anomaly?.median ?? 0;
+    const month: CalendarMonth = {
+      year: c.year,
+      month: c.month,
+      harmonizedCellDays: c.harmonizedCellDays,
+      modisCellDays: c.modisCellDays,
+      viirsCellDays: c.viirsCellDays,
+      sourceMix: c.sourceMix,
+      peakFrpMw: c.peakFrpMw ?? 0,
+      peakFrpSensor: (c.peakFrpSensor ?? "MODIS") as "MODIS" | "VIIRS",
+      complete: c.complete,
+      calibratedEstimate: c.year * 100 + c.month < 201201,
+      anomaly: {
+        normal: n,
+        ratioToNormal: n > 0 ? Math.round((c.harmonizedCellDays / n) * 100) / 100 : 0,
+        percentile: c.anomaly?.percentile ?? 0,
+        class: (c.anomaly?.class ?? "normal") as AnomalyClass
+      }
+    };
+    return { month, z: c.anomaly?.robustZ ?? 0 };
+  });
+  const notableMonths = [...scored]
+    .sort((a, b) => b.z - a.z || b.month.harmonizedCellDays - a.month.harmonizedCellDays)
+    .slice(0, 8)
+    .map((x) => x.month)
+    .sort((a, b) => a.year - b.year || a.month - b.month);
+  const months = scored.map((x) => x.month);
+  const baseline = (CONFIG.baselineYears as number[]).join("-");
+  return {
+    dataSource: "live",
+    note:
+      `Region-level data: these numbers describe the whole ${ref.label} (${ref.name}), not the selected area itself; say "the ${ref.label}" when you cite them. ` +
+      `Harmonized NASA FIRMS MODIS+VIIRS record from the Postgres archive. "normal" is the ${baseline} median for that calendar month (normalByMonth; the same value in each month's anomaly): call it the ${baseline} median or "normal". percentile and class rank a month against the other ${baseline} years. viirsCellDays and modisCellDays are each sensor's own count for the same days: they overlap and do not add up to harmonizedCellDays.`,
+    region: ref,
+    mode: "archival",
+    bbox,
+    from: body.range.from,
+    to: body.range.to,
+    unit: "active cell-days (0.05° ≈ 5.5 km cell with ≥1 detection on a UTC day)",
+    summary: {
+      peakMonth: body.summary.peakMonth,
+      peakYear: body.summary.peakYear,
+      criticalMonths: body.summary.criticalMonths,
+      totalHarmonizedCellDays: Math.round(months.reduce((s, m) => s + m.harmonizedCellDays, 0)),
+      monthsInRange: months.length,
+      incompleteMonths: months.filter((m) => !m.complete).length
+    },
+    normalByMonth: body.climatology.map((c) => ({ month: c.month, normal: c.median, p10: c.p10, p25: c.p25, p75: c.p75, p90: c.p90 })),
+    annual: body.annual.map((a) => ({ year: a.year, harmonizedCellDays: a.harmonizedCellDays, calibratedEstimate: a.year < 2012 })),
+    notableMonths
+  };
+}
+
+/**
  * Real data for the copilot tools (SPEC §4.5), calling the same code as the HTTP routes in-process.
  *  - calendar / month-to-date: the precomputed REGION calendars in Postgres (the per-cell detail needed for an
  *    arbitrary AOI is not loaded), so every result names the region it describes.
@@ -48,54 +109,7 @@ export class LiveFireData implements FireData {
       if (err instanceof ApiError && err.status === 422) return unavailable(`The archive has no data for ${q.from} to ${q.to}: ${err.message}`);
       throw err;
     }
-    const ref = regionRef(region);
-    const months: CalendarMonth[] = body.calendar.map((c) => ({
-      year: c.year,
-      month: c.month,
-      harmonizedCellDays: c.harmonizedCellDays,
-      modisCellDays: c.modisCellDays,
-      viirsCellDays: c.viirsCellDays,
-      sourceMix: c.sourceMix,
-      peakFrpMw: c.peakFrpMw ?? 0,
-      peakFrpSensor: (c.peakFrpSensor ?? "MODIS") as "MODIS" | "VIIRS",
-      complete: c.complete,
-      calibratedEstimate: c.year * 100 + c.month < 201201,
-      anomaly: {
-        median: c.anomaly?.median ?? 0,
-        ratioToMedian: c.anomaly?.ratioToMedian ?? 0,
-        robustZ: c.anomaly?.robustZ ?? 0,
-        percentile: c.anomaly?.percentile ?? 0,
-        class: (c.anomaly?.class ?? "normal") as AnomalyClass
-      }
-    }));
-    const notableMonths = [...months]
-      .sort((a, b) => b.anomaly.robustZ - a.anomaly.robustZ || b.harmonizedCellDays - a.harmonizedCellDays)
-      .slice(0, 8)
-      .sort((a, b) => a.year - b.year || a.month - b.month);
-    const baseline = (CONFIG.baselineYears as number[]).join("-");
-    return {
-      dataSource: "live",
-      note:
-        `Region-level data: these numbers describe the whole ${ref.label} (${ref.name}), not the selected area itself; say "the ${ref.label}" when you cite them. ` +
-        `Harmonized NASA FIRMS MODIS+VIIRS record from the Postgres archive; anomalies are against the ${baseline} median for each calendar month. viirsCellDays and modisCellDays are each sensor's own count for the same days: they overlap and do not add up to harmonizedCellDays.`,
-      region: ref,
-      mode: "archival",
-      bbox: q.bbox,
-      from: body.range.from,
-      to: body.range.to,
-      unit: "active cell-days (0.05° ≈ 5.5 km cell with ≥1 detection on a UTC day)",
-      summary: {
-        peakMonth: body.summary.peakMonth,
-        peakYear: body.summary.peakYear,
-        criticalMonths: body.summary.criticalMonths,
-        totalHarmonizedCellDays: Math.round(months.reduce((s, m) => s + m.harmonizedCellDays, 0)),
-        monthsInRange: months.length,
-        incompleteMonths: months.filter((m) => !m.complete).length
-      },
-      climatology: body.climatology.map((c) => ({ month: c.month, median: c.median, p10: c.p10, p25: c.p25, p75: c.p75, p90: c.p90 })),
-      annual: body.annual.map((a) => ({ year: a.year, harmonizedCellDays: a.harmonizedCellDays, calibratedEstimate: a.year < 2012 })),
-      notableMonths
-    };
+    return toCalendarResult(body, regionRef(region), q.bbox);
   }
 
   async getSpotsSummary(q: SpotsQuery): Promise<SpotsSummary | Unavailable> {

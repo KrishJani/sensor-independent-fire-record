@@ -32,9 +32,11 @@ export interface CalendarMonth {
   /** true for pre-2012 months: MODIS × α calibrated estimate */
   calibratedEstimate: boolean;
   anomaly: {
-    median: number;
-    ratioToMedian: number;
-    robustZ: number;
+    /** The month's normal: the same value as normalByMonth for this calendar month. */
+    normal: number;
+    /** harmonizedCellDays / normal. */
+    ratioToNormal: number;
+    /** Rank among the other 2001-2025 years for this calendar month (0-100). */
     percentile: number;
     class: AnomalyClass;
   };
@@ -76,7 +78,11 @@ export interface CalendarResult {
     monthsInRange: number;
     incompleteMonths: number;
   };
-  climatology: { month: number; median: number; p10: number; p25: number; p75: number; p90: number }[];
+  /**
+   * The ONE "normal" per calendar month: the median of that month's harmonized cell-days over every complete
+   * 2001-2025 year (what the calendar drawer shows). p10-p90 give the usual range.
+   */
+  normalByMonth: { month: number; normal: number; p10: number; p25: number; p75: number; p90: number }[];
   annual: { year: number; harmonizedCellDays: number; calibratedEstimate: boolean }[];
   /** Top ~8 months by anomaly / size, not the full matrix (token budget). */
   notableMonths: CalendarMonth[];

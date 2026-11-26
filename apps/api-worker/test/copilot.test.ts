@@ -741,6 +741,44 @@ describe("calendar outside the US harmonized archive", async () => {
   });
 });
 
+describe("one 'normal' per calendar month (get_calendar = calendar drawer)", async () => {
+  const { calendarBody } = await import("../src/routes/calendar");
+  const { toCalendarResult } = await import("../src/data/liveFireData");
+  // June: 100, 110, ... 340 for 2001-2025 (2013 = 220 is the 25-year median). Leaving 2023 (320) out would give
+  // 215, the second number that used to appear. July: half of June.
+  const cell = (year: number, month: number, v: number) => ({
+    year, month, harmonizedCellDays: v, rawDetections: v, unscaledCellDays: v, modisScaledCellDays: v, nModisDays: 30, scaledCellDays: 0,
+    harmonizedLo: v, harmonizedHi: v, lo: v, hi: v, modisCellDays: v, viirsCellDays: v, sourceMix: 1, nDays: 30, nViirsDays: 30,
+    nModisScaledDays: 0, nNoneDays: 0, peakFrpMw: 100, peakFrpSensor: "VIIRS" as const, complete: true
+  });
+  const cells = Array.from({ length: 25 }, (_, i) => 2001 + i).flatMap((y) => [cell(y, 6, 100 + (y - 2001) * 10), cell(y, 7, (100 + (y - 2001) * 10) / 2)]);
+  const body = calendarBody(cells as never, [], { from: "2001-01-01", to: "2025-12-31", months: null, baseline: [2001, 2025], aoi: null, alpha: null, coverage: 1 });
+  const tool = toCalendarResult(body, { id: "california", name: "California (and W. Nevada)", label: "California region" }, [-124.5, 32.5, -114, 42.1]);
+
+  it("has exactly one normal per calendar month, the 2001-2025 median", () => {
+    expect(tool.normalByMonth.map((m) => m.month)).toEqual([6, 7]);
+    expect(tool.normalByMonth.find((m) => m.month === 6)!.normal).toBe(220);
+    expect(tool.normalByMonth.find((m) => m.month === 7)!.normal).toBe(110);
+    const json = JSON.stringify(tool);
+    expect(json).not.toMatch(/"median"|ratioToMedian|robustZ|climatology/);
+  });
+
+  it("every month quotes that same normal, as the drawer does for the same region and month", () => {
+    const normalOf = new Map(tool.normalByMonth.map((m) => [m.month, m.normal]));
+    for (const m of tool.notableMonths) {
+      // the drawer reads body.calendar[].anomaly.median / ratioToMedian ("1.45× the 2001-2025 median (220)")
+      const shown = body.calendar.find((c) => c.year === m.year && c.month === m.month)!.anomaly!;
+      expect(m.anomaly.normal).toBe(normalOf.get(m.month));
+      expect(shown.median).toBe(m.anomaly.normal);
+      expect(shown.ratioToMedian).toBe(m.anomaly.ratioToNormal);
+    }
+    const june2023 = body.calendar.find((c) => c.year === 2023 && c.month === 6)!.anomaly!;
+    expect(june2023).toMatchObject({ median: 220, ratioToMedian: 1.45 });
+    // ranking still leaves the year out, so the top year can be a record
+    expect(body.calendar.find((c) => c.year === 2025 && c.month === 6)!.anomaly!.class).toBe("record_high");
+  });
+});
+
 describe("chat reasoning settings", async () => {
   const m = await import("../src/copilot/models");
   it("parses CHAT_REASONING_EFFORT and CHAT_CACHE_TTL", () => {

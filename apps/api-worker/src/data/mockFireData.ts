@@ -181,6 +181,7 @@ export class MockFireData implements FireData {
     const criticalMonths = climatology.filter((c) => c.median > p75OfMedians).map((c) => c.month);
 
     const months: CalendarMonth[] = [];
+    const zOf = new Map<CalendarMonth, number>(); // robust z, only for picking notable months
     const [fy, fm] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))];
     const [ty, tm] = [Number(to.slice(0, 4)), Number(to.slice(5, 7))];
     for (let y = fy, m = fm; y < ty || (y === ty && m <= tm); m === 12 ? (y++, (m = 1)) : m++) {
@@ -217,13 +218,13 @@ export class MockFireData implements FireData {
         complete: !partialEdge && !outage,
         calibratedEstimate: preViirs,
         anomaly: {
-          median: round1(median),
-          ratioToMedian: round2(ratio),
-          robustZ: round1(z),
+          normal: round1(median),
+          ratioToNormal: round2(ratio),
           percentile,
           class: classify(percentile, ratio, z)
         }
       });
+      zOf.set(months[months.length - 1]!, z);
     }
 
     const annualMap = new Map<number, number>();
@@ -245,7 +246,7 @@ export class MockFireData implements FireData {
     const notableMonths = [...months]
       .sort(
         (a, b) =>
-          b.anomaly.robustZ - a.anomaly.robustZ || b.harmonizedCellDays - a.harmonizedCellDays
+          zOf.get(b)! - zOf.get(a)! || b.harmonizedCellDays - a.harmonizedCellDays
       )
       .slice(0, 8)
       .sort((a, b) => a.year - b.year || a.month - b.month);
@@ -269,7 +270,7 @@ export class MockFireData implements FireData {
         monthsInRange: months.length,
         incompleteMonths: months.filter((m) => !m.complete).length
       },
-      climatology,
+      normalByMonth: climatology.map(({ median, ...c }) => ({ ...c, normal: median })),
       annual,
       notableMonths
     };

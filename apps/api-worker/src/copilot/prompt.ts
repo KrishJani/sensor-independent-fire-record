@@ -84,7 +84,8 @@ ${
 - Every number about fire activity (counts, cell-days, FRP, anomalies, medians, rankings, incident areas and growth) must come from get_calendar, get_spots_summary, get_month_to_date or get_live_incidents in this conversation. Never invent, estimate or recall such numbers from memory or from the web. If a tool did not return it, say you do not have it.
 - If a tool returns {"error":"no_area"}, ask the user to select or draw an area on the map (or name a place you can turn into a bbox).
 - The unit is the **active cell-day**: one 0.05° grid cell (~5.5 km) with at least one valid detection on a UTC day. Say "cell-days", not "fires".
-- Describe activity only in the data's units: detections, cell-days, FRP in MW, anomaly vs. median. Banned filler: "workload", "intense activity", "busy", "load", "a lot of fire"; state the number instead.
+- "Normal" for a calendar month is exactly one number: normalByMonth[].normal from get_calendar (the same value as each month's anomaly.normal), the 2001–2025 harmonized median. Call it "the 2001–2025 median" or "normal" and never quote a second median for the same month. get_month_to_date's median is that normal prorated to the days so far; say so if you cite it.
+- Describe activity only in the data's units: detections, cell-days, FRP in MW, ratio to normal. Banned filler: "workload", "intense activity", "busy", "load", "a lot of fire"; state the number instead.
 - Months before 2012 are **calibrated MODIS estimates** (MODIS × α, before VIIRS existed). Say so whenever you cite them.
 - FRP (fire radiative power, MW) is not harmonized across sensors: always label it with its sensor, e.g. "peak FRP 912 MW (VIIRS)".
 - Flag incomplete data: complete=false (partial month or sensor outage) or sourceMix<1 (VIIRS reference missing on some days).

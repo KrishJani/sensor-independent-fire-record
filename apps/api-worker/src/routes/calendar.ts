@@ -53,7 +53,7 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
       peakFrpMw: r.peak_frp_mw, peakFrpSensor: r.peak_frp_sensor, complete: r.complete, lo: r.harmonized_lo ?? r.harmonized_cell_days, hi: r.harmonized_hi ?? r.harmonized_cell_days,
     }));
     const annual = (await sql`select year, harmonized_cell_days as h, harmonized_lo as lo, harmonized_hi as hi from annual_harmonized where scope = ${req.scope} order by year`) as any[];
-    return respond(cells, annual.map((a) => ({ year: a.year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi })), { from, to, months: req.months ?? null, baseline, aoi: { scope: req.scope, regions: members }, alpha: alphaSummary(members, regionsDb), coverage: 1 });
+    return calendarBody(cells, annual.map((a) => ({ year: a.year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi })), { from, to, months: req.months ?? null, baseline, aoi: { scope: req.scope, regions: members }, alpha: alphaSummary(members, regionsDb), coverage: 1 });
   }
 
   // ---------- AOI ----------
@@ -146,7 +146,7 @@ export async function calendar(env: Env, ctx: Ctx, req: CalendarRequest) {
     for (const [reg, s] of annualScaled.get(String(y)) ?? []) { const b = bandOf.get(reg)?.annual; if (b) { a.lo -= s * (1 - b[0]); a.hi += s * (b[1] - 1); } }
   }
   const annual = [...annualMap.entries()].sort((a, b) => a[0] - b[0]).map(([year, a]) => ({ year, harmonizedCellDays: a.h, lo: a.lo, hi: a.hi }));
-  return respond(out, annual, { from, to, months: req.months ?? null, baseline, aoi: { bbox, cells: cells?.length ?? null, regions: regs }, alpha: alphaSummary(regs, regionsDb), coverage: cov });
+  return calendarBody(out, annual, { from, to, months: req.months ?? null, baseline, aoi: { bbox, cells: cells?.length ?? null, regions: regs }, alpha: alphaSummary(regs, regionsDb), coverage: cov });
 }
 
 async function aoiDays(sql: Sql, regs: string[], r0: number, r1: number, c0: number, c1: number, from: string, to: string, cells: number[] | null) {
@@ -181,8 +181,16 @@ function alphaSummary(regs: string[], regionsDb: { region_id: string; validation
   });
 }
 
-function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: number; lo: number | null; hi: number | null }[], o: { from: string; to: string; months: number[] | null; baseline: [number, number]; aoi: unknown; alpha: unknown; coverage: number }) {
+/**
+ * The calendar response body (exported for tests). "Normal" for a calendar month is ONE value: the median of that
+ * month's harmonized cell-days over every complete baseline year (climatology[m].median, the 2001-2025 median).
+ * anomaly.median is that normal and anomaly.ratioToMedian = value / normal, so the drawer, the Explorer's notable
+ * events, the briefs and the copilot all quote the same number. class, percentile and robustZ still rank the month
+ * against the OTHER baseline years (leave-one-out), which is what lets a month be a record.
+ */
+export function calendarBody(cells: Cell[], annual: { year: number; harmonizedCellDays: number; lo: number | null; hi: number | null }[], o: { from: string; to: string; months: number[] | null; baseline: [number, number]; aoi: unknown; alpha: unknown; coverage: number }) {
   const { cells: scored, climatology } = computeAnomalies(cells, { baselineYears: o.baseline });
+  const normalOf = new Map(climatology.map((c) => [c.month, c.median]));
   const inRange = (c: { year: number; month: number }) => {
     const k = `${c.year}-${String(c.month).padStart(2, '0')}`;
     return k >= o.from.slice(0, 7) && k <= o.to.slice(0, 7) && (!o.months || o.months.includes(c.month));
@@ -192,7 +200,7 @@ function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: numb
     harmonizedCellDays: round(c.harmonizedCellDays), lo: round(c.harmonizedLo ?? c.harmonizedCellDays), hi: round(c.harmonizedHi ?? c.harmonizedCellDays),
     rawDetections: c.rawDetections, unscaledCellDays: c.unscaledCellDays, modisCellDays: c.modisCellDays, viirsCellDays: c.viirsCellDays,
     sourceMix: round(c.sourceMix, 3), peakFrpMw: c.peakFrpMw === null ? null : round(c.peakFrpMw, 1), peakFrpSensor: c.peakFrpSensor, complete: c.complete,
-    anomaly: c.anomaly ? { median: round(c.anomaly.median), ratioToMedian: c.anomaly.ratioToMedian === null ? null : round(c.anomaly.ratioToMedian, 2), robustZ: c.anomaly.robustZ === null ? null : round(c.anomaly.robustZ, 2), percentile: round(c.anomaly.percentile, 1), class: c.anomaly.class } : null,
+    anomaly: c.anomaly ? { median: round(normalOf.get(c.month) ?? c.anomaly.median), ratioToMedian: (normalOf.get(c.month) ?? 0) > 0 ? round(c.harmonizedCellDays / normalOf.get(c.month)!, 2) : null, robustZ: c.anomaly.robustZ === null ? null : round(c.anomaly.robustZ, 2), percentile: round(c.anomaly.percentile, 1), class: c.anomaly.class } : null,
   }));
   const complete = cal.filter((c) => c.complete);
   const peak = complete.reduce<(typeof cal)[number] | null>((a, c) => (!a || c.harmonizedCellDays > a.harmonizedCellDays ? c : a), null);
@@ -221,7 +229,7 @@ function respond(cells: Cell[], annual: { year: number; harmonizedCellDays: numb
 }
 const round = (x: number, dp = 1) => Math.round(x * 10 ** dp) / 10 ** dp;
 
-export function calendarCsv(body: ReturnType<typeof respond>): string {
+export function calendarCsv(body: ReturnType<typeof calendarBody>): string {
   const head = 'year,month,harmonized_cell_days,harmonized_lo,harmonized_hi,raw_detections,unscaled_cell_days,modis_cell_days,viirs_cell_days,source_mix,complete,median,ratio_to_median,robust_z,percentile,class';
   const rows = body.calendar.map((c) => [c.year, c.month, c.harmonizedCellDays, c.lo, c.hi, c.rawDetections, c.unscaledCellDays, c.modisCellDays, c.viirsCellDays, c.sourceMix, c.complete ? 1 : 0, c.anomaly?.median ?? '', c.anomaly?.ratioToMedian ?? '', c.anomaly?.robustZ ?? '', c.anomaly?.percentile ?? '', c.anomaly?.class ?? ''].join(','));
   return `# Harmonized burning activity calendar (NASA FIRMS MODIS + VIIRS). Units: ${body.units}. Range ${body.range.from} → ${body.range.to}.\n${head}\n${rows.join('\n')}\n`;
