@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
 import { api, DETAIL_MISSING_TEXT, isDetailMissing, isOutsideCoverage, OUTSIDE_COVERAGE_TEXT, type Bbox, type CalendarMonth, type CalendarResponse } from '../lib/api';
 import { Segmented, type SegmentedOption } from './Segmented';
+import { viewOutsideArchive } from '../lib/coverage';
 
 type Series = 'harmonized' | 'gridded' | 'raw';
 type Scope = 'us' | 'view' | 'drawn' | 'region';
@@ -56,6 +57,22 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detai
   const [loading, setLoading] = useState(false);
   const [hover, setHover] = useState<CalendarMonth | null>(null);
   const [viewBox, setViewBox] = useState<Bbox | null>(null);
+
+  // The map view itself (whatever the calendar's scope): a one-line note when it is outside the US archive.
+  const [viewOutside, setViewOutside] = useState(false);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const check = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const b = map.getBounds();
+        if (b) setViewOutside(viewOutsideArchive([b.getWest(), Math.max(b.getSouth(), -89.9), b.getEast(), Math.min(b.getNorth(), 89.9)]));
+      }, 400);
+    };
+    check();
+    map.on('moveend', check);
+    return () => { clearTimeout(t); map.off('moveend', check); };
+  }, [map]);
 
   useEffect(() => { if (drawn) setScope('drawn'); else setScope((s) => (s === 'drawn' ? 'us' : s)); }, [drawn]);
   useEffect(() => { if (region) setScope('region'); }, [region]);
@@ -153,6 +170,9 @@ export function CalendarDrawer({ map, onPickMonth, onClose, drawn, region, detai
       {open && (
         <div className="calendar-drawer__body">
           {loading && <p className="calendar-drawer__note"><Ember caption="Loading" /></p>}
+          {viewOutside && !(outside && scope === 'view') && (
+            <p className="calendar-drawer__note calendar-drawer__note--outside" role="note">Calendar covers the US only; this view is outside it.</p>
+          )}
           {error && <p className={`calendar-drawer__note${outside ? ' calendar-drawer__note--outside' : ' calendar-drawer__note--error'}`}>{error}</p>}
           {!error && data?.meta && data.meta.coverage < 0.995 && (
             <p className="calendar-drawer__note">Partial coverage: {Math.round(data.meta.coverage * 100)}% of this area is in the harmonized US regions.</p>

@@ -703,13 +703,17 @@ describe("calendar outside the US harmonized archive", async () => {
     expect(OUTSIDE_CALENDAR).toMatch(/Do not fetch another region's calendar/);
   });
 
-  it("does not hand the model another region's calendar later in the same turn", async () => {
+  const CALIFORNIA: [number, number, number, number] = [-124.5, 32.5, -114, 42.1];
+  const setup = () => {
     const calls: number[][] = [];
     const data = {
       source: "live",
       getCalendar: async (q: { bbox: number[] }) => {
         calls.push(q.bbox);
-        return q.bbox === QUEBEC ? { dataSource: "live", available: false, reason: "outside_coverage", message: OUTSIDE_CALENDAR } : { dataSource: "live", region: { label: "Interior West region" } };
+        const outsideUS = q.bbox[1] >= 43 && q.bbox[0] > -90;
+        return outsideUS
+          ? { dataSource: "live", available: false, reason: "outside_coverage", message: OUTSIDE_CALENDAR }
+          : { dataSource: "live", region: { label: q.bbox[0] < -114 ? "California region" : "Interior West region" } };
       }
     } as never;
     const db = new DatabaseSync(":memory:");
@@ -718,10 +722,22 @@ describe("calendar outside the US harmonized archive", async () => {
     memory.init();
     const ctx = { tab: "archival" as const, aoi: { bbox: QUEBEC }, from: "2023-06-01", to: "2023-06-30" };
     const cal = createFireTools({ data, memory, getContext: () => ctx }).get_calendar;
-    const run = (a: object) => (cal.execute as unknown as (a: object) => Promise<unknown>)(a);
+    return { calls, run: (a: object) => (cal.execute as unknown as (a: object) => Promise<unknown>)(a) };
+  };
+
+  it("a retry for the same or an overlapping area gets the same 'no calendar' answer", async () => {
+    const { calls, run } = setup();
     expect(await run({})).toMatchObject({ reason: "outside_coverage" });
-    expect(await run({ bbox: [-117, 37, -104, 45] })).toMatchObject({ reason: "outside_coverage" });
+    // a nudged bbox that still overlaps the Quebec view: not fetched again, same answer
+    expect(await run({ bbox: [-90, 40, -70, 50] })).toMatchObject({ reason: "outside_coverage" });
     expect(calls).toHaveLength(1);
+  });
+
+  it("'compare Quebec with California' still gets California's calendar", async () => {
+    const { calls, run } = setup();
+    expect(await run({})).toMatchObject({ reason: "outside_coverage" });
+    expect(await run({ bbox: CALIFORNIA })).toMatchObject({ region: { label: "California region" } });
+    expect(calls).toEqual([QUEBEC, CALIFORNIA]);
   });
 });
 

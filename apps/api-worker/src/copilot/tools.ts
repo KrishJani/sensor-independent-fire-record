@@ -42,12 +42,16 @@ const withErrors =
     }
   };
 
+/** Same or overlapping bboxes (touching edges do not count). */
+export const bboxesOverlap = (a: Bbox, b: Bbox) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+
 const isOutside = (r: unknown) => !!r && typeof r === "object" && (r as { reason?: string }).reason === "outside_coverage";
 
 export function createFireTools({ data, memory, getContext }: ToolDeps) {
-  // Once the calendar says the area is outside the archive, later calls in the same request get the same answer:
-  // models otherwise fetch some other region's calendar (the Interior West for a Quebec view) and report it.
-  let outsideResult: unknown = null;
+  // Once the calendar says an area is outside the archive, later calls in the same request for that area (same or
+  // overlapping bbox) get the same answer, so a retry with a nudged bbox cannot pull in a neighbouring region's
+  // calendar. Calls for a separate area (e.g. California after Quebec) are answered normally.
+  const outsideAreas: { bbox: Bbox; result: unknown }[] = [];
   return {
     get_calendar: tool({
       description:
@@ -65,14 +69,15 @@ export function createFireTools({ data, memory, getContext }: ToolDeps) {
         const ctx = getContext();
         const bbox = resolveBbox(args.bbox, ctx);
         if (!bbox) return NO_AREA;
-        if (outsideResult) return outsideResult;
+        const known = outsideAreas.find((o) => bboxesOverlap(o.bbox, bbox));
+        if (known) return known.result;
         const r = await data.getCalendar({
           bbox,
           from: args.from ?? ctx?.from ?? "2000-11-01",
           to: args.to ?? ctx?.to ?? new Date().toISOString().slice(0, 10),
           months: args.months ?? null
         });
-        if (isOutside(r)) outsideResult = r;
+        if (isOutside(r)) outsideAreas.push({ bbox, result: r });
         return r;
       })
     }),

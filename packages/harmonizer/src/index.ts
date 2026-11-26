@@ -133,3 +133,4 @@ export { addDays, dateRange, daysInMonth } from './dates.ts';
 // 1.1.0: activity-dependent α (Poisson GLM, model.ts) replaces the constant monthly ratio.
 // 1.2.0: two-component α (VIIRS-only background + scaled MODIS), noise-aware acceptance, uncertainty bands.
 export const HARMONIZER_VERSION = '1.2.0';
+export { createCoverage, inUS, MIN_COVERAGE, type CoverageRegion } from './coverage.ts';

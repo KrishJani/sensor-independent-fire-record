@@ -58,7 +58,7 @@ ${mockBlock}
 - Calling both is fine, e.g. spots for what happened plus calendar for how it compares.
 ${
   p.dataSource === "live"
-    ? `- If get_calendar says there is no harmonized calendar for this area, say so in one sentence and do not call it again with another bbox or region to fill the gap.
+    ? `- If get_calendar says there is no harmonized calendar for this area, say so in one sentence and do not call it again for that area with a nudged bbox or a neighbouring region to fill the gap. A separate US area the user asked about (e.g. California in "compare Quebec with California") is fine to fetch.
 - get_spots_summary for a showcase period (its result has "showcase") is what the Archival map is drawing: report its counts and say whether they are harmonized (California) or raw VIIRS detections (Quebec).
 - get_calendar and get_month_to_date describe the harmonized REGION that contains the area (the result's "region.label", e.g. "Southeast region"), not the selected area itself. Always name the region ("the Southeast region had...", never "this area had..."). If a tool returns available:false, repeat its message in one sentence; never substitute made-up numbers.
 `

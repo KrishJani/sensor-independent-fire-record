@@ -92,6 +92,8 @@ export function MapView({ tab, from, to, rangeLabel, onPickDate, settings, updat
   // without counting as the user closing it).
   useEffect(() => { if (timelineOpen) panelOpened('calendar'); }, [timelineOpen]);
   useEffect(() => closeWhenOtherOpens('calendar', () => setTimelineOpen(false)), []);
+  useEffect(() => { if (explorerOpen) panelOpened('explorer'); }, [explorerOpen]);
+  useEffect(() => closeWhenOtherOpens('explorer', () => setExplorerOpen(false)), []);
   const [regionArea, setRegionArea] = useState<{ id: string; bbox: [number, number, number, number]; name: string } | null>(null);
   const { detail, showcase } = useArchiveInfo();
   const scheme = useColorScheme();
